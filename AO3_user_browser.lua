@@ -1,3 +1,4 @@
+local Network = require("fanfic_network")
 
 local KeyValuePage = require("ui/widget/keyvaluepage")
 local UIManager = require("ui/uimanager")
@@ -219,6 +220,7 @@ function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page)
     self.AO3UserWindow = UserWindow:new({
         title = title,
         kv_pairs = menu_table,
+        title_bar_left_icon = require("fanfic_icons").name,
         title_bar_fm_style = true,
         is_popout = false,
         is_borderless = true,
@@ -229,16 +231,16 @@ function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page)
 end
 
 function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
+    if Network.defer(function() self:openFanficBrowserForCategory(category, total, fandom_id) end) then return end
     local success, works, getNextPage = self.Fanfic:getWorksFromUserPage(self.userData.username, self.userData.pseud, category, fandom_id)
     if success then
         works.total =  works.total or total or 0
         self.Fanfic:onShowFanficBrowser(works, getNextPage)
-    else
-        self.ui:showMessageBox("Error", "Failed to fetch works for category: " .. tostring(category))
     end
 end
 
 function AO3UserBrowser:openUserSeriesList()
+    if Network.defer(function() self:openUserSeriesList() end) then return end
     local success, seriesList, getNextPage = self.Fanfic:getSeriesFromUserPage(self.userData.username, self.userData.pseud)  --
     if success then
         local series_menu_kv = {}
@@ -258,7 +260,7 @@ function AO3UserBrowser:openUserSeriesList()
             table.insert(series_menu_kv, {
                 series.title,
                 "",
-                callback = function()
+                callback = Network.wrap(function()
                     local success, seriesWorks, fetchNextPage = self.Fanfic:getWorksFromSeries(series.id)
                     if success == false then
                         return
@@ -266,7 +268,7 @@ function AO3UserBrowser:openUserSeriesList()
 
                     seriesWorks.total = series.work_count or 0
                     self.Fanfic:onShowFanficBrowser(seriesWorks, fetchNextPage)
-                end,
+                end),
                 separator = true,
             })
             table.insert(series_menu_kv,{
@@ -309,7 +311,7 @@ function AO3UserBrowser:openUserSeriesList()
             table.insert(series_menu_kv, {
                 "Load more series...",
                 "",
-                callback = function()
+                callback = Network.wrap(function()
                     local extra_series_list = getNextPage()
 
                     if #extra_series_list > 0 then
@@ -322,7 +324,7 @@ function AO3UserBrowser:openUserSeriesList()
 
 
                     end
-                end,
+                end),
             })
         end
 
@@ -334,6 +336,7 @@ function AO3UserBrowser:openUserSeriesList()
 end
 
 function AO3UserBrowser:openUserCollectionsList()
+    if Network.defer(function() self:openUserCollectionsList() end) then return end
     local success, collectionsList, getNextPage = self.Fanfic:getCollectionsFromUserPage(self.userData.username)  --
     if success then
         local collections_menu_kv = {}
@@ -353,7 +356,7 @@ function AO3UserBrowser:openUserCollectionsList()
             table.insert(collections_menu_kv, {
                 collection.title,
                 "",
-                callback = function()
+                callback = Network.wrap(function()
                     local success, collectionWorks, fetchNextPage = self.Fanfic:getWorksFromCollection(collection.id)
                     if success == false then
                         return
@@ -361,7 +364,7 @@ function AO3UserBrowser:openUserCollectionsList()
 
                     collectionWorks.total = collection.work_count or 0
                     self.Fanfic:onShowFanficBrowser(collectionWorks, fetchNextPage)
-                end,
+                end),
                 separator = true,
             })
             table.insert(collections_menu_kv,{
@@ -400,7 +403,7 @@ function AO3UserBrowser:openUserCollectionsList()
             table.insert(collections_menu_kv, {
                 "Load more collections...",
                 "",
-                callback = function()
+                callback = Network.wrap(function()
                     local extra_collections_list = getNextPage()
 
                     if #extra_collections_list > 0 then
@@ -411,7 +414,7 @@ function AO3UserBrowser:openUserCollectionsList()
                         refreshCollectionsMenu()
                         self:loadPage("Collections", collections_menu_kv, true)
                     end
-                end,
+                end),
             })
         end
 
@@ -421,6 +424,7 @@ function AO3UserBrowser:openUserCollectionsList()
 end
 
 function AO3UserBrowser:openPseudsList()
+    if Network.defer(function() self:openPseudsList() end) then return end
     local success, pseuds = self.Fanfic:getPseudsForUser(self.userData.username)
     if success then
         local pseuds_menu_kv = {}
@@ -438,7 +442,7 @@ function AO3UserBrowser:openPseudsList()
             table.insert(pseuds_menu_kv, {
                 T("%1 (%2 works) (%3 recs)", pseud.name, pseud.works_count, pseud.recs_count),
                 "",
-                callback = function()
+                callback = Network.wrap(function()
                     local success, userData = self.Fanfic:getUserData(self.userData.username, pseud.name)
                     if success then
                         self:show(userData, self.ui, self.Fanfic)
@@ -447,7 +451,7 @@ function AO3UserBrowser:openPseudsList()
                             text = T("Failed to fetch data for pseud: '%1'", pseud.name),
                         }))
                     end
-                end,
+                end),
             })
 
         end

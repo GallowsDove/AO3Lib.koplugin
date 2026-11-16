@@ -1,0 +1,237 @@
+-- Run from the plugin directory: luajit tests/test_updates.lua
+package.path='./?.lua;'..package.path
+local function stub(name,t) package.loaded[name]=t end
+local function copy(t)
+    if type(t)~='table' then return t end
+    local out={}; for k,v in pairs(t) do out[k]=copy(v) end; return out
+end
+stub('util',{tableDeepCopy=copy})
+stub('gettext',function(s) return s end)
+stub('ffi/util',{})
+local files,epubs,saved,remote={},{},{},{}
+local downloads,checks,saves=0,0,0
+local fail_download,fail_save,change_during_download=false,false,false
+local Reader={instance=nil}
+stub('apps/reader/readerui',Reader)
+local parked
+stub('lib/bookshelf_reader_park',{parkedFile=function() return parked end})
+stub('libs/libkoreader-lfs',{attributes=function(path) return copy(files[path]) end,
+    symlinkattributes=function(path) return copy(files[path]) end})
+stub('fanfic_epub',{read=function(path) return copy(epubs[path]) end})
+stub('downloaded_fanfics',{
+    get=function(id) return copy(saved[tostring(id)]) end,
+    update=function(work)
+        saves=saves+1; saved[tostring(work.id)]=copy(work)
+        if fail_save then return nil,'disk full' end
+        return true
+    end,
+    save=function() if fail_save then return nil,'disk full' end; return true end,
+})
+stub('AO3_downloader_client',{
+    getWorkMetadata=function(_,id)
+        checks=checks+1
+        local value=remote[tostring(id)]
+        if value.throw then error('parser failure') end
+        return value.success==false and copy(value) or {success=true,work_metadata=copy(value)}
+    end,
+    downloadEpub=function(_,url,path,replace,before_commit)
+        downloads=downloads+1
+        assert(replace and url:find('https://',1,true))
+        if fail_download then return {success=false,error='Download interrupted'} end
+        if change_during_download then files[path].size=files[path].size+1 end
+        local allowed,reason=before_commit()
+        if not allowed then return {success=false,error=reason} end
+        files[path].size=files[path].size+10
+        files[path].modification=files[path].modification+1
+        for _,work in pairs(remote) do if work.epub_link==url then
+            epubs[path]=copy(work); epubs[path].path=path
+        end end
+        return {success=true,filepath=path}
+    end,
+})
+local function fixture(id,chapters)
+    id=tostring(id)
+    local path='/books/'..id..'.epub'
+    files[path]={mode='file',size=100,modification=1,change=1}
+    epubs[path]={id=id,path=path,title='Work '..id,author='Writer',chapters=chapters or '2/3',wordcount='1,000',updated='2026-01-01'}
+    saved[id]=copy(epubs[path]); saved[id].last_accessed='2025-01-01'
+    saved[id].chapter_data={{id='10',name='First',read=true},{id='20',name='Second',read=false}}
+    remote[id]={id=id,title='Work '..id,author='Writer',chapters='3/3',wordcount='2,000',updated='2026-02-01',
+        epub_link='https://example.test/'..id..'.epub',chapterData={{id='10'},{id='20'},{id='30'}}}
+    return copy(saved[id])
+end
+local Updates=require('fanfic_updates')
+local work=fixture('1')
+work.chapters='99/99' -- History metadata must never replace the actual EPUB baseline.
+local entry=Updates.check(work)
+assert(entry.status=='update' and entry.local_work.chapters=='2/3' and #entry.changes==3)
+assert(downloads==0 and saves==0 and not entry.selected)
+-- Reordered/inserted chapters preserve flags by ID, not array position.
+remote['1'].chapterData={{id='30'},{id='10'},{id='20'}}
+entry=Updates.check(work)
+saved['1'].chapter_data[2].read=true -- Use the latest state, not the review's snapshot.
+local updated=Updates.apply(entry)
+assert(updated.success and downloads==1 and saves==1)
+assert(saved['1'].path==work.path and saved['1'].last_accessed=='2025-01-01')
+assert(not saved['1'].chapter_data[1].read and saved['1'].chapter_data[2].read and saved['1'].chapter_data[3].read)
+assert(not remote['1'].chapterData[2].read, 'Remote review metadata must stay immutable')
+work=fixture('2')
+entry=Updates.check(work)
+local before=copy(files[work.path]); local before_saved=copy(saved['2'])
+fail_download=true
+assert(not Updates.apply(entry).success and files[work.path].size==before.size and saved['2'].chapters==before_saved.chapters)
+fail_download=false
+files[work.path].size=101
+local old_downloads=downloads
+assert(not Updates.apply(entry).success and downloads==old_downloads)
+files[work.path]=before
+Reader.instance={document={file=work.path}}
+assert(not Updates.apply(entry).success and downloads==old_downloads)
+Reader.instance=nil; parked=work.path
+assert(not Updates.apply(entry).success and downloads==old_downloads)
+parked=nil; change_during_download=true
+assert(not Updates.apply(entry).success and saved['2'].chapters==before_saved.chapters)
+change_during_download=false
+work=fixture('3'); entry=Updates.check(work)
+fail_save=true
+local failed=Updates.apply(entry)
+assert(not failed.success and failed.downloaded and failed.error:find('disk full',1,true))
+fail_save=false
+work=fixture('4'); remote['4'].chapters='1/1'; entry=Updates.check(work)
+assert(entry.status=='review')
+work=fixture('5'); remote['5']=copy(epubs[work.path]); remote['5'].epub_link='https://example.test/5.epub'
+assert(Updates.check(work).status=='current')
+remote['5'].updated='2025-01-01'
+assert(Updates.check(work).status=='review')
+work=fixture('6','?/?'); epubs[work.path].wordcount=nil; epubs[work.path].updated=nil
+assert(Updates.check(work).status=='review')
+work=fixture('7'); remote['7']={success=false,status=404,error='Not found'}
+assert(Updates.check(work).status=='unavailable')
+work=fixture('8'); remote['8'].chapterData={{id='10'}}
+entry=Updates.check(work); old_downloads=downloads
+assert(not Updates.apply(entry).success and downloads==old_downloads)
+work=fixture('9','2/2'); saved['9'].read=true; saved['9'].chapter_data={}
+remote['9'].chapters='2/2'; remote['9'].chapterData={{id='10'},{id='20'}}
+assert(Updates.apply(Updates.check(work)).success and saved['9'].chapter_data[1].read and saved['9'].chapter_data[2].read)
+print('PASS: actual EPUB comparisons; edits/new chapters/completion; no downloads during review; ID-based latest progress; same paths; open/parked/changed sources; download/state-save failures')
+
+-- Scheduled checks can stop, resume, retry individual failures, and pause
+-- for service-wide failures without contacting every remaining work.
+local jobs,delays={},{}
+local function schedule(delay,callback) jobs[#jobs+1]=callback; delays[#delays+1]=delay end
+local function nextJob() assert(#jobs>0); table.remove(jobs,1)() end
+local function drain() local n=0; while #jobs>0 do n=n+1; assert(n<100); nextJob() end end
+local a,b,c=fixture('a'),fixture('b'),fixture('c')
+local session=Updates.new({a,b,c})
+local start_checks=checks
+assert(session:run('check',session.entries,function() end,schedule))
+nextJob()
+assert(checks==start_checks+1 and session.busy and delays[2]>=3)
+session:stop(); drain()
+assert(checks==start_checks+1)
+local pending={session.entries[2],session.entries[3]}
+remote['b']={success=false,status=404,error='Deleted'}
+assert(session:run('check',pending,nil,schedule)); drain()
+assert(session.entries[2].status=='unavailable' and session.entries[3].status=='update')
+local reused=Updates.new({a,b,c},session)
+assert(reused.entries[1].status=='update' and reused.entries[2].status=='unavailable')
+remote['a']={success=false,status=429,retry_later=true,error='Slow down',response_headers={['retry-after']='120'}}
+start_checks=checks
+assert(session:run('check',session.entries,nil,schedule)); drain()
+assert(checks==start_checks+1 and not session.busy and session.retry_at>=os.time()+119)
+assert(not session:run('check',pending,nil,schedule))
+local reopened=Updates.new({a,b,c},session)
+assert(reopened.retry_at==session.retry_at)
+session.retry_at=nil
+remote['a']={success=false,status=503,retry_later=true,error='Maintenance'}
+assert(session:run('check',session.entries,nil,schedule)); drain()
+assert(session.pause_reason=='Maintenance')
+local d,e,f,g=fixture('d'),fixture('e'),fixture('f'),fixture('g')
+for _,id in ipairs({'d','e','f','g'}) do remote[id]={success=false,unexpected_response=true,error='Unexpected page'} end
+local malformed=Updates.new({d,e,f,g})
+start_checks=checks
+assert(malformed:run('check',malformed.entries,nil,schedule)); drain()
+assert(checks==start_checks+3 and malformed.pause_reason=='Unexpected page' and malformed.entries[4].status=='unchecked')
+session.retry_at=nil
+session.closed=true
+assert(not session:run('check',pending,nil,schedule))
+local update_work=fixture('selected')
+local selection=Updates.new({update_work})
+assert(selection:run('check',selection.entries,nil,schedule)); drain()
+selection.entries[1].selected=true
+assert(selection:run('update',{selection.entries[1]},nil,schedule)); drain()
+assert(selection.entries[1].status=='updated' and not selection.entries[1].selected)
+print('PASS: paced scheduled requests; stop/resume; individual 404 failures; review reuse; rate-limit Retry-After; maintenance pause; closed-screen cancellation; selected updates')
+local state_work=fixture('savefail')
+local state_session=Updates.new({state_work})
+assert(state_session:run('check',state_session.entries,nil,schedule)); drain()
+fail_save=true
+assert(state_session:run('update',state_session.entries,nil,schedule)); drain()
+assert(state_session.entries[1].status=='state_error')
+old_downloads=downloads
+assert(not Updates.retrySave(state_session))
+fail_save=false
+assert(Updates.retrySave(state_session) and state_session.entries[1].status=='updated' and downloads==old_downloads)
+
+-- Exercise the actual screen's callbacks, including the Wi-Fi continuation.
+local shown,connected,pending_connection={},false,nil
+local UI={show=function(_,widget) shown[#shown+1]=widget end,
+    close=function() end, setDirty=function() end,
+    scheduleIn=function(_,delay,callback) schedule(delay,callback) end}
+stub('ui/uimanager',UI)
+stub('ui/network/manager',{
+    isConnected=function() return connected end,
+    runWhenConnected=function(_,callback) pending_connection=callback end,
+})
+local Class={new=function(self,args) return setmetatable(args,{__index=self}) end,
+    updateItems=function() end}
+for _,name in ipairs({'menu','infomessage','textviewer'}) do stub('ui/widget/'..name,Class) end
+stub('fanfic_config',{readSetting=function() return '/books' end})
+stub('apps/filemanager/filemanagerutil',{getHomeFolder=function() return '/home' end})
+local ui1,ui2=fixture('ui1'),fixture('ui2')
+stub('fanfic_library',{scan=function(roots,done)
+    assert(roots[1]=='/books' and roots[2]=='/home'); done({ui1,ui2})
+end})
+local Review=require('fanfic_update_review')
+Review.show({ui={}})
+local menu=shown[#shown]
+assert(menu.title=='Downloaded work updates')
+local function find(text)
+    for _,row in ipairs(menu.item_table) do if row.text:find(text,1,true) then return row end end
+    error('Missing menu item: '..text)
+end
+local function tap(text) menu:onMenuSelect(find(text)) end
+start_checks=checks; old_downloads=downloads
+assert(find('Update selected (0)').enabled==false)
+tap('Check for updates')
+assert(pending_connection and checks==start_checks and #jobs==0)
+connected=true
+local reconnect=pending_connection; pending_connection=nil; reconnect()
+nextJob()
+assert(checks==start_checks+1 and downloads==old_downloads)
+tap('— Stop'); drain()
+assert(checks==start_checks+1)
+tap('Continue checking unchecked works'); drain()
+assert(checks==start_checks+2 and downloads==old_downloads)
+tap('Select all available updates')
+assert(find('Update selected (2)').enabled)
+tap('Work ui1')
+assert(find('Update selected (1)').enabled)
+local row=find('Work ui2')
+menu:onMenuHold(row)
+assert(shown[#shown].title=='Work update details' and shown[#shown].text:find('1 new chapter',1,true))
+assert(downloads==old_downloads)
+tap('Update selected (1)'); drain()
+assert(downloads==old_downloads+1 and saved.ui2.chapters=='3/3' and saved.ui1.chapters=='2/3')
+connected=false
+tap('Check all works again')
+assert(pending_connection)
+menu:onCloseWidget()
+connected=true; reconnect=pending_connection; pending_connection=nil; reconnect(); drain()
+assert(checks==start_checks+2, 'Closing a review must invalidate a pending Wi-Fi continuation')
+Review.show({ui={}})
+menu=shown[#shown]
+assert(find('Work ui2').text:find('Updated',1,true))
+tap('Check all works again'); drain()
+assert(checks==start_checks+4 and find('Work ui1'))
+print('PASS: actual review UI; explicit check/selection; preserved Wi-Fi continuation; stop/resume; hold details; selective update; close cancels pending work; reopen and recheck')

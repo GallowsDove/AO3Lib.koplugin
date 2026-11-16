@@ -1,3 +1,4 @@
+local Network = require("fanfic_network")
 local InputDialog = require("ui/widget/inputdialog")
 local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
@@ -215,7 +216,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                             {
                                 text = _("Search"),
                                 is_enter_default = true,
-                                callback = function()
+                                callback = Network.wrap(function()
                                     local value = inputDialog:getInputText()
                                     if value == "" then
                                         return
@@ -230,7 +231,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                                         )
                                         UIManager:close(inputDialog)
                                     end
-                                end,
+                                end),
                             },
                         },
                     },
@@ -399,7 +400,7 @@ function CustomFilterMenu:singleTagSelection(title, tagCatagoryForSearch, settin
                 {
                     text = _("Search"),
                     is_enter_default = true,
-                    callback = function()
+                    callback = Network.wrap(function()
                         local value = inputDialog:getInputText()
                         if value == "" then
                             return
@@ -413,7 +414,7 @@ function CustomFilterMenu:singleTagSelection(title, tagCatagoryForSearch, settin
                             )
                             UIManager:close(inputDialog)
                         end
-                    end,
+                    end),
                 },
             },
         },
@@ -1378,7 +1379,8 @@ function CustomFilterMenu:executeSearch()
         }))
         return
     end
-    UIManager:scheduleIn(1, function()
+    if Network.defer(function() self:executeSearch() end) then return end
+    Network.schedule(0, function()
         local parameters = {
             ["work_search[complete]"] = self.filter.completion_status or nil,
             ["work_search[crossover]"] = self.filter.crossovers or nil,
@@ -1433,10 +1435,6 @@ function CustomFilterMenu:executeSearch()
         )
     end)
 
-    UIManager:show(InfoMessage:new({
-        text = _("Searching with custom filter..."),
-        timeout = 1,
-    }))
 end
 
 return CustomFilterMenu

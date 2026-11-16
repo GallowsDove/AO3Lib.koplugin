@@ -1,3 +1,4 @@
+local Network = require("fanfic_network")
 local Menu = require("ui/widget/menu")
 local _ = require("gettext")
 local FanficSearch = require("fanfic_search")
@@ -31,7 +32,7 @@ local FanficMenuWidget = Menu:extend({
     is_popout = false,
     is_borderless = true,
     paths = nil,
-    title = "AO3 downloader",
+    title = "AO3Lib",
     subtitle = "",
     lock_return = false,
 })
@@ -80,7 +81,8 @@ local FanficMenu = {}
 function FanficMenu:show(fanfic)
     self.fanfic = fanfic
     self.menuWidget = FanficMenuWidget:new({
-        title = _("AO3 downloader"),
+        title = _("AO3Lib"),
+        title_bar_left_icon = require("fanfic_icons").name,
         item_table = {
             {
                 text = "\u{f002} Search and download works from AO3",
@@ -92,6 +94,12 @@ function FanficMenu:show(fanfic)
                 text = "\u{2193} View downloaded fanfics",
                 callback = function()
                     self:onViewDownloadedFanfics()
+                end,
+            },
+            {
+                text = _("Review downloaded work updates"),
+                callback = function()
+                    require("fanfic_update_review").show(self.fanfic)
                 end,
             },
             {
@@ -138,11 +146,11 @@ function FanficMenu:refreshAccountManagementMenu()
         })
         table.insert(menu_items, {
             text = "Log out",
-            callback = function()
+            callback = Network.wrap(function()
                 self.logged_in = not self.fanfic:logoutOfAO3()
                 self.menuWidget.item_table = self:refreshAccountManagementMenu()
                 self.menuWidget:updateItems()
-            end,
+            end),
         })
     end
 
@@ -150,10 +158,11 @@ function FanficMenu:refreshAccountManagementMenu()
 end
 
 function FanficMenu:onAccountManagementMenu()
-    local success
-    success, self.logged_in, self.username = self.fanfic:checkLoggedIn()
+    if Network.defer(function() self:onAccountManagementMenu() end) then return end
+    local success, logged_in, username = self.fanfic:checkLoggedIn()
 
     if success then
+        self.logged_in, self.username = logged_in, username
         self.menuWidget:GoDownInMenu("Account management", self:refreshAccountManagementMenu())
     end
 end
@@ -184,14 +193,16 @@ function FanficMenu:enterUserDetails()
                 },
                 {
                     text = "Login",
-                    callback = function()
+                    callback = Network.wrap(function()
                         local myfields = self.login_dialog:getFields()
+                        local logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2])
+                        if not logged_in then return end
                         UIManager:close(self.login_dialog)
-                        self.logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2])
+                        self.logged_in = logged_in
                         self.username = myfields[1]
                         self.menuWidget.item_table = self:refreshAccountManagementMenu()
                         self.menuWidget:updateItems()
-                    end,
+                    end),
                 },
             },
         },
@@ -357,7 +368,7 @@ function FanficMenu:onSearchTag(category)
                 {
                     text = _("Search"),
                     is_enter_default = true,
-                    callback = function()
+                    callback = Network.wrap(function()
                         local query = searchDialog:getInputText()
                         local success, tags
                         -- Function to refresh the menu items
@@ -435,26 +446,21 @@ function FanficMenu:onSearchTag(category)
                             end
                             return menu_items
                         end
-                        UIManager:scheduleIn(1, function()
+                        Network.schedule(0, function()
                             local success
                             success, tags = self.fanfic:searchForTags(query, category)
-
-                            UIManager:close(searchDialog)
 
                             if not success or not tags then
                                 return
                             end
+                            UIManager:close(searchDialog)
                             --
 
                             -- Initial menu display
 
                             self.menuWidget:GoDownInMenu(T('"%1" %2 query results', query, category), refreshMenu())
                         end)
-                        UIManager:show(InfoMessage:new({
-                            text = T("Downloading %1 info may take some time…", category),
-                            timeout = 1,
-                        }))
-                    end,
+                    end),
                 },
             },
         },
@@ -483,8 +489,8 @@ function FanficMenu:onBrowseByTag(selectedTag)
     for __, option in ipairs(sorting_options) do
         table.insert(menu_items, {
             text = option.text,
-            callback = function()
-                UIManager:scheduleIn(1, function()
+            callback = Network.wrap(function()
+                Network.schedule(0, function()
                     local success, ficResults, fetchNextPage = self.fanfic:fetchFanficsByTag(selectedTag, option.value)
                     if not success then
                         return
@@ -495,11 +501,7 @@ function FanficMenu:onBrowseByTag(selectedTag)
                         fetchNextPage
                     )
                 end)
-                UIManager:show(InfoMessage:new({
-                    text = _("Downloading works data may take some time…"),
-                    timeout = 1,
-                }))
-            end,
+            end),
         })
     end
 
@@ -507,9 +509,60 @@ function FanficMenu:onBrowseByTag(selectedTag)
 end
 
 function FanficMenu:onViewDownloadedFanfics()
-    DownloadedFanficsMenu:show(self.fanfic.ui, self.menuWidget, function(fanfic)
-        self.fanfic:UpdateFanfic(fanfic)
-    end, self.fanfic)
+    local cancelled,complete=false,false
+    local works,rows={},{}
+    local owner=self.menuWidget
+    local function replace(found)
+        -- Keep this table stable for author/fandom menus opened mid-scan.
+        for id in pairs(works) do if not found[id] then works[id]=nil end end
+        for id,work in pairs(found) do
+            local state=DownloadedFanfics.get(id)
+            local merged={}
+            for key,value in pairs(work) do merged[key]=value end
+            if state then
+                merged.chapter_data=state.chapter_data or merged.chapter_data
+                merged.read=state.read
+                merged.last_accessed=state.last_accessed
+            end
+            works[id]=merged
+        end
+    end
+    local function invalid()
+        return cancelled or (UIManager.isWidgetShown and not UIManager:isWidgetShown(owner))
+    end
+    local render
+    render=function()
+        for i=#rows,1,-1 do rows[i]=nil end
+        local sorted={}
+        for _,work in pairs(works) do sorted[#sorted+1]=work end
+        table.sort(sorted,function(a,b) return (a.title or "")<(b.title or "") end)
+        rows[#rows+1]={text=complete and T("Found %1 AO3 works",#sorted)
+            or T("Scanning… %1 AO3 works found",#sorted),enabled=false}
+        rows[#rows+1]={text=_("Browse by fandom or author"),enabled=#sorted>0,callback=function()
+            if #sorted==0 then return end
+            DownloadedFanficsMenu:show(self.fanfic.ui,owner,function(work) self.fanfic:UpdateFanfic(work) end,self.fanfic,works)
+        end}
+        if not complete then rows[#rows+1]={text=_("Stop scanning"),callback=function()
+            cancelled=true;complete=true;render()
+        end} end
+        for _,work in ipairs(sorted) do
+            rows[#rows+1]={text=(work.title or work.path).." — "..(work.author or ""),callback=function()
+                self.fanfic:onOpenFanficReader(work.path,work)
+            end}
+        end
+        if owner.item_table==rows then owner:updateItems();UIManager:setDirty(owner,"ui") end
+    end
+    render()
+    owner:GoDownInMenu(_("Downloaded Works"),rows)
+    local roots={Config:readSetting("fanfic_folder_path"),filemanagerutil.getHomeFolder()}
+    require("fanfic_library").scan(roots,function(found,err)
+        if invalid() then return end
+        replace(found);complete=true;render()
+        if err then UIManager:show(InfoMessage:new{text=_("Could not finish the library scan: ")..err}) end
+    end,invalid,{progress=function(found)
+        replace(found)
+        render()
+    end})
 end
 
 function FanficMenu:onSelectUserSearch()
@@ -607,13 +660,13 @@ function FanficMenu:onSearchUser()
                 {
                     text = _("Search"),
                     is_enter_default = true,
-                    callback = function()
+                    callback = Network.wrap(function()
                         local user_query = search_dialog:getInputText()
-                        UIManager:close(search_dialog)
                         local success, users, next_page = self.fanfic:searchForUsers(user_query)
                         if not success then
                             return
                         end
+                        UIManager:close(search_dialog)
                         local function generateMenuItems()
                             local menu_items = {}
                             for __, user in ipairs(users) do
@@ -661,7 +714,7 @@ function FanficMenu:onSearchUser()
                             return menu_items
                         end
                         self.menuWidget:GoDownInMenu(T('"%1" user search results', user_query), generateMenuItems())
-                    end,
+                    end),
                 },
             }
         }
@@ -672,7 +725,8 @@ function FanficMenu:onSearchUser()
 end
 
 function FanficMenu:onSelectAccountHistory(marked_for_later)
-    UIManager:scheduleIn(1, function()
+    if Network.defer(function() self:onSelectAccountHistory(marked_for_later) end) then return end
+    Network.schedule(0, function()
         local success, ficResults, fetchNextPage = self.fanfic:getWorksFromAccountHistory(marked_for_later)
         if not success then
             return
@@ -683,51 +737,28 @@ function FanficMenu:onSelectAccountHistory(marked_for_later)
             fetchNextPage
         )
     end)
-    UIManager:show(InfoMessage:new({
-        text = _("Downloading works data may take some time…"),
-        timeout = 1,
-    }))
 end
 
 function FanficMenu:onOpenSettings()
-    local function checkTemplateHasID(template)
-        local result =  string.find(template, "%%I")
-        if not result then
-            return false, "Filename template must contain the works ID (%I) atleast once"
+    local function checkFilenameTemplate(template)
+        if util.trim(template) == "" then return false, "Filename template cannot be empty" end
+        if template:find('[\\/:*?"<>|]') then return false, "Filename template cannot contain path separators or reserved filename characters" end
+        if template:find("[%.%s]+$") then return false, "Filename template cannot end with a dot or whitespace" end
+        for token in template:gmatch("%%(.)") do
+            if token ~= "I" and token ~= "T" and token ~= "A" then return false, "Use %I, %T, or %A in the filename template" end
         end
-
-        if string.find(template, '[\\/:*?"<>|]') then
-            return false, "Filename template contains characters that are not allowed in filenames" .. " (\\ / : * ? \" < > |)"
-        end
-
-        if string.find(template, "[%.%s]+$") then
-            return false, "Filename template cannot end with a dot or whitespace"
-        end
-
         return true
-    end
-
-
-    function DownloadedFanfics.sortFanfics()
-        local history = DownloadedFanfics.getAll()
-
-
-        for _, fanfic_item in pairs(history) do
-            local filename = self.fanfic.GenerateFileName(fanfic_item)
-            local correct_path = Config:readSetting("fanfic_folder_path") .. "/" .. filename .. ".epub"
-            DownloadedFanfics.changePath(fanfic_item.id, correct_path, true)
-        end
-
-        DownloadedFanfics.save()
-
     end
 
     local settings_options = {
         { text = "AO3 URL",                 setting = "AO3_domain",         type = "String"},
         { text = "Show adult work warning", setting = "show_adult_warning", type = "Bool" },
-        { text = "Filename template", description = "%I = id, %T = title, %A = author",  setting = "filename_template",  type = "String", check = checkTemplateHasID},
+        { text = "Download layout", setting = "author_folders", type = "Bool", on = "Author/Title", off = "Flat (filename template)" },
+        { text = "Flat filename template", description = "%I = id, %T = title, %A = author", setting = "filename_template", type = "String", check = checkFilenameTemplate },
         { text = "Fanfic folder",   setting = "fanfic_folder_path",  type = "Folder"},
-        { text = "Re-sort file paths", call_function = DownloadedFanfics.sortFanfics, type = "Function"},
+        { text = "Organize downloaded works…", type = "Action", call_function = function()
+            require("fanfic_organizer_ui").show(self.fanfic)
+        end },
         { text = "Chapter progress format", setting = "show_current_chapter", type = "Bool", on="First Unread", off="Total Remaining"},
     }
     local function generateMenuItems()
@@ -842,49 +873,9 @@ function FanficMenu:onOpenSettings()
                         filemanagerutil.showChooseDialog(title_header, caller_callback, current_path, default_path)
                     end
                 }
-            elseif setting.type == "Function" then
-                menu_item = {
-                    text = setting.text,
-                    callback =  function ()
-                        local dialog
-                        dialog = ButtonDialog:new{
-                            title = T("Are you sure you want to run the operation '%1'?", setting.text),
-                            buttons = {
-                                {
-                                    {
-                                        text = _("Yes"),
-                                        is_enter_default = true,
-                                        callback = function()
-                                            UIManager:close(dialog)
-                                            local notice = InfoMessage:new{
-                                                text = T("Carrying out task '%1' may take some time...", setting.text);
-                                            }
-                                            UIManager:scheduleIn(1, function()
+            elseif setting.type == "Action" then
+                menu_item = { text = setting.text, callback = setting.call_function }
 
-                                                setting.call_function()
-                                                UIManager:close(notice)
-                                                UIManager:show(InfoMessage:new{
-                                                    text = T("Task '%1' complete", setting.text);
-                                                })
-                                            end)
-                                            UIManager:show(notice)
-                                        end,
-                                    },
-                                },
-                                {
-                                    {
-                                        text = _("Cancel"),
-                                        callback = function()
-                                            UIManager:close(dialog)
-                                        end,
-                                    },
-                                },
-                            },
-                        }
-
-                        UIManager:show(dialog)
-                    end
-                }
             end
             table.insert(settings_menu_items, menu_item)
         end

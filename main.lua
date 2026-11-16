@@ -1,3 +1,4 @@
+local Network = require("fanfic_network")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 local FFIUtil = require("ffi/util")
@@ -24,6 +25,8 @@ local Fanfic = WidgetContainer:extend{
 }
 
 function Fanfic:init()
+    require("fanfic_icons").install()
+    DownloadedFanfics.load() -- Reader activation needs saved chapter progress.
     if self.ui.name == "ReaderUI" then
         FanficReader:initializeFromReaderUI(self.ui)
     else
@@ -32,13 +35,51 @@ function Fanfic:init()
 
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
-    DownloadedFanfics.load() -- Load fanfic history
+    -- Optional integration is owned entirely by this plugin. Bookshelf's
+    -- existing tables are extended once, after enabled plugin paths are ready.
+    local integrated, integration_err = pcall(function()
+        require("fanfic_bookshelf_integration").install()
+    end)
+    if not integrated then logger.warn("AO3 Bookshelf integration:", integration_err) end
+    -- FileManager builds file_chooser after loading plugins. Register against
+    -- its API now, rather than waiting for a widget that does not exist yet.
+    if type(self.ui.addFileDialogButtons) == "function" then
+        self:registerWorkDetailsAction()
+    end
+end
+
+function Fanfic:onSuspend()
+    return self:onFlushSettings()
+end
+
+function Fanfic:onFlushSettings()
+    local ok, err = DownloadedFanfics.flushPending()
+    if not ok then logger.warn("Could not save pending AO3 progress:", err) end
+end
+
+function Fanfic:registerWorkDetailsAction()
+    self.ui:addFileDialogButtons("ao3_work_details", function(file, is_file)
+        if not is_file then return end
+        local epub = require("fanfic_epub").read(file)
+        if not epub then return end
+        local work = DownloadedFanfics.rememberLocal(epub)
+        return {{
+            text = _("Open AO3 work"),
+            callback = function()
+                -- Bookshelf also hosts this hook, with its book popup underneath.
+                if self.ui.file_dialog then UIManager:close(self.ui.file_dialog) end
+                -- The EPUB supplies details even without download history.
+                self:onShowFanficBrowser({ work, total = 1 }, nil,
+                    _("AO3 work details"))
+            end,
+        }}
+    end)
 end
 
 function Fanfic:addToMainMenu(menu_items)
     if self.ui.file_chooser then
         menu_items.AO3_downloader = {
-            text = "AO3 Downloader",
+            text = "AO3Lib",
             sorting_hint = "search",
             callback = function()
                 self.ui:handleEvent(Event:new("OpenAO3DownloaderMenu"))
@@ -52,7 +93,7 @@ function Fanfic:onDispatcherRegisterActions()
     Dispatcher:registerAction("AO3Downloader_openPluginMenu", {
         category = "none",
         event = "OpenAO3DownloaderMenu",
-        title = _("AO3 Downloader: open menu"),
+        title = _("AO3Lib: open menu"),
         general = true,
     })
 
@@ -85,21 +126,10 @@ function Fanfic:closeAllMenus()
 end
 
 function Fanfic.GenerateFileName(metadata)
-    local template = Config:readSetting("filename_template", "%I")
-    -- local template = "%T--%A--(%I)"
-    local function sanitize(value)
-        return util.getSafeFilename(tostring(value or ""))
-    end
-
-    local replace = {
-        ["%I"] = sanitize(metadata.id),
-        ["%T"] = sanitize(metadata.title):gsub("%s+", "_"),
-        ["%A"] = sanitize(metadata.author):gsub("%s+", "_"),
-    }
-    return sanitize((template:gsub("(%%%a)", replace)))
+    return require("fanfic_layout").filename(metadata, Config:readSetting("filename_template", "%I"))
 end
 
-function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage)
+function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
     logger.dbg("AO3Downloader.koplugin: Showing fanfic browser")
     FanficBrowser:show(
         self.ui,
@@ -123,18 +153,17 @@ function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage)
             self:showUserInfo(username, pseud)
 
         end,-- Open author user browser callback
-        self
+        self,
+        title
     )
 
 end
 
 function Fanfic:DownloadFanfic(id)
-    local NetworkMgr = require("ui/network/manager")
+    if Network.defer(function() self:DownloadFanfic(id) end) then return end
 
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected(function () self:DownloadFanfic(id) end)
-        return
-    end
+    local existing = DownloadedFanfics.checkIfStored(id)
+    if existing then self:UpdateFanfic(existing); return end
 
     -- Fetch metadata for the work
     local request_result  = AO3DownloaderClient:getWorkMetadata(id)
@@ -156,12 +185,14 @@ function Fanfic:DownloadFanfic(id)
 
     os.execute("sleep " .. math.random(1, 3))
 
-    local filename = self.GenerateFileName(request_result.work_metadata)
-    -- Download the EPUB file
-    local download_request_result = AO3DownloaderClient:downloadEpub(url, Config:readSetting("fanfic_folder_path") .. "/" .. filename .. ".epub")
+    local destination, path_err = require("fanfic_layout").destination(request_result.work_metadata, Config:readSetting("fanfic_folder_path"))
+    if not destination then UIManager:show(InfoMessage:new{text=path_err}); return end
+    local made, mkdir_err = util.makePath(destination:match("^(.*)/[^/]+$"))
+    if not made then UIManager:show(InfoMessage:new{text=tostring(mkdir_err or "Could not create the author folder")}); return end
+    local download_request_result = AO3DownloaderClient:downloadEpub(url, destination, false)
     if not download_request_result.success then
         UIManager:show(InfoMessage:new{
-            text = _("Error: failed to download and write EPUB, " .. (download_request_result.error_message or ""))
+            text = T("Error: failed to download and write EPUB: %1", download_request_result.error or "Unknown error")
         })
         return
     end
@@ -173,7 +204,7 @@ function Fanfic:DownloadFanfic(id)
         title = request_result.work_metadata.title,
         author = request_result.work_metadata.author,
         chapters = request_result.work_metadata.chapters,
-        chapter_data = request_result.work_metadata.chapterData,
+        chapter_data = request_result.work_metadata.chapterData or {},
         summary = request_result.work_metadata.summary,
         fandoms = request_result.work_metadata.fandoms,
         tags = request_result.work_metadata.tags,
@@ -218,103 +249,23 @@ function Fanfic:DownloadFanfic(id)
 end
 
 function Fanfic:UpdateFanfic(fanfic)
-    local NetworkMgr = require("ui/network/manager")
-
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected(function () self:UpdateFanfic(fanfic) end)
-        return
-    end
-
-    -- Fetch updated metadata for the work
-    local request_result  = AO3DownloaderClient:getWorkMetadata(fanfic.id)
-    if not request_result.success then
-        UIManager:show(InfoMessage:new{
-            text = T("Error: failed to fetch updated metadata: %1", request_result.error_message or "Unknown error")
-        })
-        return
-    end
-
-    -- Extract the EPUB link from the metadata
-    local url = request_result.work_metadata.epub_link
-    if not url then
-        UIManager:show(InfoMessage:new{
-            text = _("Error: EPUB link not found for this work")
-        })
-        return
-    end
-
-    os.execute("sleep " .. math.random(2, 5)) -- Random delay between 2-5 seconds
-
-    -- Re-download the EPUB file
-    local download_request_result = AO3DownloaderClient:downloadEpub(url, fanfic.path)
-    if not download_request_result.success then
-        UIManager:show(InfoMessage:new{
-            text = "Error: failed to download and write updated EPUB"
-        })
-        return
-    end
-
-
-    -- Update the metadata and file path
-    fanfic.path = fanfic.path
-    fanfic.title = request_result.work_metadata.title or fanfic.title
-    fanfic.date = request_result.work_metadata.date or fanfic.date
-    fanfic.chapters = request_result.work_metadata.chapters or fanfic.chapters
-    fanfic.author = request_result.work_metadata.author or fanfic.author
-    fanfic.fandoms = request_result.work_metadata.fandoms or fanfic.fandoms
-    fanfic.summary = request_result.work_metadata.summary or fanfic.summary
-    fanfic.tags = request_result.work_metadata.tags or fanfic.tags
-    fanfic.relationships = request_result.work_metadata.relationships or fanfic.relationships
-    fanfic.characters = request_result.work_metadata.characters or fanfic.characters
-    fanfic.warnings = request_result.work_metadata.warnings or fanfic.warnings
-    fanfic.hits = request_result.work_metadata.hits or fanfic.hits
-    fanfic.kudos = request_result.work_metadata.kudos or fanfic.kudos
-    fanfic.bookmarks = request_result.work_metadata.bookmarks or fanfic.bookmarks
-    fanfic.comments = request_result.work_metadata.comments or fanfic.comments
-    fanfic.last_accessed = os.date("%Y-%m-%d %H:%M:%S") -- Update last_accessed field
-    fanfic.rating = request_result.work_metadata.rating or fanfic.rating
-    fanfic.category = request_result.work_metadata.category or fanfic.category
-    fanfic.iswip = request_result.work_metadata.iswip or fanfic.iswip
-    fanfic.updated = request_result.work_metadata.updated or fanfic.updated
-    fanfic.published = request_result.work_metadata.published or fanfic.published
-    fanfic.wordcount = request_result.work_metadata.wordcount or fanfic.wordcount
-    fanfic.markedForLater = request_result.work_metadata.markedForLater
-    fanfic.subscriptionID = request_result.work_metadata.subscriptionID
-    fanfic.bookmarkID = request_result.work_metadata.bookmarkID
-    fanfic.bookmarkContent = request_result.work_metadata.bookmarkContent
-
-    if #fanfic.chapter_data == 0 and not (request_result.work_metadata.chapterData == 0) then
-        fanfic.read = nil
-    end
-
-    if fanfic.chapter_data then
-        for idx, chapter in pairs(fanfic.chapter_data) do
-            if request_result.work_metadata.chapterData[idx] then
-                request_result.work_metadata.chapterData[idx].read = chapter.read or false
-            end
-        end
-    end
-
-    fanfic.chapter_data = request_result.work_metadata.chapterData
-
-
-
-    DownloadedFanfics.update(fanfic)
-
-    -- Show confirmation dialog
+    if Network.defer(function() self:UpdateFanfic(fanfic) end) then return end
+    local Updates = require("fanfic_updates")
+    local ok, result = pcall(function()
+        local entry = Updates.check(fanfic)
+        if not entry.remote then return {success=false, error=entry.error} end
+        return Updates.apply(entry)
+    end)
+    if not ok and require("fanfic_background").isCancelled(result) then error(result,0) end
     UIManager:show(InfoMessage:new{
-        text = T(_("Fanfic '%1' has been updated successfully."), fanfic.title),
+        text = ok and result.success
+            and T(_("Fanfic '%1' has been updated successfully."), fanfic.title)
+            or T(_("Could not update work: %1"), tostring(ok and result.error or result)),
     })
 end
 
 function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
-    local NetworkMgr = require("ui/network/manager")
-
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false
-    end
-
+    -- Data-returning helpers run inside the caller's network-gated UI action.
     local currentPage = 1
 
     -- Define the function to fetch the next page for the selected fandom
@@ -322,10 +273,12 @@ function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
         currentPage = currentPage + 1
         local next_page_results =  AO3DownloaderClient:searchByTag(selectedFandom, sortBy, currentPage)
         if not next_page_results.success then
+            currentPage = currentPage - 1
             UIManager:show(InfoMessage:new{
                 text = T("Error: %1", next_page_results.error),
                 icon = "notice-warning",
             })
+            return {}
         end
 
         return next_page_results.result_works
@@ -347,12 +300,6 @@ function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
 end
 
 function Fanfic:getWorksFromAccountHistory(marked_for_later)
-    local NetworkMgr = require("ui/network/manager")
-
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false
-    end
 
     local currentPage = 1
 
@@ -361,10 +308,12 @@ function Fanfic:getWorksFromAccountHistory(marked_for_later)
         currentPage = currentPage + 1
         local next_page_results =  AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, currentPage)
         if not next_page_results.success then
+            currentPage = currentPage - 1
             UIManager:show(InfoMessage:new{
                 text = T("Error: %1", next_page_results.error),
                 icon = "notice-warning",
             })
+            return {}
         end
 
         return next_page_results.works
@@ -386,12 +335,6 @@ function Fanfic:getWorksFromAccountHistory(marked_for_later)
 end
 
 function Fanfic:executeSearch(parameters)
-    local NetworkMgr = require("ui/network/manager")
-
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false
-    end
 
     local currentPage = 1
 
@@ -432,11 +375,6 @@ end
 
 
 function Fanfic:searchForUsers(query)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
     local search_results = AO3DownloaderClient:searchForUsers(query)
     if not search_results.success then
         UIManager:show(InfoMessage:new{
@@ -473,6 +411,7 @@ function Fanfic:searchForUsers(query)
 end
 
 function Fanfic:showUserInfo(username, pseud)
+    if Network.defer(function() self:showUserInfo(username, pseud) end) then return end
     local AO3UserBrowser = require("AO3_user_browser")
     local request_result = AO3DownloaderClient:getUserData(username, pseud)
     if not request_result.success then
@@ -485,11 +424,6 @@ function Fanfic:showUserInfo(username, pseud)
 end
 
 function Fanfic:getUserData(username, pseud)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
     local user_data_result = AO3DownloaderClient:getUserData(username, pseud)
     if not user_data_result.success then
         UIManager:show(InfoMessage:new{
@@ -503,11 +437,6 @@ function Fanfic:getUserData(username, pseud)
 end
 
 function Fanfic:getWorksFromUserPage(username, pseud, category, fandom_id)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
     local works_result = AO3DownloaderClient:getWorksFromUserPage(username, pseud, category, fandom_id)
     if not works_result.success then
         UIManager:show(InfoMessage:new{
@@ -543,11 +472,6 @@ function Fanfic:getWorksFromUserPage(username, pseud, category, fandom_id)
 end
 
 function Fanfic:getPseudsForUser(username)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
     local pseuds_result = AO3DownloaderClient:getUserPseuds(username)
     if not pseuds_result.success then
         UIManager:show(InfoMessage:new{
@@ -561,11 +485,6 @@ function Fanfic:getPseudsForUser(username)
 end
 
 function Fanfic:getSeriesFromUserPage(username, pseud)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
 
 
     local current_page = 1
@@ -604,11 +523,6 @@ function Fanfic:getSeriesFromUserPage(username, pseud)
 end
 
 function Fanfic:getCollectionsFromUserPage(username)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
 
     local currentPage = 1
 
@@ -645,11 +559,6 @@ function Fanfic:getCollectionsFromUserPage(username)
 end
 
 function Fanfic:getWorksFromSeries(series_id)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
     local works_result = AO3DownloaderClient:getWorksFromSeries(series_id)
     if not works_result.success then
         UIManager:show(InfoMessage:new{
@@ -686,11 +595,6 @@ function Fanfic:getWorksFromSeries(series_id)
 end
 
 function Fanfic:getWorksFromCollection(collection_id)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
     local works_result = AO3DownloaderClient:getWorksFromCollection(collection_id)
     if not works_result.success then
         UIManager:show(InfoMessage:new{
@@ -727,11 +631,6 @@ function Fanfic:getWorksFromCollection(collection_id)
 end
 
 function Fanfic:searchForTags(query, type)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false, {}
-    end
     local search_results = AO3DownloaderClient:searchForTags(query, type)
     if not search_results.success then
         UIManager:show(InfoMessage:new{
@@ -743,11 +642,6 @@ function Fanfic:searchForTags(query, type)
 end
 
 function Fanfic:checkLoggedIn()
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return
-    end
     local request_result = AO3DownloaderClient:GetSessionStatus()
     if not request_result.success then
         UIManager:show(InfoMessage:new{
@@ -761,11 +655,6 @@ function Fanfic:checkLoggedIn()
 end
 
 function Fanfic:loginToAO3(username, password)
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false
-    end
 
     -- Attempt to log in using the Downloader module
     local request_result = AO3DownloaderClient:startLoggedInSession(username, password)
@@ -784,11 +673,6 @@ function Fanfic:loginToAO3(username, password)
 end
 
 function Fanfic:logoutOfAO3()
-    local NetworkMgr = require("ui/network/manager")
-    if not NetworkMgr:isConnected() then
-        NetworkMgr:runWhenConnected()
-        return false
-    end
 
     -- Attempt to log in using the Downloader module
     local request_result = AO3DownloaderClient:endLoggedInSession()

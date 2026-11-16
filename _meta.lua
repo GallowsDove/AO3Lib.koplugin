@@ -1,6 +1,6 @@
 local _ = require("gettext")
 return {
     name = "AO3Downloader",
-    fullname = _("AO3 downloader"),
-    description = _([[Browse for and download fanfiction from Archive Of Our Own]]),
+    fullname = _("AO3Lib"),
+    description = _([[Browse AO3, manage downloaded works, and track your reading.]]),
 }

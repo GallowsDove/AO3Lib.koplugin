@@ -4,11 +4,33 @@ local logger = require("logger")
 local DownloadedFanfics = require("downloaded_fanfics")
 local util = require("frontend/util")
 local Paths = require("FanficPaths")
+local lfs = require("libs/libkoreader-lfs")
 
 local config_instance = nil
 
 local function createConfig()
     local config = {}
+    local settings_path = DataStorage:getSettingsDir() .. "/fanfic.lua"
+    local cached_settings, cached_stamp
+    local function stamp()
+        local stat = lfs.attributes(settings_path)
+        return stat and table.concat({stat.size or 0, stat.modification or 0, stat.change or 0}, ":") or "missing"
+    end
+    local function settings()
+        local current_stamp = stamp()
+        if not cached_settings or current_stamp ~= cached_stamp then
+            cached_settings = require("luasettings"):open(settings_path)
+            cached_stamp = current_stamp
+        end
+        return cached_settings
+    end
+    local function copy(value)
+        return type(value) == "table" and util.tableDeepCopy(value) or value
+    end
+    local function persist(store)
+        store:flush()
+        cached_stamp = stamp()
+    end
 
     config.default_settings = {
         AO3_domain = "https://archiveofourown.org",
@@ -21,6 +43,7 @@ local function createConfig()
             "Star Wars - All Media Types",
         },
         filename_template = "%I",
+        author_folders = true,
         fanfic_folder_path = Paths.getHomeDirectory() .. "/Downloads",
         show_current_chapter = true
     }
@@ -42,13 +65,11 @@ local function createConfig()
     end
 
     function config:setDefault()
-        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
+        local store = settings()
         for setting, value in pairs(self.default_settings) do
-            settings:readSetting(setting, value)
+            if store:readSetting(setting) == nil then store:saveSetting(setting, copy(value)) end
         end
-        self.updated = true
-        self:onFlushSettings(settings)
-        settings:close()
+        persist(store)
     end
 
     function config:updateSettingsFile_1()
@@ -70,29 +91,26 @@ local function createConfig()
     end
 
     function config:readSetting(key, default)
-        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
-
-        default =  default or config.default_settings[key]
-
-        local setting = settings:readSetting(key, default)
-        self.updated = true
-        self:onFlushSettings(settings)
-        settings:close()
-        return setting
+        local value = settings():readSetting(key)
+        if value == nil then
+            if default == nil then default = self.default_settings[key] end
+            value = default
+        end
+        -- Callers edit returned tables before explicitly saving them. Keep the
+        -- cached settings isolated, as separate file reads were previously.
+        return copy(value)
     end
 
-    function config:saveSetting(key, default)
-        local settings = require("luasettings"):open(DataStorage:getSettingsDir() .. "/fanfic.lua")
-        settings:saveSetting(key, default)
-        self.updated = true
-        self:onFlushSettings(settings)
-        settings:close()
+    function config:saveSetting(key, value)
+        local store = settings()
+        store:saveSetting(key, copy(value))
+        persist(store)
     end
 
 
     function config:onFlushSettings(settings)
         if self and self.updated then
-            settings:flush()
+            persist(settings)
             self.updated = nil
         end
     end

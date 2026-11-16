@@ -1,69 +1,36 @@
-An unofficial KOReader plugin to download and read works hosted on Archive Of Our Own, mainly just a personal project since it was something I wanted so it's really messy.
-The plugins menu is found under the search tab in the top menu on the second page only while the filemanager is open.
+# AO3Lib for KOReader
 
-# Features
-- Browse and download from AO3 by either a singular tag or a detailed filter
-- Download works by their id
-- Update and delete downloaded works from the download menu
-- Open downloaded works via the plugins menu to automatically track read chapters and open works at certain chapters
-- Search for and open users profiles and download the users works, series, collections bookmarks and gifted works.
-  - Profiles can also be open from the work search results menu by tapping the author category
+An unofficial plugin for browsing, downloading, and reading works from Archive of Our Own. This fork of [IntrovertedMage's AO3 Downloader](https://github.com/IntrovertedMage/AO3Downloader.koplugin) focuses on managing a local fanfiction library and integrating with Bookshelf.
 
-# Install
-1. Download the latest AO3Downloader-(version).zip file from the [most recent release](https://github.com/IntrovertedMage/AO3Downloader.koplugin/releases/latest)
-2. Unzip the folder on your device and copy and paste the AO3Downloader.koplugin folder inside to the koreader plugins folder for your device.
-| Device 	Plugins folder
-   | Device | Plugins folder |
-   |--------|----------------|
-   | Kindle | `/mnt/us/koreader/plugins/` |
-   | Kobo | `/mnt/onboard/.adds/koreader/plugins/` |
-   | Android | `<koreader-dir>/plugins/` |
-3. Restart KOReader.
-4. Open KOReader's menu and find the plugins menu option, by default the plugins menu option will be under search (the magnifying glass).
-5. Tap the plugins menu option (AO3 Downloader) to open the plugins main menu.
+## Features
 
-- To update the plugin simply delete the old AO3Downloader.koplugin folder from the koreader plugins folder and then copy and paste and new version folder to replace it.
+- Search AO3 by tags or detailed filters, download by work ID, and browse authors, series, collections, and bookmarks.
+- Use an AO3 account for bookmarks, kudos, comments, and other account actions.
+- Discover downloaded AO3 EPUBs in the configured download folder and KOReader home folder, and browse them offline by author or fandom.
+- Download into `Author/Title` folders, or organize existing downloads while preserving reading progress and associated book data.
+- Review available updates before replacing downloaded EPUBs, with reading progress preserved.
+- Access AO3 metadata and filters from Bookshelf book details, with AO3 symbol placeholders for books without covers.
 
+AO3 works are identified from metadata inside their EPUBs, including books downloaded outside this plugin. Local reading and library browsing remain available when AO3 is offline.
 
-This plugin can also be installed and updated using the [storefront.koplugin](https://github.com/ultimatejimmy/storefront.koplugin) plugin.
+## Install
 
+1. Download this fork using [Code → Download ZIP](https://github.com/GallowsDove/AO3Lib.koplugin/archive/refs/heads/main.zip), or clone the repository.
+2. Copy the plugin into KOReader's `plugins` directory as `AO3Downloader.koplugin`, including its `assets` folder.
+3. Restart KOReader, then open **AO3Lib** from the file manager's Search menu.
 
-## Features I want to work on
-- ~~Support using a AO3 account~~ - done 
-- ~~Commenting and giving kudos to works right from the plugin~~ - done
-- ~~View all the works by a certain author~~ - done
-- Show tag bookmarks in the filter tag search menus
-- Search by tags by both tapping on them in the fanfic browser menu and tapping the tags link within the epub itself
-- Open a new search for works containing a certain tag by tapping the tags link in an open fanfic file
-- Open up a users profile by tapping on the users link in an open fanfic file
-- Improve downloaded works menu
-- View and manage series, user and works subscriptions when logged in
-- Option to use cookies as alternative login method
-- Support for collections
-- Mass download all works in series/ certain amount of works in work search results
+Keep the installed folder named `AO3Downloader.koplugin` for compatibility with existing installations.
 
-## Screenshots
-![plugin-open](example-images/plugin-open.png)
-![main-menu](example-images/main-menu.png)
-![search-mode-menu](example-images/search-mode-menu.png)
+Typical plugin locations:
 
-### Quick search
-![quick-search-menu](example-images/quick-serach-mode-menu.png)
-![fandom-tag-menu](example-images/fandom-tag-menu.png)
-![sort-by](example-images/sort-by-menu.png)
-![fanfic-browser](example-images/fanfic-browser-menu.png)
+| Device | Plugins folder |
+|--------|----------------|
+| Kindle | `/mnt/us/koreader/plugins/` |
+| Kobo | `/mnt/onboard/.adds/koreader/plugins/` |
+| Android | `<koreader-dir>/plugins/` |
 
-### Filter search
-![filter-1](example-images/filter-sample-1.png)
-![filter-2](example-images/filter-sample-2.png)
-![filter-3](example-images/filter-sample-3.png)
+To update, replace the plugin folder and restart KOReader. Bookshelf integration is optional and requires a compatible version of [Bookshelf](https://github.com/AndyHazz/bookshelf.koplugin).
 
-### Reader menu
-![interactions-menu](example-images/interactions-menu.png)
+## Credits
 
-### Downloaded works menu
-![download-menu](example-images/download-menu.png)
-
-### Profile
-![fanfic-browser-author](example-images/fanfic-browser-author.png)
-![profile](example-images/profile-menu.png)
+Original plugin by [IntrovertedMage](https://github.com/IntrovertedMage/AO3Downloader.koplugin). The missing-cover badge design is inspired by [AO3 Plus](https://github.com/gin7uro/koreader-ao3-plus), using AO3's official symbols; asset sources and license are included in [assets/ao3-icons](assets/ao3-icons).

@@ -1,3 +1,4 @@
+local Network = require("fanfic_network")
 local ButtonDialog = require("ui/widget/buttondialog")
 local InfoMessage = require("ui/widget/infomessage")
 local TextViewer = require("ui/widget/textviewer")
@@ -29,11 +30,12 @@ local function normalizeField(field)
     end
 end
 
-function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic)
+function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic, local_works)
     self.Fanfic = Fanfic
+    local browse_by_author = false
 
     local function refreshDownloadMenu()
-        local downloaded_fanfics = DownloadedFanfics.getAll()
+        local downloaded_fanfics = local_works or {}
         if next(downloaded_fanfics) == nil then
             UIManager:show(InfoMessage:new({
                 text = "No fanfics downloaded yet.",
@@ -42,57 +44,71 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
         end
 
         -- Normalize relationships, characters, and tags for each fanfic
-        for _, fanfic in pairs(downloaded_fanfics) do
+        for __, fanfic in pairs(downloaded_fanfics) do
             fanfic.relationships = normalizeField(fanfic.relationships)
             fanfic.characters = normalizeField(fanfic.characters)
             fanfic.tags = normalizeField(fanfic.tags)
         end
 
-        -- Group fanfics by fandom and track the most recent `last_accessed` timestamp
-        local fandom_groups = {}
-        local fandom_last_accessed = {}
+        -- Coauthored works appear under each credited author, just as
+        -- crossovers appear under each fandom. Count a work only once per group.
+        local groups, last_accessed = {}, {}
         for __, fanfic in pairs(downloaded_fanfics) do
-            local fandoms = fanfic.fandoms or { _("Unknown Fandom") }
-            for __, fandom in pairs(fandoms) do
-                if not fandom_groups[fandom] then
-                    fandom_groups[fandom] = {}
-                    fandom_last_accessed[fandom] = fanfic.last_accessed or "0000-00-00 00:00:00"
-                end
-                table.insert(fandom_groups[fandom], fanfic)
-                -- Update the most recent `last_accessed` timestamp for the fandom
-                if fanfic.last_accessed and fanfic.last_accessed > fandom_last_accessed[fandom] then
-                    fandom_last_accessed[fandom] = fanfic.last_accessed
-                end
+            local field = fanfic.fandoms
+            if browse_by_author then field = fanfic.author end
+            local names = normalizeField(field)
+            local seen = {}
+            for __, name in ipairs(names) do
+                name = util.trim(name)
+                if name ~= "" then seen[name] = true end
+            end
+            if next(seen) == nil then
+                seen[browse_by_author and _("Anonymous") or _("Unknown Fandom")] = true
+            end
+            for name in pairs(seen) do
+                groups[name] = groups[name] or {}
+                table.insert(groups[name], fanfic)
             end
         end
-
-        -- Sort fandoms by the most recent `last_accessed` timestamp in descending order
-        local sorted_fandoms = {}
-        for fandom, _ in pairs(fandom_groups) do
-            table.insert(sorted_fandoms, fandom)
+        for name, fanfics in pairs(groups) do
+            local latest = ""
+            for __, fanfic in ipairs(fanfics) do
+                if (fanfic.last_accessed or "") > latest then latest = fanfic.last_accessed end
+            end
+            last_accessed[name] = latest
         end
-        table.sort(sorted_fandoms, function(a, b)
-            return fandom_last_accessed[a] > fandom_last_accessed[b]
+        local sorted_groups = {}
+        for name in pairs(groups) do sorted_groups[#sorted_groups + 1] = name end
+        table.sort(sorted_groups, function(a, b)
+            if not browse_by_author and last_accessed[a] ~= last_accessed[b] then
+                return last_accessed[a] > last_accessed[b]
+            end
+            if a:lower() ~= b:lower() then return a:lower() < b:lower() end
+            return a < b
         end)
 
-        -- Create the main menu with submenus for each fandom
+        -- Create the group menu with a work list for each author or fandom
         local menu_items = {}
-        for __, fandom in pairs(sorted_fandoms) do
-            local fanfics = fandom_groups[fandom]
+        for __, group_name in ipairs(sorted_groups) do
+            local fanfics = groups[group_name]
 
-            -- Sort fanfics in each fandom by `last_accessed` in descending order
-            table.sort(fanfics, function(a, b)
-                return (a.last_accessed or "") > (b.last_accessed or "")
-            end)
-
-            -- Define the action for selecting a fandom
+            -- Define the action for selecting a group
             table.insert(menu_items, {
-                text = T("(%1) %2", #fanfics, fandom),
+                text = T("(%1) %2", #fanfics, group_name),
                 callback = function()
-                    -- Create the submenu for the selected fandom
+                    -- Only sort the group being opened. Large crossover
+                    -- libraries can contain many unopened groups.
+                    table.sort(fanfics, function(a, b)
+                        if (a.last_accessed or "") ~= (b.last_accessed or "") then
+                            return (a.last_accessed or "") > (b.last_accessed or "")
+                        end
+                        if (a.title or "") ~= (b.title or "") then return (a.title or "") < (b.title or "") end
+                        return tostring(a.id) < tostring(b.id)
+                    end)
+                    -- Create the submenu for the selected group
                     local submenu_items = {}
-                    local fandom_fanfic_count = #fanfics
-                    for __, fanfic in pairs(fanfics) do
+                    local group_fanfic_count = #fanfics
+                    for __, fanfic in ipairs(fanfics) do
                         local fanfic_read = true
                         local first_unread_chapter = nil
                         local unread_count = 0
@@ -108,11 +124,9 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                             fanfic_read = fanfic.read or false
                         end
 
-                        local chapter_count, chapter_total = fanfic.chapters:match("([^//]+)/([^//]+)")
-                        local fanfic_complete = true
-                        if string.find(fanfic.chapters, "?") or chapter_count < chapter_total then
-                            fanfic_complete = false
-                        end
+                        local chapter_count, chapter_total = (fanfic.chapters or "?/?"):match("(%d+)%s*/%s*(%d+)")
+                        local fanfic_complete = tonumber(chapter_count) and tonumber(chapter_total)
+                            and tonumber(chapter_count) >= tonumber(chapter_total) or false
 
                         local prefix = "  "
                         if fanfic_read and (not fanfic_complete) then
@@ -177,15 +191,11 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                             {
                                                 text = _("Update"),
                                                 callback = function()
-                                                    UIManager:scheduleIn(1, function()
+                                                    Network.schedule(0, function()
                                                         -- Update the fanfic
                                                         updateFanficCallback(fanfic)
                                                         UIManager:close(dialog)
                                                     end)
-                                                    UIManager:show(InfoMessage:new({
-                                                        text = _("Downloading work may take some time…"),
-                                                        timeout = 1,
-                                                    }))
                                                 end,
                                                 UIManager:close(dialog),
                                             },
@@ -262,13 +272,11 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                                 {
                                                                     text = _("Delete"),
                                                                     callback = function()
-                                                                        -- Remove the fanfic from the list
                                                                         local file_path = fanfic.path
-                                                                        DownloadedFanfics.delete(fanfic.id)
-
-                                                                        -- Delete the file
                                                                         local success, err = util.removeFile(file_path)
                                                                         if success then
+                                                                            DownloadedFanfics.delete(fanfic.id)
+                                                                            local_works[tostring(fanfic.id)] = nil
                                                                             UIManager:show(
                                                                                 InfoMessage:new({
                                                                                     text = T(
@@ -283,13 +291,15 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                                                 InfoMessage:new({
                                                                                     text = T(
                                                                                         _(
-                                                                                            "Failed to delete file for '%1': %2, record has still been removed"
+                                                                                            "Failed to delete file for '%1': %2"
                                                                                         ),
                                                                                         fanfic.title,
                                                                                         err
                                                                                     ),
                                                                                 })
                                                                             )
+                                                                            UIManager:close(confirmDialog)
+                                                                            return
                                                                         end
                                                                         for i, menu_item in pairs(parentMenu.item_table) do
                                                                             if tostring(menu_item.id) == tostring(fanfic.id) then
@@ -299,8 +309,8 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                                                         parentMenu:updateItems()
                                                                         local new_download_menu_items = refreshDownloadMenu()
                                                                         parentMenu:updateMenuBack(1, nil, new_download_menu_items, nil)
-                                                                        fandom_fanfic_count = fandom_fanfic_count - 1
-                                                                        if fandom_fanfic_count == 0 then
+                                                                        group_fanfic_count = group_fanfic_count - 1
+                                                                        if group_fanfic_count == 0 then
                                                                             parentMenu:onReturn()
                                                                             if not new_download_menu_items or #new_download_menu_items == 0 then
                                                                                 parentMenu:onReturn()
@@ -332,12 +342,12 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                     end
 
                     -- Use GoDownInMenu to navigate into the submenu
-                    parentMenu:GoDownInMenu(T(_("Fanfics in '%1'"), fandom), submenu_items)
+                    parentMenu:GoDownInMenu(T(browse_by_author and _("Works by %1") or _("Fanfics in '%1'"), group_name), submenu_items)
                 end,
                 hold_callback = function()
-                    -- Show a notification with the full fandom name
+                    -- Show a notification with the full group name
                     UIManager:show(InfoMessage:new({
-                        text = T("%1", fandom),
+                        text = T("%1", group_name),
                     }))
                 end,
             })
@@ -351,7 +361,18 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
         return
     end
     -- Create and show the main menu
-    parentMenu:GoDownInMenu("Downloaded Works by Fandom", download_menu_items)
+    parentMenu:GoDownInMenu(_("Downloaded Works"), {
+        {text = _("By fandom"), callback = function()
+            browse_by_author = false
+            local items = refreshDownloadMenu()
+            if items then parentMenu:GoDownInMenu(_("Downloaded Works by Fandom"), items) end
+        end},
+        {text = _("By author"), callback = function()
+            browse_by_author = true
+            local items = refreshDownloadMenu()
+            if items then parentMenu:GoDownInMenu(_("Downloaded Works by Author"), items) end
+        end},
+    })
 end
 
 function DownloadedFanficsMenu:showFanficChapterSelect(ui, fanfic, parentMenu)

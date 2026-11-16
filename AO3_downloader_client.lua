@@ -1,11 +1,10 @@
 
 local logger = require("logger")
-local socketutil = require("socketutil")
 local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local Config = require("fanfic_config")
 local util = require("util")
-local https = require("ssl.https") -- Use luasec for HTTPS requests
+local ltn12 = require("ltn12")
 local htmlparser = require("htmlparser")
 htmlparser_looplimit = 1000000000
 
@@ -114,7 +113,7 @@ function AO3DownloaderClient:requestAO3Token()
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to request AO3 token. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to request AO3 token. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -130,7 +129,7 @@ function AO3DownloaderClient:requestAO3Token()
         }
     end
 
-    if token_data and token_data.token then
+    if type(token_data) == "table" and type(token_data.token) == "string" and token_data.token ~= "" then
         return {
             success = true,
             token = token_data.token,
@@ -159,7 +158,7 @@ function AO3DownloaderClient:startLoggedInSession(username, password)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to access AO3 homepage. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to access AO3 homepage. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -198,11 +197,11 @@ function AO3DownloaderClient:startLoggedInSession(username, password)
     if not request_result.success or request_result.status ~= 302 then
         return {
             success = false,
-            error = T("Login failed. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Login failed. Status: %1", request_result.status or "unknown error"),
         }
     end
 
-    local redirect_url = request_result.response_headers["location"] or homepage_url
+    local redirect_url = require("socket.url").absolute(homepage_url, request_result.response_headers["location"] or homepage_url)
 
     response_body = {}
     local request = {
@@ -216,7 +215,7 @@ function AO3DownloaderClient:startLoggedInSession(username, password)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to complete login redirect. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to complete login redirect. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -271,11 +270,11 @@ function AO3DownloaderClient:endLoggedInSession()
     if not request_result.success or request_result.status ~= 302 then
         return {
             success = false,
-            error = T("Failed to perform logout request. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to perform logout request. Status: %1", request_result.status or "unknown error"),
         }
     end
 
-    local redirect_url = request_result.response_headers["location"] or getAO3URL()
+    local redirect_url = require("socket.url").absolute(getAO3URL(), request_result.response_headers["location"] or getAO3URL())
     response_body = {}
 
     local request = {
@@ -288,7 +287,7 @@ function AO3DownloaderClient:endLoggedInSession()
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to complete logout redirect. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to complete logout redirect. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -321,13 +320,16 @@ function AO3DownloaderClient:GetSessionStatus()
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to access AO3 homepage. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to access AO3 homepage. Status: %1", request_result.status or "unknown error"),
         }
     end
 
     local body_content = table.concat(response_body)
     local root = htmlparser.parse(body_content)
 
+    if not root:select("#main")[1] then
+        return { success = false, error = "AO3 returned an unexpected session page. Please try again later." }
+    end
     local is_logged_in = #root:select('body.logged-in') > 0
 
     if is_logged_in then
@@ -388,7 +390,9 @@ function AO3DownloaderClient:getWorkMetadata(work_id)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch work metadata. Status: %1", request_result.status or "unknown error");
+            error = request_result.error or T("Failed to fetch work metadata. Status: %1", request_result.status or "unknown error");
+            status = request_result.status, retry_later = request_result.retry_later,
+            response_headers = request_result.response_headers,
         }
     end
 
@@ -405,45 +409,75 @@ function AO3DownloaderClient:getWorkMetadata(work_id)
 
 end
 
-function AO3DownloaderClient:downloadEpub(download_link, filepath)
-    logger.dbg("AO3Downloader.koplugin: Downloading EPUB from link: " .. tostring(download_link) .. " to filepath: " .. tostring(filepath))
-    if not download_link or not download_link:match("^https?://") then
-        return {
-            success = false,
-            error = T("Invalid or missing URL for EPUB download: %1", tostring(download_link)),
-        }
+function AO3DownloaderClient:downloadEpub(download_link, filepath, allow_replace, before_commit, staging)
+    if type(download_link) ~= "string" or not download_link:match("^https?://") then
+        return { success = false, error = "Invalid or missing EPUB download URL." }
     end
-
-    local file, err = io.open(filepath, "w")
-    if err then
-        return {
-            success = false,
-            error = T("Failed to open file for writing. Error: %1", tostring(err)),
-        }
+    local function occupied()
+        if allow_replace ~= false then return false end
+        local lfs = require("libs/libkoreader-lfs")
+        return (lfs.symlinkattributes or lfs.attributes)(filepath, "mode") ~= nil
     end
-
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Accept"] = "application/epub+zip"
-
+    if occupied() then return {success=false, error="The destination is already occupied. Please retry the download to choose a new filename."} end
+    -- Write beside the destination, then rename only a complete ZIP download.
+    -- A 503 page or interrupted update must never truncate an existing book.
+    local token = os.tmpname()
+    os.remove(token)
+    local partial = staging or (filepath .. ".ao3-" .. token:match("([^/]+)$") .. ".part")
+    local file, err = io.open(partial, "wb")
+    if not file then return { success = false, error = "Could not create EPUB download: " .. tostring(err) } end
     local request = {
-        url = download_link,
-        headers = headers,
-        sink = socketutil.file_sink(file),
+        url = download_link, stream = true,
+        headers = { ["Accept"] = "application/epub+zip" },
+        sink = function(chunk) return file:write(chunk) end,
+        reset_sink = function()
+            file:close()
+            file = assert(io.open(partial, "wb"))
+        end,
     }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = T("Failed to download EPUB. Status: %1", request_result.status or "unknown error"),
-        }
+    local ok, result = pcall(HTTPQueryHandler.performHTTPRequest, HTTPQueryHandler, request)
+    local close_ok, closed, close_err = pcall(file.close, file)
+    if not ok or not result.success or not close_ok or not closed then
+        os.remove(partial)
+        return { success = false, error = ok and (result.error or tostring(close_err)) or "EPUB download failed. Please try again later.",
+            status = ok and result.status or nil, retry_later = not ok or result.retry_later,
+            response_headers = ok and result.response_headers or nil }
     end
-
-    return {
-        success = true,
-        filepath = filepath,
-    }
+    local check = io.open(partial, "rb")
+    local signature = check and check:read(4)
+    if check then check:close() end
+    local reader
+    local valid, is_epub = pcall(function()
+        if signature ~= "PK\003\004" then return false end
+        reader = require("ffi/archiver").Reader:new()
+        if not reader:open(partial) then return false end
+        for _ in reader:iterate() do end
+        return reader.entries["META-INF/container.xml"] and reader.entries.mimetype
+            and reader:extractToMemory("mimetype") == "application/epub+zip"
+    end)
+    if reader then pcall(function() reader:close() end) end
+    if not valid or not is_epub then
+        os.remove(partial)
+        return { success = false, retry_later = true, error = "AO3 did not return an EPUB file. It may be unavailable or require login. Please try again later." }
+    end
+    if staging then return {success=true,staged=partial} end
+    if occupied() then
+        os.remove(partial)
+        return {success=false, error="The destination became occupied during the download. Please retry to choose a new filename."}
+    end
+    if before_commit then
+        local checked, allowed, reason = pcall(before_commit)
+        if not checked or not allowed then
+            os.remove(partial)
+            return {success=false, error=checked and (reason or "The book changed during download.") or tostring(allowed)}
+        end
+    end
+    local renamed, rename_err = os.rename(partial, filepath)
+    if not renamed then
+        os.remove(partial)
+        return { success = false, error = "Could not save EPUB: " .. tostring(rename_err) }
+    end
+    return { success = true, filepath = filepath }
 end
 
 function AO3DownloaderClient:searchByParameters(parameters, page_no)
@@ -483,7 +517,7 @@ function AO3DownloaderClient:searchByParameters(parameters, page_no)
     if not response_result.success then
         return {
             success = false,
-            error = T("%1/works?commit=Sort+and+Filter&%2", getAO3URL(), queryString)
+            error = response_result.error or "AO3 search request failed."
         }
     end
 
@@ -525,7 +559,7 @@ function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
     if not request_result.success then
         return {
             success = false,
-            error = T("Search request failed. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Search request failed. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -573,7 +607,7 @@ function AO3DownloaderClient:searchForTags(search_query, tag_type)
     if not request_result.success then
         return {
             success = false,
-            error = T("HTTP tag search request failed. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("HTTP tag search request failed. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -608,7 +642,7 @@ function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch series works. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch series works. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -641,7 +675,7 @@ function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch collection works. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch collection works. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -698,7 +732,7 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch user works. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch user works. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -771,7 +805,7 @@ function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_n
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch account history. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch account history. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -807,7 +841,7 @@ function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch user series. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch user series. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -840,7 +874,7 @@ function AO3DownloaderClient:getUserCollections(username, page_no)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch user collections. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch user collections. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -878,7 +912,7 @@ function AO3DownloaderClient:getUserData(username, pseud)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch user data. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch user data. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -918,7 +952,7 @@ function AO3DownloaderClient:getUserPseuds(username)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch user pseuds. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch user pseuds. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -954,7 +988,7 @@ function AO3DownloaderClient:getAccountPseudID(username)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch accound pseud ID. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch accound pseud ID. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -1008,7 +1042,7 @@ function AO3DownloaderClient:searchForUsers(search_query, page_no)
     if not request_result.success then
         return {
             success = false,
-            error = T("HTTP user search request failed. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("HTTP user search request failed. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -1058,7 +1092,7 @@ function AO3DownloaderClient:searchForCollections(search_query)
     if not request_result.success then
         return {
             success = false,
-            error = T("HTTP collection search request failed. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("HTTP collection search request failed. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -1066,7 +1100,7 @@ function AO3DownloaderClient:searchForCollections(search_query)
     local json = require("dkjson")
     local success, collection_results = pcall(json.decode, results)
 
-    if not success then
+    if not success or type(collection_results) ~= "table" then
         return {
             success = false,
             error = T("Failed to parse collection search results."),
@@ -1132,7 +1166,7 @@ function AO3DownloaderClient:kudosWork(work_id)
 
     local request_result = HTTPQueryHandler:performHTTPRequest(request)
 
-    if request_result.status == 201 then
+    if request_result.success and request_result.status == 201 then
         return {
             success = true,
         }
@@ -1147,7 +1181,7 @@ function AO3DownloaderClient:kudosWork(work_id)
 
     return {
         success = false,
-        error = T("Failed to kudos work. Status: %1", request_result.status or "unknown error"),
+        error = request_result.error or T("Failed to kudos work. Status: %1", request_result.status or "unknown error"),
     }
 end
 
@@ -1201,7 +1235,7 @@ function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to fetch comment comment form. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to fetch comment comment form. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -1210,8 +1244,10 @@ function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
     local html_root = htmlparser.parse(body)
 
     local form = html_root:select("#comment_for_" .. (chapter_id or work_id))[1]
-    local authenticity_token = form and form:select("[name='authenticity_token']")[1].attributes["value"]
-    local pseud_id = form and form:select("[name='comment[pseud_id]']")[1].attributes["value"]
+    local token_field = form and form:select("[name='authenticity_token']")[1]
+    local pseud_field = form and form:select("[name='comment[pseud_id]']")[1]
+    local authenticity_token = token_field and token_field.attributes and token_field.attributes.value
+    local pseud_id = pseud_field and pseud_field.attributes and pseud_field.attributes.value
 
     if not authenticity_token or not pseud_id then
         return {
@@ -1253,7 +1289,7 @@ function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
     if not request_result.success then
         return {
             success = false,
-            error = T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
+            error = request_result.error or T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
         }
     end
 
@@ -1265,7 +1301,7 @@ function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
 
     return {
         success = false;
-        error = T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
+        error = request_result.error or T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
     }
 end
 
@@ -1321,7 +1357,7 @@ function AO3DownloaderClient:markForLaterWork(work_id, later_or_read)
 
     local request_result = HTTPQueryHandler:performHTTPRequest(request)
 
-    if request_result.status == 302 then
+    if request_result.success and request_result.status == 302 then
         return {
             success = true,
         }
@@ -1329,7 +1365,7 @@ function AO3DownloaderClient:markForLaterWork(work_id, later_or_read)
 
     return {
         success = false,
-        error = T("Failed to mark work. Status: %1", request_result.status or "unknown error"),
+        error = request_result.error or T("Failed to mark work. Status: %1", request_result.status or "unknown error"),
     }
 end
 
@@ -1414,11 +1450,11 @@ function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
 
     local response_text = table.concat(response_body)
 
-    if result.status == 201 then
+    if result.success and result.status == 201 then
         local json = require("dkjson")
         local decoded, _, err = json.decode(response_text)
 
-        if decoded then
+        if type(decoded) == "table" and (type(decoded.item_id) == "number" or type(decoded.item_id) == "string") then
             return {
                 success = true,
                 subscription_id = tostring(decoded.item_id),
@@ -1426,10 +1462,11 @@ function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
         end
 
         return {
-            success = true,
+            success = false,
+            error = "AO3 returned an invalid subscription response. Please check the subscription before trying again.",
         }
     end
-    if result.status == 302 or result.status == 200 then
+    if result.success and (result.status == 302 or result.status == 200) then
         return {
             success = true
         }
@@ -1437,7 +1474,7 @@ function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
 
     return {
         success = false,
-        error = T("Failed to update subscription. Status: %1", result.status or "unknown error"),
+        error = result.error or T("Failed to update subscription. Status: %1", result.status or "unknown error"),
     }
 end
 
@@ -1474,7 +1511,7 @@ function AO3DownloaderClient:getUsersWorkBookmark(work_id)
     if not result.success then
         return {
             success = false,
-            error = T("Failed to fetch bookmark. Status: %1", result.status or "unknown error"),
+            error = result.error or T("Failed to fetch bookmark. Status: %1", result.status or "unknown error"),
         }
     end
 
@@ -1483,7 +1520,7 @@ function AO3DownloaderClient:getUsersWorkBookmark(work_id)
 
 
     local bookmark_trigger_button = root:select("a.bookmark_form_trigger_for_" .. work_id)[1]
-    if not bookmark_trigger_button  and bookmark_trigger_button:getcontent() ~= "Edit Bookmark" then
+    if not bookmark_trigger_button or not bookmark_trigger_button.attributes or not bookmark_trigger_button.attributes.href then
         return {
             success = false,
             error = T("Bookmark not found from this user for work ID: %1", work_id),
@@ -1491,6 +1528,7 @@ function AO3DownloaderClient:getUsersWorkBookmark(work_id)
     end
 
     local bookmark_form_url = T("%1%2", getAO3URL(), bookmark_trigger_button.attributes["href"])
+    response_body = {}
 
     local request = {
         url = bookmark_form_url,
@@ -1503,7 +1541,7 @@ function AO3DownloaderClient:getUsersWorkBookmark(work_id)
     if not result.success then
         return {
             success = false,
-            error = T("Failed to fetch bookmark form. Status: %1", result.status or "unknown error"),
+            error = result.error or T("Failed to fetch bookmark form. Status: %1", result.status or "unknown error"),
         }
     end
 
@@ -1598,12 +1636,14 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
 
     local result = HTTPQueryHandler:performHTTPRequest(request)
 
-    if result.status == 302 or result.status == 200 then
+    if result.success and (result.status == 302 or result.status == 200) then
         local body_content = table.concat(response_body)
         local root = htmlparser.parse(body_content)
 
-        if (root:select("div.#error") and #root:select("div.#error") > 0) then
-            local error_message = root:select("div.#error")[1]:getcontent()
+        local errors = root:select("#error")
+        if #errors == 0 then errors = root:select("div.error") end
+        if #errors > 0 then
+            local error_message = errors[1]:getcontent()
             -- remove htmml tags from error message and convert code points eg &#39; to characters
             error_message = error_message:gsub("<[^>]+>", "")
             error_message = encodeHelper:unescapeText(error_message)
@@ -1616,13 +1656,13 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
 
         return {
             success = true,
-            bookmark_id = result.response_headers and result.response_headers["location"]:match("/bookmarks/(%d+)")
+            bookmark_id = result.response_headers and result.response_headers["location"] and result.response_headers["location"]:match("/bookmarks/(%d+)")
         }
     end
 
     return {
         success = false,
-        error = T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
+        error = result.error or T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
     }
 end
 
@@ -1678,7 +1718,7 @@ function AO3DownloaderClient:deleteBookmark(bookmark_id)
 
     local result = HTTPQueryHandler:performHTTPRequest(request)
 
-    if result.status == 302 then
+    if result.success and result.status == 302 then
         return {
             success = true,
         }
@@ -1686,7 +1726,7 @@ function AO3DownloaderClient:deleteBookmark(bookmark_id)
 
     return {
         success = false,
-        error = T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
+        error = result.error or T("Failed to update bookmark. Status: %1", result.status or "unknown error"),
     }
 end
 
@@ -1966,6 +2006,32 @@ function AO3WebParser:parseAccountHistory(root)
     return works
 end
 
+-- AO3 lists each membership separately: a work can belong to several series.
+function AO3WebParser:parseWorkSeries(root)
+    local rows=root:select("ul.series > li")
+    local positions=root:select("dd.series .position")
+    if #positions==0 then positions=root:select("dd.series") end
+    local out,seen={},{}
+    local function collect(items)
+        for _,row in ipairs(items) do
+            local plain=encodeHelper:parseFromHTML(row:getcontent())
+            local position=plain:match("^%s*Part%s+([%d%.]+)%s+of%s")
+            for _,link in ipairs(row:select("a")) do
+                local id=(link.attributes.href or ""):match("/series/(%d+)")
+                if id and not seen[id] then
+                    local title=encodeHelper:parseFromHTML(link:getcontent())
+                    if title~="" then
+                        seen[id]=true
+                        out[#out+1]={id=tonumber(id),title=title,position=position}
+                    end
+                end
+            end
+        end
+    end
+    collect(rows);collect(positions)
+    return out
+end
+
 function AO3WebParser:parseWorkElement(element)
     local titleElement = element:select("h4.heading > a")[1] or element:select("h4.heading")[1]
     local restrictedElement = element:select("img[title='Restricted']")[1]
@@ -2108,6 +2174,7 @@ function AO3WebParser:parseWorkElement(element)
             link = getAO3URL() .. href,
             author = author,
             gifted_to = gifted_to,
+            series = self:parseWorkSeries(element),
             summary = summary,
             tags = tags,
             relationships = relationships or {},
@@ -2347,6 +2414,7 @@ function AO3WebParser:parseWorkPage(root)
         author = author,
         gifted_to = gifted_to,
         chapterData = chapterData,
+        series = self:parseWorkSeries(root),
         summary = summary,
         tags = #tags > 0 and table.concat(tags, ", ") or "No tags available",
         relationships = relationships or {},
@@ -2450,7 +2518,7 @@ function AO3WebParser:parseUserPage(root)
         -- Handle skipping the "My Bookmarks" element that appears in the header if the user is logged in
         if not total_bookmarks then
             total_bookmarks_element = root:select(total_bookmarks_search)[2]
-            total_bookmarks_text = total_bookmarks_element:getcontent()
+            total_bookmarks_text = total_bookmarks_element and total_bookmarks_element:getcontent() or ""
             total_bookmarks = total_bookmarks_text:match("Bookmarks%s*%((%d+)%)")
         end
 
@@ -2712,10 +2780,12 @@ local function parseSetCookie(set_cookie_value)
 end
 
 function HTTPQueryHandler:saveCookiesToConfig()
+    if self.in_worker then self.cookies_dirty=true;return end
     Config:saveSetting("cookies", self.cookies)
 end
 
 function HTTPQueryHandler:loadCookiesFromConfig()
+    if self.in_worker then return end
     local savedCookies = Config:readSetting("cookies")
     if savedCookies then
         self.cookies = savedCookies
@@ -2726,11 +2796,7 @@ function HTTPQueryHandler:getCookies(custom_cookies, url)
     self:loadCookiesFromConfig()
     local cookieHeader = {}
     local request_domain = url:match("^(https?://[^/]+)")
-    local cookies_for_this_domain = self.cookies[request_domain];
-
-    if cookies_for_this_domain == nil then
-        return "";
-    end
+    local cookies_for_this_domain = self.cookies[request_domain] or {}
 
     for __, cookie in pairs(cookies_for_this_domain) do
         table.insert(cookieHeader, T("%1=%2", cookie.name, cookie.value))
@@ -2774,62 +2840,99 @@ function HTTPQueryHandler.get_default_headers()
 end
 
 function HTTPQueryHandler:performHTTPRequest(request, retries)
-    local max_retries = retries or 3;
+    return require("fanfic_http").request(request, self, retries)
+end
 
-    local response, status, response_headers
-
-    request.headers = request.headers or self.get_default_headers()
-    request.headers["Cookie"] = HTTPQueryHandler:getCookies(request.cookies, request.url);
-
-
-
-    logger.dbg("AO3Downloader.koplugin: Peforming HTTP request to :" .. request.url);
-
-
-
-    for i = 1, max_retries do
-        logger.dbg("AO3Downloader.koplugin: Attempt " .. (i) .. " for URL: " .. request.url)
-        socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
-        response, status, response_headers = https.request({
-            url = request.url,
-            method = request.method or "GET",
-            headers = request.headers,
-            sink = request.sink,
-            source = request.source,
-            protocol = "tlsv1_3",
-            options = "all",
-        })
-
-        -- Parse cookies from set_cookie
-        if response_headers then
-            HTTPQueryHandler:setCookies(response_headers, request.url)
-        end
-
-        -- deal out redirects
-        if status == 301 and response_headers["location"] then
-            local new_url = response_headers["location"]
-            logger.dbg("AO3Downloader.koplugin: Redirecting to new URL: " .. new_url)
-            request.url = new_url -- Update the request URL
-            return self:performHTTPRequest(request, retries) -- Recursive call for the new URL
-        elseif response == 1 then
-            socketutil:reset_timeout()
-            return {
-                success = true,
-                response = response,
-                response_headers = response_headers,
-                status = status,
-            }
-        end
-
+local page_parsers = {
+    parseWorkSearchResults = "#main", parseUserBookmarks = "#main",
+    parseUserSeriesPage = "#main", parseUserCollectionsPage = "#main",
+    parseAccountHistory = "#main", parseTagSearchResults = "#main",
+    parseWorkPage = "#workskin .title", parseUserPage = "div.primary > h2.heading",
+    parseUserPseuds = "#main", parseAccountPseudID = "#main", parseUserSearchResults = "#main",
+}
+for name, selector in pairs(page_parsers) do
+    local parse = AO3WebParser[name]
+    AO3WebParser[name] = function(self, root)
+        if not root or not root:select(selector)[1] then error("Unexpected AO3 page layout") end
+        return parse(self, root)
     end
+end
 
-    logger.dbg("AO3Downloader.koplugin: Request failed after " .. max_retries .. " attempts. Status: " .. tostring(status))
-    return {
-        success = false,
-        response = response,
-        response_headers = response_headers,
-        status = status,
-    }
+local payloads = {
+    getUserData = "user_data", getWorkMetadata = "work_metadata", searchByParameters = "works",
+    searchByTag = "result_works", searchForTags = "result_tags", getWorksFromSeries = "works",
+    getWorksFromCollection = "works", getWorksFromUserPage = "works", getWorksFromAccountHistory = "works",
+    getUserSeries = "series", getUserCollections = "collections", getUserPseuds = "pseuds",
+    searchForUsers = "result_users", searchForCollections = "collections", getUsersWorkBookmark = "bookmark_data",
+}
+
+-- Every public operation has the same failure contract, including malformed
+-- HTML/JSON, changed selectors, and network-library exceptions. Never let an
+-- unexpected server response unwind KOReader's event loop.
+for name, operation in pairs(AO3DownloaderClient) do
+    AO3DownloaderClient[name] = function(...)
+        local Background = require("fanfic_background")
+        if not HTTPQueryHandler.in_worker and Background.available() then
+            assert(coroutine.running(), "AO3 request requires a network continuation")
+            local args={n=select("#",...),...}
+            local staged
+            if name=="downloadEpub" then
+                local token=os.tmpname();os.remove(token)
+                staged=args[3]..".ao3-"..token:match("([^/]+)$")..".part"
+            end
+            local cookies=Config:readSetting("cookies",{})
+            local packet,err=Background.await(function()
+                HTTPQueryHandler.in_worker=true
+                HTTPQueryHandler.cookies=cookies
+                local result
+                if staged then result=operation(args[1],args[2],args[3],args[4],nil,staged)
+                else result=operation(unpack(args,1,args.n)) end
+                return {result=result,cookies=HTTPQueryHandler.cookies_dirty and HTTPQueryHandler.cookies or nil}
+            end,{
+                text=(name:match("^get") or name:match("^search") or name=="GetSessionStatus" or staged)
+                    and "Loading from AO3…\n\nTap or press Back to cancel."
+                    or "Contacting AO3…\n\nTap or press Back to stop waiting. An account action may already have completed; check before trying again.",
+                cleanup=staged and function() os.remove(staged) end or nil,
+            })
+            if not packet then return {success=false,unexpected_response=true,error=err or "AO3 request failed."} end
+            if packet.cookies then
+                HTTPQueryHandler.cookies=packet.cookies
+                Config:saveSetting("cookies",packet.cookies)
+            end
+            local result=packet.result
+            if staged and result and result.success then
+                local allowed,reason=true
+                if args[4]==false then
+                    local lfs=require("libs/libkoreader-lfs")
+                    allowed=not (lfs.symlinkattributes or lfs.attributes)(args[3],"mode")
+                    reason="The destination became occupied during download."
+                end
+                if allowed and args[5] then
+                    local checked,ok,why=pcall(args[5])
+                    allowed=checked and ok;reason=checked and why or tostring(ok)
+                end
+                if not allowed then os.remove(staged);return {success=false,error=reason or "The book changed during download."} end
+                local renamed,why=os.rename(staged,args[3])
+                if not renamed then return {success=false,error="Could not save EPUB: "..tostring(why)} end
+                result={success=true,filepath=args[3]}
+            end
+            if type(result)~="table" then return {success=false,error="AO3 returned an unexpected response."} end
+            local payload=payloads[name]
+            if result.success and payload and type(result[payload])~="table" then
+                return {success=false,unexpected_response=true,error="AO3 returned incomplete data."}
+            end
+            return result
+        end
+        local ok, result = pcall(operation, ...)
+        local payload = payloads[name]
+        if not ok or type(result) ~= "table"
+                or (result.success and payload and type(result[payload]) ~= "table") then
+            logger.warn("AO3Downloader: operation failed", name, ok and "invalid result" or tostring(result))
+            return { success = false, unexpected_response = true, error = "AO3 returned an unexpected response. The site may be unavailable or its page format may have changed. Please try again later." }
+        end
+        if not result.success and type(result.error) ~= "string" then result.error = "AO3 request failed. Please try again later." end
+        return result
+    end
 end
 
 return AO3DownloaderClient

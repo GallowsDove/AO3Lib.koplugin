@@ -1,3 +1,4 @@
+local Network = require("fanfic_network")
 local Device = require("device")
 local InputDialog = require("ui/widget/inputdialog")
 local TextBoxWidget = require("ui/widget/textboxwidget")
@@ -79,14 +80,14 @@ function FanficBookmarkDialog:init()
         text = self.current_fanfic.bookmarkID and "Update" or "Create",
         id = "save",
         is_enter_default = true,
-        callback = function()
+        callback = Network.wrap(function()
             if self.save_bookmark_callback then
                 local result = self.save_bookmark_callback()
                 if result then
                     self.close_widget_callback()
                 end
             end
-        end
+        end)
     })
 
     if self.current_fanfic.bookmarkID then
@@ -101,7 +102,7 @@ function FanficBookmarkDialog:init()
                         {
                             text = "Yes",
                             is_enter_default = true,
-                            callback = function()
+                            callback = Network.wrap(function()
                                 if self.delete_bookmark_callback then
                                     local result = self.delete_bookmark_callback()
                                     if result then
@@ -109,7 +110,7 @@ function FanficBookmarkDialog:init()
                                     end
                                 end
                                 UIManager:close(confirmDialog)
-                            end
+                            end)
                         },
                         {
                             text = "No",
@@ -289,7 +290,7 @@ function FanficBookmarkDialog:collectionSearchWidget()
                 {
                     text = _("Search"),
                     is_enter_default = true,
-                    callback = function()
+                    callback = Network.wrap(function()
                         local value = inputDialog:getInputText()
                         if value == "" then
                             return
@@ -305,7 +306,7 @@ function FanficBookmarkDialog:collectionSearchWidget()
                             inputDialog:onCloseKeyboard()
                             UIManager:close(inputDialog)
                         end
-                    end,
+                    end),
                 },
             },
         },

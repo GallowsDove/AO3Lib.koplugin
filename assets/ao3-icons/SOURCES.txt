@@ -1,0 +1,16 @@
+AO3 work symbols
+
+These PNGs originate in the Archive of Our Own (otwarchive) default_large
+icon set, copyright the Organization for Transformative Works and contributors:
+https://github.com/otwcode/otwarchive/tree/master/public/images/skins/iconsets/default_large
+
+Distributed under GPL-2.0-or-later, as documented by AO3 Plus. The GNU GPL v2
+license text from otwarchive is included in COPYING.
+
+Asset distribution and inspiration for using the four-square symbols in
+KOReader's missing-cover slots: AO3 Plus by gin7uro (7inkgo).
+https://github.com/gin7uro/koreader-ao3-plus
+
+The placeholder integration in fanfic_bookshelf_badges.lua is independently
+implemented using Bookshelf's public placeholder API and AO3 Downloader's
+EPUB metadata reader. No AO3 Plus patch code is included.

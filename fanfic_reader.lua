@@ -1,3 +1,4 @@
+local Network = require("fanfic_network")
 -- Based upon code found in rakuyomi.koplugin maintained by hanatsumi , https://github.com/hanatsumi/rakuyomi
 local ReaderUI = require("apps/reader/readerui")
 local UIManager = require("ui/uimanager")
@@ -25,24 +26,39 @@ local FanficReader = {
 }
 
 function FanficReader:show(options)
-    self.current_fanfic = options.current_fanfic
-
-    if self.is_showing then
-        -- if we're showing, just switch the document
-        ReaderUI.instance:switchDocument(options.fanfic_path)
+    -- ReaderUI initialization verifies the EPUB and owns activation. Set the
+    -- requested chapter before opening: ReaderReady may run synchronously.
+    local pending = {path=options.fanfic_path, chapter=options.chapter_opening_at}
+    self._pending_open = pending
+    local instance = ReaderUI.instance
+    if instance and instance.document then
+        instance:switchDocument(options.fanfic_path)
     else
-        -- took this from opds reader
-        local Event = require("ui/event")
         UIManager:broadcastEvent(Event:new("SetupShowReader"))
-
         ReaderUI:showReader(options.fanfic_path)
     end
+    -- A failed open must not leave a chapter jump armed for a later open.
+    if self._pending_open == pending then self._pending_open = nil end
+end
 
-    self.chapter_opening_at = options.chapter_opening_at
-    self.is_showing = true
+function FanficReader:isActiveReader(ui)
+    return self.is_showing and ui and self._reader_ui == ui and ui.document
+        and self.current_fanfic and ui.document.file == self.current_fanfic.path
 end
 
 function FanficReader:addToMainMenu(menu_items)
+    if not self.current_fanfic then return end
+    menu_items.AO3_formatting = {
+        text = "AO3 formatting", sorting_hint = "main",
+        sub_item_table = {
+            {text="Clean up formatting", keep_menu_open=false, callback=function()
+                require("fanfic_cleanup_reader").clean(self, self._reader_ui)
+            end},
+            {text="Revert formatting cleanup", keep_menu_open=false, callback=function()
+                require("fanfic_cleanup_reader").revert(self, self._reader_ui)
+            end},
+        },
+    }
     local function showCommentDialog(chapter_index)
         local chapter = self.current_fanfic.chapter_data and self.current_fanfic.chapter_data[chapter_index]
         local chapter_id = chapter and chapter.id or nil
@@ -63,13 +79,7 @@ function FanficReader:addToMainMenu(menu_items)
                     {
                         text = "Comment",
                         is_enter_default = true,
-                        callback = function()
-                            local NetworkMgr = require("ui/network/manager")
-
-                            if not NetworkMgr:isConnected() then
-                                NetworkMgr:runWhenConnected()
-                                return
-                            end
+                        callback = Network.wrap(function()
 
                             if self.input_dialog:getInputText() == "" then
                                 return
@@ -90,7 +100,7 @@ function FanficReader:addToMainMenu(menu_items)
                             UIManager:show(InfoMessage:new({
                                 text = "Error: " .. request_result.error,
                             }))
-                        end,
+                        end),
                     },
                 },
             },
@@ -111,21 +121,14 @@ function FanficReader:addToMainMenu(menu_items)
                 {
                     {
                         text = self.current_fanfic.markedForLater and "Mark as read" or "Mark for later",
-                        callback = function()
-                            local NetworkMgr = require("ui/network/manager")
-
-                            if not NetworkMgr:isConnected() then
-                                NetworkMgr:runWhenConnected()
-                                return
-                            end
+                        callback = Network.wrap(function()
 
                             local request_result = AO3DownloaderClient:markForLaterWork(self.current_fanfic.id,
                                 self.current_fanfic.markedForLater)
 
-                            self.current_fanfic.markedForLater = not self.current_fanfic.markedForLater
-                            DownloadedFanfics.update(self.current_fanfic, false)
-
                             if request_result.success then
+                                self.current_fanfic.markedForLater = not self.current_fanfic.markedForLater
+                                DownloadedFanfics.update(self.current_fanfic, false)
                                 UIManager:show(InfoMessage:new({
                                     text = self.current_fanfic.markedForLater and "Fanfic Marked for Later" or
                                         "Fanfic Marked as Read",
@@ -137,19 +140,13 @@ function FanficReader:addToMainMenu(menu_items)
                             end
 
                             UIManager:close(dialog)
-                        end,
+                        end),
                     }
                     },
                     {
                         {
                             text = self.current_fanfic.subscriptionID and "Unsubscribe from work" or "Subscribe to work",
-                            callback = function()
-                                local NetworkMgr = require("ui/network/manager")
-
-                                if not NetworkMgr:isConnected() then
-                                    NetworkMgr:runWhenConnected()
-                                    return
-                                end
+                            callback = Network.wrap(function()
 
                                 local request_result = AO3DownloaderClient:setWorkSubscription(self.current_fanfic.id,
                                     self.current_fanfic.subscriptionID)
@@ -172,18 +169,13 @@ function FanficReader:addToMainMenu(menu_items)
                                 end
 
                                 UIManager:close(dialog)
-                            end,
+                            end),
                         }
                     },
                     {
                         {
                             text = self.current_fanfic.bookmarkID and "Edit Bookmark" or "Bookmark Work",
-                            callback = function ()
-                                local NetworkMgr = require("ui/network/manager")
-                                if not NetworkMgr:isConnected() then
-                                    NetworkMgr:runWhenConnected()
-                                     return false
-                                end
+                            callback = Network.wrap(function()
 
                                 local request_result = AO3DownloaderClient:getUsersWorkBookmark(self.current_fanfic.id)
                                 if  request_result.success then
@@ -202,6 +194,7 @@ function FanficReader:addToMainMenu(menu_items)
                                     })
                                     info_message[1].ignore = "height"
                                     UIManager:show(info_message)
+                                    return
                                 end
 
 
@@ -213,11 +206,6 @@ function FanficReader:addToMainMenu(menu_items)
                                     bookmark_private = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.private or false,
                                     bookmark_rec = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.rec or false,
                                     save_dialog_callback = function(bookmark_data)
-                                        local NetworkMgr = require("ui/network/manager")
-                                        if not NetworkMgr:isConnected() then
-                                            NetworkMgr:runWhenConnected()
-                                            return false
-                                        end
 
                                         local request_result = AO3DownloaderClient:updateBookmark(
                                             self.current_fanfic.id,
@@ -255,11 +243,6 @@ function FanficReader:addToMainMenu(menu_items)
 
                                     end,
                                     delete_dialog_callback = function()
-                                        local NetworkMgr = require("ui/network/manager")
-                                        if not NetworkMgr:isConnected() then
-                                            NetworkMgr:runWhenConnected()
-                                            return false
-                                        end
 
                                         local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
 
@@ -283,11 +266,6 @@ function FanficReader:addToMainMenu(menu_items)
                                     end,
 
                                     search_collections_callback = function(collection_name)
-                                        local NetworkMgr = require("ui/network/manager")
-                                        if not NetworkMgr:isConnected() then
-                                            NetworkMgr:runWhenConnected()
-                                            return
-                                        end
 
 
                                         local request_result = AO3DownloaderClient:searchForCollections(collection_name)
@@ -312,7 +290,7 @@ function FanficReader:addToMainMenu(menu_items)
 
                                 UIManager:close(dialog)
 
-                            end
+                            end)
                         }
                     }
                 },
@@ -324,13 +302,7 @@ function FanficReader:addToMainMenu(menu_items)
         text = "Give kudos to work ♥",
         sorting_hint = "main",
         keep_menu_open = true,
-        callback = function()
-            local NetworkMgr = require("ui/network/manager")
-
-            if not NetworkMgr:isConnected() then
-                NetworkMgr:runWhenConnected()
-                return
-            end
+        callback = Network.wrap(function()
 
             local request_result = AO3DownloaderClient:kudosWork(self.current_fanfic.id)
 
@@ -344,7 +316,7 @@ function FanficReader:addToMainMenu(menu_items)
             UIManager:show(InfoMessage:new({
                 text = "Error: " .. request_result.error,
             }))
-        end,
+        end),
     }
 
     menu_items.AO3_downloader_comment_work = {
@@ -375,99 +347,136 @@ function FanficReader:addToMainMenu(menu_items)
 end
 
 function FanficReader:initializeFromReaderUI(ui)
-    if self.is_showing then
-        ui.menu:registerToMainMenu(FanficReader)
+    local pending = self._pending_open
+    self._pending_open = nil
+    self.is_showing, self.current_fanfic, self._reader_ui = false, nil, nil
+    self.current_chapter, self.chapter_opening_at = nil, nil
+    -- Every entry point (Bookshelf, History, file manager, AO3) takes this
+    -- path. Download history contributes progress only after EPUB identity.
+    local path = ui.document and ui.document.file
+    local ok, work = pcall(function()
+        local epub = require("fanfic_epub").read(path)
+        if epub then return DownloadedFanfics.rememberLocal(epub) end
+    end)
+    if not ok then logger.warn("AO3 reader identification failed:", work); return end
+    if not work then return end
+    self.current_fanfic, self._reader_ui, self.is_showing = work, ui, true
+    if pending and pending.path == path then self.chapter_opening_at = pending.chapter end
+    if not ui._ao3_reader_menu then
+        ui.menu:registerToMainMenu(self)
+        ui._ao3_reader_menu = true
     end
-
     ui:registerPostInitCallback(function()
-        self:hookWithPriorityOntoReaderUiEvents(ui)
+        if self:isActiveReader(ui) then self:hookWithPriorityOntoReaderUiEvents(ui) end
     end)
 end
 
-function FanficReader:onReaderReady()
-    if self.is_showing then
+function FanficReader:onReaderReady(ui)
+    ui = ui or self._reader_ui
+    if not self:isActiveReader(ui) then return end
+    ui._ao3_tracking_page = nil
+    local chapter = self.chapter_opening_at
+    self.chapter_opening_at = nil
+    if chapter then
         UIManager:nextTick(function()
-            if self.chapter_opening_at then
-                local toc = ReaderUI.instance.document:getToc()
-                UIManager:broadcastEvent(Event:new("GotoPage", toc[self.chapter_opening_at + 1].page))
-            end
+            if not self:isActiveReader(ui) then return end
+            local toc = ui.document:getToc()
+            local target = toc and toc[chapter + 1]
+            if target and target.page then UIManager:broadcastEvent(Event:new("GotoPage", target.page)) end
         end)
+    elseif type(ui.getCurrentPage) == "function" then
+        -- The restored page may have been reported before our post-init
+        -- listener was attached. Reconcile it once rendering is ready.
+        self:onPageUpdate(ui:getCurrentPage(), ui)
     end
 end
 
 function FanficReader:hookWithPriorityOntoReaderUiEvents(ui)
-    -- We need to reorder the `ReaderUI` children such that we are the first children,
-    -- in order to receive events before all other widgets
     assert(ui.name == "ReaderUI", "expected to be inside ReaderUI")
-
+    if ui._ao3_reader_listener then return end
     local eventListener = WidgetContainer:new({})
-    eventListener.onCloseWidget = function()
-        self:onReaderUiCloseWidget()
-    end
-    eventListener.onPageUpdate = function(__, pageno)
-        self:onPageUpdate(pageno)
-    end
-    eventListener.onReaderReady = function()
-        self:onReaderReady()
-    end
-
+    eventListener.onCloseWidget = function() self:onReaderUiCloseWidget(ui) end
+    eventListener.onPageUpdate = function(__, pageno) self:onPageUpdate(pageno, ui) end
+    eventListener.onPosUpdate = function(__, pos, pageno) self:onPageUpdate(pageno, ui) end
+    eventListener.onReaderReady = function() self:onReaderReady(ui) end
+    -- Re-evaluate the same page when layout, ToC or navigation ticks change.
+    eventListener.onTocReset = function() ui._ao3_tracking_page = nil end
+    eventListener.onDocumentRerendered = function() ui._ao3_tracking_page = nil end
+    ui._ao3_reader_listener = eventListener
     table.insert(ui, 2, eventListener)
 end
 
-function FanficReader:onFinishChapter(chapter_index)
-    if not self.current_fanfic.chapter_data then
-        return
+local function showCompletion(text)
+    local notification=Notification:new{text=text,timeout=2}
+    -- Explicitly repaint the exposed reader when the toast expires. On e-ink,
+    -- removing an overlay alone can leave its pixels until the next page turn.
+    notification.onCloseWidget=function(widget)
+        Notification.onCloseWidget(widget)
+        UIManager:setDirty(nil,"ui")
     end
-    if self.current_fanfic.chapter_data[chapter_index].read then
+    UIManager:show(notification)
+end
+
+function FanficReader:onFinishChapter(chapter_index)
+    local chapter = self.current_fanfic and self.current_fanfic.chapter_data
+        and self.current_fanfic.chapter_data[chapter_index]
+    if not chapter then return end
+    if chapter.read then
         return
     end
 
-    UIManager:show(Notification:new({
-        text = "Finished chapter: " .. tostring(self.current_fanfic.chapter_data[chapter_index].name),
-    }))
+    showCompletion("Finished chapter: " .. tostring(chapter.name))
 
     -- Update fanfic chapter read status
-    self.current_fanfic = DownloadedFanfics.markChapterAsRead(self.current_fanfic.id, chapter_index)
+    local updated = DownloadedFanfics.markChapterAsRead(self.current_fanfic.id, chapter_index)
+    if updated then chapter.read = true end
 end
 
 function FanficReader:onFinishSingleChapterWork()
-    if self.current_fanfic.read then
+    if not self.current_fanfic or self.current_fanfic.read then
         return
     end
 
-    UIManager:show(Notification:new({
-        text = "Finished work: " .. tostring(self.current_fanfic.title),
-    }))
+    showCompletion("Finished work: " .. tostring(self.current_fanfic.title))
 
-    self.current_fanfic = DownloadedFanfics.markWorkAsRead(self.current_fanfic.id)
+    local updated = DownloadedFanfics.markWorkAsRead(self.current_fanfic.id)
+    if updated then self.current_fanfic.read = true end
 end
 
-function FanficReader:onPageUpdate(pageno)
-    if self.is_showing then
-        if ReaderUI.instance then
-            logger.dbg(self.current_fanfic)
-            if #self.current_fanfic.chapter_data ~= 0 then
-                local document_chapter_index = ReaderUI.instance.toc:getTocIndexByPage(pageno)
-                if
-                    document_chapter_index > 1
-                    and (document_chapter_index - 1) <= #self.current_fanfic.chapter_data
-                    and ReaderUI.instance.toc:isChapterEnd(pageno)
-                then
-                    FanficReader:onFinishChapter(document_chapter_index - 1)
-                end
-            else
-                local document_chapter_index = ReaderUI.instance.toc:getTocIndexByPage(pageno)
-                if document_chapter_index == 2 and ReaderUI.instance.toc:isChapterEnd(pageno) then
-                    FanficReader:onFinishSingleChapterWork()
-                end
-            end
+function FanficReader:onPageUpdate(pageno, ui)
+    ui = ui or self._reader_ui
+    if not self:isActiveReader(ui) or type(pageno) ~= "number" then return end
+    if self._formatting_reload_path == ui.document.file then return end
+    local total = ui.document:getPageCount()
+    if not total or pageno < 1 or pageno > total then return end
+    local previous = ui._ao3_tracking_page
+    if previous and previous.page == pageno and previous.total == total then return end
+    ui._ao3_tracking_page = {page=pageno,total=total}
+    local chapters = self.current_fanfic.chapter_data or {}
+    if #chapters > 0 then
+        local index = ui.toc and ui.toc:getTocIndexByPage(pageno)
+        if index and index > 1 and index-1 <= #chapters and not chapters[index-1].read
+                and ui.toc:isChapterEnd(pageno) then
+            self:onFinishChapter(index-1)
         end
+        -- isChapterEnd checks the page before the NEXT ToC entry, so it
+        -- never catches a final chapter with no afterword/next chapter.
+        if pageno == total then self:onFinishChapter(#chapters) end
+    elseif pageno == total then
+        -- Imported EPUBs without a chapter-ID map still track whole-work
+        -- completion, without treating their first chapter as the whole book.
+        self:onFinishSingleChapterWork()
     end
 end
 
---- @private
-function FanficReader:onReaderUiCloseWidget()
-    self.is_showing = false
+function FanficReader:onReaderUiCloseWidget(ui)
+    if ui and ui ~= self._reader_ui then return end
+    if DownloadedFanfics.flushPending then
+        local ok, err = DownloadedFanfics.flushPending()
+        if not ok then logger.warn("Could not save pending AO3 progress:", err) end
+    end
+    self.is_showing, self.current_fanfic, self._reader_ui = false, nil, nil
+    self.current_chapter, self.chapter_opening_at = nil, nil
 end
 
 return FanficReader
