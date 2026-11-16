@@ -33,6 +33,18 @@ local without=Parser:parseWorkElement(node('',nil,{['h4.heading > a']={title}}))
 assert(#without.series==0)
 local fallback=Parser:parseWorkSeries(node('',nil,{['dd.series']={membership(56,'Unnumbered stories')}}))
 assert(#fallback==1 and fallback[1].position==nil)
+-- The full result count also comes from bookmark and history headings.
+local function countRoot(title)
+    return node('',nil,{['#main']={node('main')},['#main > h3']={node(title)}})
+end
+assert(Parser:parseWorkSearchResults(countRoot('2,467 Found')).total==2467)
+assert(Parser:parseUserBookmarks(countRoot('1 - 20 of 247 Bookmarks')).total==247)
+assert(Parser:parseAccountHistory(countRoot('History (1,023)')).total==1023)
+assert(Parser:parseAccountHistory(countRoot('History')).total==-1)
+local missing=node('',nil,{['#main']={node('main')},['#main > h3']={node('2 Found')},
+    ['li.work']={node('unavailable'),listing}})
+local slots=Parser:parseWorkSearchResults(missing)
+assert(#slots==2 and slots[1].is_unavailable and slots[2].id==123)
 -- Render through the real work browser, including older records with no series.
 dofile('tests/test_network.lua')
 local Browser=require('fanficbrowser')

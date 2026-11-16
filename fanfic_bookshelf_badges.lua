@@ -5,7 +5,30 @@ local render_context
 local source = debug.getinfo(1, "S").source
 local asset_dir = source:sub(1, 1) == "@" and
     source:sub(2):match("^(.*[/\\])") or "./"
-asset_dir = (asset_dir or "./") .. "assets/ao3-icons/"
+asset_dir = (asset_dir or "./") .. "assets/"
+
+-- Use the same selection in Bookshelf's covers and the formatted work view.
+function M.relativePath(icon)
+    local folder = require("fanfic_config"):readSetting("ao3_eink_symbols", false)
+        and "ao3-icons-eink/" or "ao3-icons/"
+    return folder .. icon .. ".png"
+end
+
+function M.assetPath(icon)
+    return asset_dir .. M.relativePath(icon)
+end
+
+function M.refresh()
+    -- Rebuild only the existing Bookshelf widget; no metadata rescan or
+    -- changes to Bookshelf itself are needed to replace its cover widgets.
+    local module = package.loaded["lib/bookshelf_widget"]
+    local widget = module and module.live
+    local UI = require("ui/uimanager")
+    if widget and widget._rebuild and UI.isWidgetShown and UI:isWidgetShown(widget) then
+        widget:_rebuild()
+        UI:setDirty(widget, "ui")
+    end
+end
 
 local ratings = {
     ["general audiences"] = "rating-general-audience",
@@ -84,7 +107,7 @@ function M.provider(book, w, h, ctx)
             -- ImageWidget's bounded shared file cache owns the decoded images;
             -- each row can be freed without invalidating another row's icons.
             cells[i] = ImageWidget:new{
-                file = asset_dir .. icon .. ".png", width = side, height = side,
+                file = M.assetPath(icon), width = side, height = side,
             }
         else
             cells[i] = Widget:new{dimen = {w = side, h = side}}

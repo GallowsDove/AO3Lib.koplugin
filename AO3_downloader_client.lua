@@ -1732,51 +1732,41 @@ end
 
 
 -- AO3WebParser
+-- Counts are shared by searches, bookmarks and history. Keep an unknown
+-- count unknown rather than treating the loaded batch as the whole library.
+function AO3WebParser:parseWorkCount(root)
+    for _,selector in ipairs({"#main > h3","#main > h2"}) do
+        for _,heading in ipairs(root:select(selector)) do
+            local text=encodeHelper:parseFromHTML(heading:getcontent())
+            local count=text:match("([%d,]+)%s+Found")
+                or text:match("of%s+([%d,]+)%s+[Ww]orks")
+                or text:match("of%s+([%d,]+)%s+[Bb]ookmarks")
+                or text:match("([%d,]+)%s+[Ww]orks")
+                or text:match("([%d,]+)%s+[Bb]ookmarks")
+                or text:match("History%s*%(([%d,]+)%)")
+            if count then return tonumber((count:gsub(",",""))) end
+        end
+    end
+end
+
 function AO3WebParser:parseWorkSearchResults(root)
-    local works = {}
+    local works = {total=self:parseWorkCount(root)}
     local elements = root:select("li.work")
-
     local count = 1
-
-    local resultsCountElement = root:select("#main > h3")[1]
-    if resultsCountElement then
-        local resultsText = resultsCountElement:getcontent()
-        local totalWorks = resultsText:match("^%s*([%d,]+) Found")
-        if totalWorks then
-            totalWorks = tonumber(totalWorks:gsub(",", ""), 10)
-            works["total"] = totalWorks
-        end
-    end
-
-    if not works["total"] then
-        local resultsCountElement = root:select("#main > h2")[1]
-        if resultsCountElement then
-            local resultsText = resultsCountElement:getcontent()
-            local totalWorks = resultsText:match("of%s*([%d,]+)%s*Works")
-            if not totalWorks then
-                totalWorks = resultsText:match("^%s*([%d,]+)%s*Works")
-            end
-            if totalWorks then
-                totalWorks = totalWorks:gsub(",", "")
-                works["total"] = tonumber(totalWorks)
-            end
-        end
-    end
-
 
     for _, element in ipairs(elements) do
         local work = self:parseWorkElement(element)
-        if work then
-            table.insert(works, count, work)
-            count = count + 1
-        end
+        -- Keep unavailable entries in their AO3 result slots so numbered
+        -- jumps and neighbouring result batches cannot shift their indices.
+        table.insert(works,count,work or {is_unavailable=true})
+        count=count+1
     end
 
     return works
 end
 
 function AO3WebParser:parseUserBookmarks(root)
-    local bookmarks = {}
+    local bookmarks = {total=self:parseWorkCount(root)}
     local elements = root:select("li.bookmark")
 
     local count = 1
@@ -1794,10 +1784,8 @@ function AO3WebParser:parseUserBookmarks(root)
 
         else
             local work = self:parseWorkElement(element)
-            if work then
-                table.insert(bookmarks, count, work)
-                count = count + 1
-            end
+            table.insert(bookmarks,count,work or {is_unavailable=true})
+            count=count+1
         end
     end
 
@@ -1995,13 +1983,13 @@ function AO3WebParser:parseAccountHistory(root)
 
     for _, element in ipairs(elements) do
         local work = self:parseWorkElement(element)
-        if work then
-            table.insert(works, count, work)
-            count = count + 1
-        end
+        -- Keep unavailable entries in their AO3 result slots so numbered
+        -- jumps and neighbouring result batches cannot shift their indices.
+        table.insert(works,count,work or {is_unavailable=true})
+        count=count+1
     end
 
-    works["total"] = -1
+    works["total"] = self:parseWorkCount(root) or -1
 
     return works
 end

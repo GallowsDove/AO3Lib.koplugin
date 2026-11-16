@@ -11,9 +11,7 @@ local state = {paths={}, generation=0, dirty=true, completed=0}
 local Sources, Repo, cache
 local revision=0
 local published_epochs=0
-local function copy(t)
-    local out={}; for k,v in pairs(t or {}) do out[k]=v end; return out
-end
+local copy = require("fanfic_table").shallowCopy
 local function roots()
     local paths={}
     local function add(path) if type(path)=="string" and path~="" then paths[#paths+1]=path end end

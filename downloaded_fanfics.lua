@@ -19,38 +19,9 @@ end
 
 function DownloadedFanfics.revision() return revision end
 
--- From: http://lua-users.org/wiki/CopyTable
-local function deepcopy(orig, copies)
-    copies = copies or {}
-    local orig_type = type(orig)
-    local copy
-    if orig_type == "table" then
-        if copies[orig] then
-            copy = copies[orig]
-        else
-            copy = {}
-            copies[orig] = copy
-            for orig_key, orig_value in next, orig, nil do
-                copy[deepcopy(orig_key, copies)] = deepcopy(orig_value, copies)
-            end
-            setmetatable(copy, deepcopy(getmetatable(orig), copies))
-        end
-    else -- number, string, boolean, etc
-        copy = orig
-    end
-    return copy
-end
+local deepcopy = require("fanfic_table").deepCopy
 
--- Helper function to ensure a field is always a table
-local function normalizeField(field)
-    if type(field) == "string" then
-        return { field } -- Convert single string to a table
-    elseif type(field) == "table" then
-        return field     -- Already a table
-    else
-        return {}        -- Default to an empty table
-    end
-end
+local Fields = require("fanfic_fields")
 
 local function writeHistory(destination, temporary)
     local content, encode_err = json.encode(downloaded_fanfics, { indent = true })
@@ -180,10 +151,7 @@ function DownloadedFanfics.load()
     -- Normalize fields for all loaded fanfics
     for _, fanfic in pairs(history) do
         fanfic.id = tostring(fanfic.id)
-        fanfic.fandoms = normalizeField(fanfic.fandoms) -- Ensure fandoms is a table
-        fanfic.relationships = normalizeField(fanfic.relationships)
-        fanfic.characters = normalizeField(fanfic.characters)
-        fanfic.tags = normalizeField(fanfic.tags)
+        Fields.normalize(fanfic, {"fandoms", "relationships", "characters", "tags"})
     end
 
     downloaded_fanfics = history
@@ -224,20 +192,14 @@ end
 
 -- Add a new fanfic to the downloaded list
 function DownloadedFanfics.add(fanfic)
-    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
-    fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
+    Fields.normalize(fanfic, {"fandoms", "relationships", "characters", "tags"})
     downloaded_fanfics[tostring(fanfic.id)] = fanfic
     DownloadedFanfics.save()
 end
 
 -- Update an existing fanfic in the downloaded list
 function DownloadedFanfics.update(fanfic, notSave)
-    fanfic.fandoms = normalizeField(fanfic.fandoms)             -- Ensure fandoms is a table
-    fanfic.relationships = normalizeField(fanfic.relationships) -- Ensure relationships is a table
-    fanfic.characters = normalizeField(fanfic.characters)       -- Ensure characters is a table
-    fanfic.tags = normalizeField(fanfic.tags)                   -- Ensure tags is a table
+    Fields.normalize(fanfic, {"fandoms", "relationships", "characters", "tags"})
     downloaded_fanfics[tostring(fanfic.id)] = fanfic
     if notSave then
         return true

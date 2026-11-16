@@ -1,0 +1,5 @@
+Grayscale derivatives of the original AO3 PNGs in ../ao3-icons/.
+Original symbols: Organization for Transformative Works and contributors.
+License: GPL-2.0-or-later; see ../ao3-icons/COPYING and SOURCES.txt.
+
+Produced by tools/build_eink_icons.py directly from those PNGs. 

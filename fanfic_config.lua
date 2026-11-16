@@ -24,9 +24,7 @@ local function createConfig()
         end
         return cached_settings
     end
-    local function copy(value)
-        return type(value) == "table" and util.tableDeepCopy(value) or value
-    end
+    local copy = require("fanfic_table").deepCopy
     local function persist(store)
         store:flush()
         cached_stamp = stamp()
@@ -35,6 +33,9 @@ local function createConfig()
     config.default_settings = {
         AO3_domain = "https://archiveofourown.org",
         show_adult_warning = true,
+        formatted_work_view = false,
+        work_view_font_size = 18,
+        ao3_eink_symbols = false,
         version = 1,
         bookmarkedFandoms = {
             "原神 | Genshin Impact (Video Game)",

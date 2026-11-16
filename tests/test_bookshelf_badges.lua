@@ -5,6 +5,11 @@ package.loaded['ui/bidi'] = {mirroredUILayout=function() return true end}
 package.loaded.util = {arrayReverse=function() error('AO3 positions must not mirror') end}
 package.loaded.logger = {warn=function() end}
 package.loaded.dbg = {guard=function(fn) return fn end}
+local eink = false
+package.loaded.fanfic_config = {readSetting=function(_, key, default)
+    if key == "ao3_eink_symbols" then return eink end
+    return default
+end}
 local dpi = 1
 package.loaded.device = {screen={scaleBySize=function(_, n) return n*dpi end}}
 local epub = {id='123', rating='Explicit', categories={'F/M'},
@@ -128,6 +133,14 @@ for _, scale in ipairs({1,2,3}) do
     end
 end
 assert(P.widgetFor({filepath='/ao3.epub'}, 5, 5) == nil)
+eink = true
+grid = assert(P.widgetFor({filepath='/ao3.epub'}, 100, 160))
+assert(grid[1][1].file:find('assets/ao3-icons-eink/rating-explicit.png', 1, true))
+assert(grid[1][3].file:find('assets/ao3-icons-eink/category-het.png', 1, true))
+assert(grid[3][1].file:find('assets/ao3-icons-eink/warning-choosenotto.png', 1, true))
+assert(grid[3][3].file:find('assets/ao3-icons-eink/complete-no.png', 1, true))
+grid:free()
+eink = false
 epub.chapters, epub.warnings = '?/?', nil
 grid = assert(P.widgetFor({filepath='/ao3.epub'}, 100, 160))
 assert(grid[3][1].file == nil and grid[3][3].file == nil)

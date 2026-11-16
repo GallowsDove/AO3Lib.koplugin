@@ -1,10 +1,10 @@
+local Fields = require("fanfic_fields")
 local Network = require("fanfic_network")
 local ButtonDialog = require("ui/widget/buttondialog")
 local KeyValuePage = require("ui/widget/keyvaluepage")
 local UIManager = require("ui/uimanager")
 local DownloadedFanfics = require("downloaded_fanfics")
 local InfoMessage = require("ui/widget/infomessage")
-local FanficReader = require("fanfic_reader")
 local Config = require("fanfic_config")
 local _ = require("gettext")
 local util = require("util")
@@ -26,42 +26,21 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         return DownloadedFanfics.checkIfStored(fanficId)
     end
 
-    -- Helper function to normalize a field to always be a table
-    local function normalizeField(field)
-        if type(field) == "string" then
-            -- Split the string by commas and trim whitespace
-            local result = {}
-            for item in string.gmatch(field, "([^,]+)") do
-                table.insert(result, util.trim(item))
-            end
-            return result
-        elseif type(field) == "table" then
-            return field -- Already a table
-        else
-            return {} -- Default to an empty table
-        end
-    end
-
     -- Populate the initial list of fanfics
     for __, v in pairs(ficResults) do
         if __ == "total" then
             goto continue
         end
 
-        if v.is_deleted then
-            table.insert(kv_pairs, { "DELETED WORK", "", separator = true })
+        if v.is_deleted or v.is_unavailable then
+            table.insert(kv_pairs, { v.is_unavailable and _("Unavailable work") or "DELETED WORK", "", separator = true })
             for i = 1, 13 do
                 table.insert(kv_pairs, { "", "" })
             end
             table.insert(kv_pairs, { "", "", separator = true })
             goto continue
         end
-        -- Normalize relationships, characters, and tags
-        v.relationships = normalizeField(v.relationships)
-        v.characters = normalizeField(v.characters)
-        v.tags = normalizeField(v.tags)
-        v.fandoms = normalizeField(v.fandoms)
-        v.warnings = normalizeField(v.warnings)
+        Fields.normalize(v, {"relationships", "characters", "tags", "fandoms", "warnings"}, true)
 
         -- Check if the fanfic is already downloaded
         local downloadedFanfic = isDownloaded(v.id)
@@ -85,47 +64,14 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             callback = function()
                 local downloadedFanfic = isDownloaded(v.id)
                 if downloadedFanfic then
-                    -- Show options for the downloaded fanfic.
-                    local dialog
-                    dialog = ButtonDialog:new({
-                        title = _("Fanfic is already downloaded, what would you like to do?"),
-                        buttons = {
-                            {
-                                {
-                                    text = _("Update"),
-                                    callback = function()
-                                        Network.schedule(0, function()
-                                            updateFanficCallback(downloadedFanfic)
-                                        end)
-                                        UIManager:close(dialog)
-                                    end,
-                                },
-                                {
-                                    text = _("Open"),
-                                    callback = function()
-                                        UIManager:close(dialog)
-                                        self.Fanfic:onOpenFanficReader(downloadedFanfic.path, downloadedFanfic)
-                                    end,
-                                },
-                            },
-                            {
-                                {
-                                    text = _("Delete"),
-                                    callback = function()
-                                        UIManager:close(dialog)
-                                        self:showDeleteDialog(downloadedFanfic)
-                                    end,
-                                },
-                                {
-                                    text = _("Cancel"),
-                                    callback = function()
-                                        UIManager:close(dialog)
-                                    end,
-                                },
-                            },
-                        },
+                    require("fanfic_work_actions").show(self.Fanfic, downloadedFanfic, {
+                        details=v,
+                        refresh=function()
+                            if self.browse_window and not self.browse_window._ao3_closed then
+                                self.browse_window:reload()
+                            end
+                        end,
                     })
-                    UIManager:show(dialog)
                 else
                     if
                         Config:readSetting("show_adult_warning")
@@ -286,35 +232,11 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 end
 
 function FanficBrowser:showDeleteDialog(fanfic)
-    local dialog
-    dialog = ButtonDialog:new{
-        title = T(_("Are you sure you want to delete '%1'?"), fanfic.title),
-        buttons = {{
-            {
-                text = _("Delete"),
-                callback = function()
-                    local success, err = util.removeFile(fanfic.path)
-                    UIManager:close(dialog)
-                    if not success then
-                        UIManager:show(InfoMessage:new{
-                            text = T(_("Failed to delete file for '%1': %2"), fanfic.title, err),
-                        })
-                        return
-                    end
-                    DownloadedFanfics.delete(fanfic.id)
-                    if self.browse_window then self.browse_window:reload() end
-                    UIManager:show(InfoMessage:new{
-                        text = T(_("'%1' has been deleted."), fanfic.title),
-                    })
-                end,
-            },
-            {
-                text = _("Cancel"),
-                callback = function() UIManager:close(dialog) end,
-            },
-        }},
-    }
-    UIManager:show(dialog)
+    return require("fanfic_work_actions").delete(fanfic, {
+        refresh=function()
+            if self.browse_window and not self.browse_window._ao3_closed then self.browse_window:reload() end
+        end,
+    })
 end
 
 function FanficBrowser:showDownloadDialog(fanfic)
@@ -374,28 +296,62 @@ function FanficBrowser:showAdultWarningDialog(fanfic)
     UIManager:show(warningDialog)
 end
 
-function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback, showAuthorInfoCallback, Fanfic, title)
+function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback, downloadFanficCallback, showAuthorInfoCallback, Fanfic, title, view_options)
     self.ui = ui
     self.updateFanficCallback = updateFanficCallback
     self.downloadFanficCallback = downloadFanficCallback
     self.showAuthorInfoCallback = showAuthorInfoCallback
     self.Fanfic = Fanfic
+    view_options=view_options or {}
+    -- Restore the browser callbacks when a nested author/series/work closes.
+    local function resume(window)
+        self.ui, self.Fanfic = ui, Fanfic
+        self.updateFanficCallback, self.downloadFanficCallback = updateFanficCallback, downloadFanficCallback
+        self.showAuthorInfoCallback, self.browse_window = showAuthorInfoCallback, window
+    end
+    local total_fic_count=ficResults.total
+    local pager=require("fanfic_work_paging").get(fetchNextPage)
+    if pager then pager:setTotal(total_fic_count) end
+    if not Config:readSetting("formatted_work_view",false) and pager and pager.total then
+        return require("fanfic_work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,
+            update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
+            plugin=Fanfic,title=title,index=view_options.index,
+            replacing=view_options.replacing,resume=resume})
+    end
+    if Config:readSetting("formatted_work_view",false) then
+        return require("fanfic_work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,
+            update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
+            plugin=Fanfic,title=title,index=view_options.index,
+            replacing=view_options.replacing,resume=resume})
+    end
+    local function switchView()
+        local previous=self.browse_window
+        Config:saveSetting("formatted_work_view",true)
+        ficResults.total=total_fic_count
+        self:show(ui,ficResults,fetchNextPage,updateFanficCallback,downloadFanficCallback,
+            showAuthorInfoCallback,Fanfic,title,{index=previous and previous.show_page or 1,replacing=previous})
+        if previous then
+            previous._ao3_closed=true
+            Fanfic.menu_stack[previous]=nil
+            UIManager:close(previous)
+        end
+    end
 
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
-    local total_fic_count = ficResults.total
     ficResults.total = nil
-    self.fanfics_loaded = ficResults
+    local fanfics_loaded = ficResults
 
-    self.items_per_fic = 15
+    local items_per_fic = 15
+
     local function fitWorkPage(window)
         local count=window.items_per_page
-        if count~=self.items_per_fic then
+        if count~=items_per_fic then
             if window.item_height and count then
-                window.item_height=math.floor(window.item_height*count/self.items_per_fic)
+                window.item_height=math.floor(window.item_height*count/items_per_fic)
                 window.items_font_size=math.min(require("ui/widget/textboxwidget"):getFontSizeToFitHeight(
                     window.item_height,1,1.0),22)
             end
-            window.items_per_page=self.items_per_fic
+            window.items_per_page=items_per_fic
         end
         window.pages=math.ceil(#window.kv_pairs/window.items_per_page)
     end
@@ -430,7 +386,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         newFics.total = nil
         -- Add new works to loaded fanfics table
         for k, v in pairs(newFics) do
-            table.insert(self.fanfics_loaded, v)
+            table.insert(fanfics_loaded, v)
         end
 
         -- Update the total number of pages
@@ -438,6 +394,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         self.browse_window = BrowseWindow:new({
             title = selfself.title,
             title_bar_left_icon = require("fanfic_icons").name,
+            title_bar_left_icon_tap_callback = switchView,
             title_bar_fm_style = true,
             is_popout = false,
             is_borderless = true,
@@ -445,13 +402,14 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             show_page = selfself.show_page,
             value_overflow_align = "center",
         })
-        self.browse_window:setMaximumPageValueCount(self.items_per_fic)
+        require("fanfic_navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume})
+        self.browse_window:setMaximumPageValueCount(items_per_fic)
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
     end
 
     BrowseWindow.reload = function(selfself)
-        selfself.kv_pairs = self:generateTable({}, self.fanfics_loaded, updateFanficCallback, downloadFanficCallback)
+        selfself.kv_pairs = self:generateTable({}, fanfics_loaded, updateFanficCallback, downloadFanficCallback)
 
         -- Update the total number of pages
         selfself.pages = math.ceil(#selfself.kv_pairs / selfself.items_per_page)
@@ -461,6 +419,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         self.browse_window = BrowseWindow:new({
             title = selfself.title,
             title_bar_left_icon = require("fanfic_icons").name,
+            title_bar_left_icon_tap_callback = switchView,
             title_bar_fm_style = true,
             is_popout = false,
             is_borderless = true,
@@ -469,7 +428,8 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             value_overflow_align = "center",
         })
         self.Fanfic.menu_stack[self.browse_window] = true
-        self.browse_window:setMaximumPageValueCount(self.items_per_fic)
+        require("fanfic_navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume})
+        self.browse_window:setMaximumPageValueCount(items_per_fic)
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
     end
@@ -490,17 +450,18 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     self.browse_window = BrowseWindow:new({
         title = title or T("(%1) Tap fanfic title to download", total_fic_count or "ERROR"),
         title_bar_left_icon = require("fanfic_icons").name,
+        title_bar_left_icon_tap_callback = switchView,
         title_bar_fm_style = true,
         is_popout = false,
         is_borderless = true,
         kv_pairs = kv_pairs,
         value_overflow_align = "center",
-        show_page = 1,
+        show_page = view_options.index or 1,
     })
 
-    self.Fanfic.menu_stack[self.browse_window] = true
+    require("fanfic_navigation").bind(Fanfic, self.browse_window, {replace=view_options.replacing, resume=resume})
 
-    self.browse_window:setMaximumPageValueCount(self.items_per_fic)
+    self.browse_window:setMaximumPageValueCount(items_per_fic)
 
     UIManager:show(self.browse_window)
 end

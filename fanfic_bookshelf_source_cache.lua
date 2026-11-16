@@ -2,9 +2,7 @@
 local Background = require('fanfic_background')
 local _ = require('gettext')
 local M = {}
-local function copy(t)
-    local out={};for k,v in pairs(t or {}) do out[k]=v end;return out
-end
+local copy = require("fanfic_table").shallowCopy
 local function clones(list)
     local out={};for i,v in ipairs(list or {}) do out[i]=copy(v) end;return out
 end

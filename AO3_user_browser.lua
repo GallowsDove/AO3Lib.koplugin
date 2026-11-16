@@ -6,6 +6,7 @@ local FFIUtil = require("ffi/util")
 local T = FFIUtil.template
 local logger = require("logger")
 local InfoMessage = require("ui/widget/infomessage")
+local _ = require("gettext")
 
 local AO3UserBrowser = {
     Fanfic = nil,
@@ -20,10 +21,26 @@ local UserWindow = KeyValuePage:extend{
     kv_pairs = {},
 }
 
+-- Series lists use the same readable font with less vertical padding.
+-- Profile and collection pages retain KOReader's normal row spacing.
+function UserWindow:_populateItems()
+    if self._ao3_compact and not self._ao3_compact_applied and self.item_height then
+        local height=self.item_height*self.items_per_page
+        local minimum=math.ceil((self.items_font_size or 18)*1.6)
+        local row_height=math.max(minimum,math.floor(self.item_height*.75))
+        self.items_per_page=math.max(self.items_per_page,math.floor(height/row_height))
+        self.item_height=math.floor(height/self.items_per_page)
+        self.pages=math.ceil(#self.kv_pairs/self.items_per_page)
+        self._ao3_compact_applied=true
+    end
+    return KeyValuePage._populateItems(self)
+end
+
 function AO3UserBrowser:GoDownInMenu(new_title, new_keypairs)
     local current_state = {
         title = self.AO3UserWindow.title,
         kv_pairs = self.AO3UserWindow.kv_pairs,
+        show_page = self.AO3UserWindow.show_page,
     }
     table.insert(self.menu_layers, current_state)
 
@@ -34,18 +51,16 @@ function AO3UserBrowser:GoUpInMenu()
     local previousState = self.menu_layers[#self.menu_layers]
     self.menu_layers[#self.menu_layers] = nil
     if previousState then
-        self:loadPage(previousState.title, previousState.kv_pairs)
+        self:loadPage(previousState.title, previousState.kv_pairs, false, previousState.show_page)
     end
 end
 
 
 function AO3UserBrowser:show(userData, ui, fanfic)
-    self.userData = userData
-    self.ui = ui
-    self.Fanfic = fanfic
-
-    self:reloadProfile()
-
+    local session = setmetatable({userData=userData, ui=ui, Fanfic=fanfic, menu_layers={}},
+        {__index=AO3UserBrowser})
+    session:reloadProfile()
+    return session
 
 end
 
@@ -207,27 +222,32 @@ function AO3UserBrowser:reloadProfile()
     self:loadPage(author_string, new_menu_table)
 end
 
-function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page)
-    local set_page = 1
+function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page, restored_page)
+    local set_page = restored_page or 1
     if keeping_current_page and self.AO3UserWindow then
         set_page = self.AO3UserWindow.show_page
     end
-    if self.AO3UserWindow then
-        UIManager:close(self.AO3UserWindow)
-        self.Fanfic.menu_stack[self.AO3UserWindow] = nil
-    end
+    local previous = self.AO3UserWindow
 
     self.AO3UserWindow = UserWindow:new({
         title = title,
         kv_pairs = menu_table,
+        _ao3_compact = menu_table._ao3_compact,
         title_bar_left_icon = require("fanfic_icons").name,
         title_bar_fm_style = true,
         is_popout = false,
         is_borderless = true,
         show_page = set_page,
     })
-    self.Fanfic.menu_stack[self.AO3UserWindow] = true
+    require("fanfic_navigation").bind(self.Fanfic, self.AO3UserWindow, {
+        replace=previous,
+        back=function()
+            if #self.menu_layers > 0 then self:GoUpInMenu(); return true end
+            return false
+        end,
+    })
     UIManager:show(self.AO3UserWindow)
+    if previous then UIManager:close(previous) end
 end
 
 function AO3UserBrowser:openFanficBrowserForCategory(category, total, fandom_id)
@@ -276,12 +296,7 @@ function AO3UserBrowser:openUserSeriesList()
                 , table.concat(series.fandoms, ", "),
             })
             table.insert(series_menu_kv,{
-                "Work count:"
-                , series.work_count,
-            })
-            table.insert(series_menu_kv,{
-                "Word count:"
-                , series.word_count,
+                _("Stats:"), T(_("%1 works · %2 words"),series.work_count or 0,series.word_count or 0),
             })
             table.insert(series_menu_kv,{
                 "Author:"
@@ -300,7 +315,7 @@ function AO3UserBrowser:openUserSeriesList()
         end
 
         local function refreshSeriesMenu()
-            series_menu_kv = {}
+            series_menu_kv = {_ao3_compact=true}
             insert_back_to_profile_item()
 
             for __, series in pairs(seriesList) do

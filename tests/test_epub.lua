@@ -273,10 +273,10 @@ parent:onReturn()
 menu[3].callback()
 assert(title == 'Works by Writer' and #menu == 2 and menu[1].id == '2' and menu[2].id == '1')
 menu[1].callback()
-shown.buttons[1][1].callback()
+shown.buttons[2][1].callback()
 assert(opened == latest)
 menu[2].callback()
-shown.buttons[3][2].callback() -- Delete opens confirmation
+shown.buttons[3][1].callback() -- Delete local copy opens confirmation
 shown.buttons[1][1].callback()
 assert(deleted == '1' and works['1'] == nil and #menu == 1 and menu[1].id == '2')
 parent:onReturn()

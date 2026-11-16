@@ -27,7 +27,7 @@ function util.contains(table, value)
     return false
 end
 
-local FanficMenuWidget = Menu:extend({
+local FanficMenuWidget = Menu:extend(require("fanfic_ui").menu{
     fanfic = nil,
     is_popout = false,
     is_borderless = true,
@@ -40,7 +40,7 @@ local FanficMenuWidget = Menu:extend({
 -- Menu action on return-arrow tap (go to one-level upper catalog)
 function FanficMenuWidget:onReturn()
     if self.lock_return then
-        return
+        return true
     end
     local path = self.paths[#self.paths]
     if path then
@@ -48,8 +48,11 @@ function FanficMenuWidget:onReturn()
         self.title = path.title
         self.subtitle = path.subtitle
         table.remove(self.paths, #self.paths)
+        if path.page then self.page = path.page; self:updateItems() end
+        require("fanfic_navigation").update(self)
+        return true
     end
-    return true
+    return false
 end
 
 function FanficMenuWidget:GoDownInMenu(newTitle, newItems, newSubtitle)
@@ -57,10 +60,12 @@ function FanficMenuWidget:GoDownInMenu(newTitle, newItems, newSubtitle)
         title = self.title,
         items = self.item_table,
         subtitle = self.subtitle,
+        page = self.page,
     })
     self:switchItemTable(newTitle, newItems, -1, -1, newSubtitle)
     self.title = newTitle
     self.subtitle = newSubtitle
+    require("fanfic_navigation").update(self)
 end
 
 function FanficMenuWidget:updateMenuBack(backAmount, newTitle, newItems, newSubtitle)
@@ -97,13 +102,13 @@ function FanficMenu:show(fanfic)
                 end,
             },
             {
-                text = _("Review downloaded work updates"),
+                text = "\u{21bb} " .. _("Review downloaded work updates"),
                 callback = function()
                     require("fanfic_update_review").show(self.fanfic)
                 end,
             },
             {
-                text = "Account management",
+                text = "\u{f007} " .. _("Account management"),
                 callback = function()
                     self:onAccountManagementMenu()
                 end,
@@ -118,7 +123,11 @@ function FanficMenu:show(fanfic)
         Fanfic = self.fanfic,
     })
 
-    self.fanfic.menu_stack[self.menuWidget] = true
+    local window = self.menuWidget
+    require("fanfic_navigation").bind(fanfic, window, {
+        root=function() return #(window.paths or {}) == 0 end,
+        back=function() return window:onReturn() end,
+    })
 
     return self.menuWidget
 end
@@ -244,7 +253,7 @@ function FanficMenu:onSearchFanficMenu()
             end,
         },
         {
-            text = _("Download work by ID"),
+            text = _("Search work by ID"),
             callback = function()
                 self:onShowFanficSearch()
             end,
@@ -273,7 +282,17 @@ end
 
 function FanficMenu:onShowFanficSearch()
     FanficSearch:show(function(fanficId)
-        self.fanfic:DownloadFanfic(fanficId)
+        local result = require("AO3_downloader_client"):getWorkMetadata(fanficId)
+        if not result.success then
+            UIManager:show(InfoMessage:new{
+                text = _("Error: failed to fetch work metadata: ") .. (result.error or _("Unknown error")),
+            })
+            return false
+        end
+        local work = result.work_metadata
+        work.id = fanficId
+        self.fanfic:onShowFanficBrowser({work, total=1}, nil, _("AO3 work details"))
+        return true
     end)
 end
 
@@ -510,21 +529,23 @@ end
 
 function FanficMenu:onViewDownloadedFanfics()
     local cancelled,complete=false,false
-    local works,rows={},{}
+    local works,rows,deleted={},{},{}
     local owner=self.menuWidget
     local function replace(found)
         -- Keep this table stable for author/fandom menus opened mid-scan.
         for id in pairs(works) do if not found[id] then works[id]=nil end end
         for id,work in pairs(found) do
-            local state=DownloadedFanfics.get(id)
-            local merged={}
-            for key,value in pairs(work) do merged[key]=value end
-            if state then
-                merged.chapter_data=state.chapter_data or merged.chapter_data
-                merged.read=state.read
-                merged.last_accessed=state.last_accessed
+            if not deleted[tostring(id)] then
+                local state=DownloadedFanfics.get(id)
+                local merged={}
+                for key,value in pairs(work) do merged[key]=value end
+                if state then
+                    merged.chapter_data=state.chapter_data or merged.chapter_data
+                    merged.read=state.read
+                    merged.last_accessed=state.last_accessed
+                end
+                works[id]=merged
             end
-            works[id]=merged
         end
     end
     local function invalid()
@@ -547,7 +568,13 @@ function FanficMenu:onViewDownloadedFanfics()
         end} end
         for _,work in ipairs(sorted) do
             rows[#rows+1]={text=(work.title or work.path).." — "..(work.author or ""),callback=function()
-                self.fanfic:onOpenFanficReader(work.path,work)
+                require("fanfic_work_actions").show(self.fanfic, work, {
+                    deleted=function()
+                        deleted[tostring(work.id)]=true
+                        works[tostring(work.id)]=nil
+                    end,
+                    refresh=function() render() end,
+                })
             end}
         end
         if owner.item_table==rows then owner:updateItems();UIManager:setDirty(owner,"ui") end
@@ -583,9 +610,15 @@ function FanficMenu:onSelectUserSearch()
 
         for __, user in ipairs(users) do
             local displayText = T("★ %1", user)
+            local function openProfile()
+                local username = user:match("%((.-)%)")
+                local pseud = user:match("^(.-)%s*%(")
+                self.fanfic:showUserInfo(username or user, pseud or user, self.menuWidget)
+            end
             table.insert(menu_items, {
                 text = displayText,
-                callback = function()
+                callback = openProfile,
+                hold_callback = function()
                     local dialog = nil
                     dialog = ButtonDialog:new({
                         title = displayText,
@@ -594,16 +627,8 @@ function FanficMenu:onSelectUserSearch()
                                 {
                                     text = _("View user profile"),
                                     callback = function()
-                                        local username, pseud
-                                        if string.find(user, "%(") and string.find(user, "%)") then
-                                            username = string.match(user, "%((.-)%)")
-                                            pseud = string.match(user, "^(.-)%s*%(")
-                                        else
-                                            username = user
-                                            pseud = user
-                                        end
-                                        self.fanfic:showUserInfo(username, pseud, self.menuWidget)
                                         UIManager:close(dialog)
+                                        openProfile()
                                     end,
                                 },
                                 {
@@ -752,6 +777,10 @@ function FanficMenu:onOpenSettings()
 
     local settings_options = {
         { text = "AO3 URL",                 setting = "AO3_domain",         type = "String"},
+        { text = "Work view", setting = "formatted_work_view", type = "Bool", on = "Formatted", off = "Information list" },
+        { text = "Formatted view text size", setting = "work_view_font_size", type = "Number", min = 12, max = 32, default = 18 },
+        { text = "AO3 symbols", setting = "ao3_eink_symbols", type = "Bool", on = "E-reader", off = "Original",
+            changed = function() require("fanfic_bookshelf_badges").refresh() end },
         { text = "Show adult work warning", setting = "show_adult_warning", type = "Bool" },
         { text = "Download layout", setting = "author_folders", type = "Bool", on = "Author/Title", off = "Flat (filename template)" },
         { text = "Flat filename template", description = "%I = id, %T = title, %A = author", setting = "filename_template", type = "String", check = checkFilenameTemplate },
@@ -815,6 +844,20 @@ function FanficMenu:onOpenSettings()
                         inputDialog:onShowKeyboard()
                     end,
                 }
+            elseif setting.type == "Number" then
+                local value=require("fanfic_work_view").baseTextSize()
+                menu_item={text=setting.text .. ": " .. value,callback=function()
+                    UIManager:show(require("ui/widget/spinwidget"):new{
+                        title_text=_(setting.text),value=value,
+                        value_min=setting.min,value_max=setting.max,value_step=1,
+                        default_value=setting.default,
+                        callback=function(spin)
+                            Config:saveSetting(setting.setting,spin.value)
+                            self.menuWidget:switchItemTable(nil,generateMenuItems())
+                            self.menuWidget:updateItems()
+                        end,
+                    })
+                end}
             elseif setting.type == "Bool" then
                 menu_item = {
                     text = setting.text .. ": " .. (Config:readSetting(setting.setting) and (setting.on or "On") or (setting.off or "Off")),
@@ -828,6 +871,7 @@ function FanficMenu:onOpenSettings()
                                         text = (setting.on or "On"),
                                         callback = function()
                                             Config:saveSetting(setting.setting, true)
+                                            if setting.changed then setting.changed() end
                                             UIManager:close(buttonDialog)
                                             self.menuWidget:switchItemTable(nil, generateMenuItems())
                                             self.menuWidget:updateItems()
@@ -843,6 +887,7 @@ function FanficMenu:onOpenSettings()
                                         is_enter_default = true,
                                         callback = function()
                                             Config:saveSetting(setting.setting, false)
+                                            if setting.changed then setting.changed() end
                                             UIManager:close(buttonDialog)
                                             self.menuWidget:switchItemTable(nil, generateMenuItems())
                                             self.menuWidget:updateItems()

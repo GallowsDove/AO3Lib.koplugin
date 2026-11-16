@@ -196,6 +196,8 @@ local Review=require('fanfic_update_review')
 Review.show({ui={}})
 local menu=shown[#shown]
 assert(menu.title=='Downloaded work updates')
+assert(menu.is_borderless and not menu.is_popout and menu.linesize==0)
+assert(menu.with_bottom_line and menu.title_bar_left_icon=='ao3')
 local function find(text)
     for _,row in ipairs(menu.item_table) do if row.text:find(text,1,true) then return row end end
     error('Missing menu item: '..text)
@@ -235,3 +237,17 @@ assert(find('Work ui2').text:find('Updated',1,true))
 tap('Check all works again'); drain()
 assert(checks==start_checks+4 and find('Work ui1'))
 print('PASS: actual review UI; explicit check/selection; preserved Wi-Fi continuation; stop/resume; hold details; selective update; close cancels pending work; reopen and recheck')
+
+-- A work action checks only that work, without a library scan or download.
+local single=fixture('single-ui')
+stub('fanfic_library',{scan=function() error('Single-work review must not scan the library') end})
+connected=false
+local before_checks,before_downloads=checks,downloads
+local single_session,single_menu=Review.showWork({ui={}},single)
+assert(#single_session.entries==1 and single_session.entries[1].work.id==single.id)
+assert(pending_connection and checks==before_checks and downloads==before_downloads)
+connected=true;reconnect=pending_connection;pending_connection=nil;reconnect();drain()
+assert(checks==before_checks+1 and downloads==before_downloads)
+assert(single_session.entries[1].status=='update' and not single_session.entries[1].selected)
+single_menu:onCloseWidget()
+print('PASS: single-work review auto-checks only the chosen work, preserves Wi-Fi continuation and never applies an update automatically')

@@ -27,13 +27,14 @@ local function describe(entry)
         .. "\n\n" .. tostring(work.path)
 end
 
-local function openReview(fanfic, works)
+local function openReview(fanfic, works, check_now)
     local session=Updates.new(works,previous)
     previous=session
     local menu, refresh
     local show_all=false
     local function details(entry)
-        UI:show(TextViewer:new{title=_("Work update details"), text=describe(entry)})
+        UI:show(require("fanfic_navigation").bind(fanfic,
+            TextViewer:new{title=_("Work update details"), text=describe(entry)}))
     end
     local function run(operation, targets)
         if #targets==0 then return end
@@ -110,25 +111,32 @@ local function openReview(fanfic, works)
         UI:setDirty(menu,"ui")
     end
     local function close()
+        if session.closed then return end
         session.closed=true
         session:stop()
         if fanfic.ui and fanfic.ui.file_chooser then pcall(function() fanfic.ui.file_chooser:refreshPath() end) end
     end
-    menu=Menu:new{title=_("Downloaded work updates"), item_table={}, close_callback=close,
+    menu=Menu:new(require("fanfic_ui").menu{title=_("Downloaded work updates"), item_table={}, close_callback=close,
         onMenuSelect=function(_,item)
             if item.enabled~=false and item.callback then item.callback() end
             return true
         end,
         onMenuHold=function(_,item) if item.hold_callback then item.hold_callback() end; return true end,
-    }
+    })
     local original_close=menu.onCloseWidget
     menu.onCloseWidget=function(self,...)
         close()
         if original_close then return original_close(self,...) end
     end
+    require("fanfic_navigation").bind(fanfic, menu)
     refresh()
     UI:show(menu)
+    if check_now then run("check", session.entries) end
     return session,menu
+end
+
+function M.showWork(fanfic, work)
+    return openReview(fanfic, {work}, true)
 end
 
 function M.show(fanfic)

@@ -46,16 +46,17 @@ function M.show(fanfic)
                             return
                         end
                         if fanfic.ui.file_chooser then pcall(function() fanfic.ui.file_chooser:refreshPath() end) end
-                        UIManager:show(TextViewer:new{
+                        UIManager:show(require("fanfic_navigation").bind(fanfic, TextViewer:new{
                             title=_("Organization results"),
                             text=string.format(_("%d moved; %d skipped after preview; %d failed.\n\nReading-state backups and move journal:\n%s"),
                                 summary.moved,summary.skipped,summary.failed,summary.journal)
                                 .. (#summary.errors > 0 and ('\n\n' .. table.concat(summary.errors,'\n')) or ''),
-                        })
+                        }))
                     end)
                 end},
             }},
         }
+        require("fanfic_navigation").bind(fanfic, preview)
         UIManager:show(preview)
     end, function() return cancelled end)
 end

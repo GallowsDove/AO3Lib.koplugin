@@ -16,9 +16,7 @@ local function metadata(fp, unread)
     local ok, data = pcall(Metadata.get, fp, unread)
     if ok and type(data) == "table" then return data end
 end
-local function copy(value)
-    local out = {}; for key, item in pairs(value or {}) do out[key] = item end; return out
-end
+local copy = require("fanfic_table").shallowCopy
 
 function M.install()
     require("fanfic_icons").installBookshelf()

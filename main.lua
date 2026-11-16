@@ -17,6 +17,8 @@ local Event = require("ui/event")
 local Dispatcher = require("dispatcher")
 local AO3DownloaderClient = require("AO3_downloader_client")
 local util = require("util")
+local Tables = require("fanfic_table")
+local ResultPages = require("fanfic_result_pages")
 
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
@@ -117,12 +119,7 @@ function Fanfic:onOpenFanficReader(fanfic_path, current_fanfic, start_chapter)
 end
 
 function Fanfic:closeAllMenus()
-    for menu_widget, _ in pairs(self.menu_stack) do
-        if menu_widget then
-            UIManager:close(menu_widget)
-        end
-    end
-    self.menu_stack = {}
+    require("fanfic_navigation").closeAll(self)
 end
 
 function Fanfic.GenerateFileName(metadata)
@@ -264,152 +261,6 @@ function Fanfic:UpdateFanfic(fanfic)
     })
 end
 
-function Fanfic:fetchFanficsByTag(selectedFandom, sortBy)
-    -- Data-returning helpers run inside the caller's network-gated UI action.
-    local currentPage = 1
-
-    -- Define the function to fetch the next page for the selected fandom
-    local function fetchNextPage()
-        currentPage = currentPage + 1
-        local next_page_results =  AO3DownloaderClient:searchByTag(selectedFandom, sortBy, currentPage)
-        if not next_page_results.success then
-            currentPage = currentPage - 1
-            UIManager:show(InfoMessage:new{
-                text = T("Error: %1", next_page_results.error),
-                icon = "notice-warning",
-            })
-            return {}
-        end
-
-        return next_page_results.result_works
-    end
-
-    -- Fetch the first page of results
-    local search_results = AO3DownloaderClient:searchByTag(selectedFandom, sortBy, currentPage)
-
-    if not search_results.success then
-        UIManager:show(InfoMessage:new{
-            text = T("Error: %1", search_results.error),
-            icon = "notice-warning",
-        })
-        return false
-    end
-
-    return true, search_results.result_works, fetchNextPage
-
-end
-
-function Fanfic:getWorksFromAccountHistory(marked_for_later)
-
-    local currentPage = 1
-
-    -- Define the function to fetch the next page for the selected fandom
-    local function fetchNextPage()
-        currentPage = currentPage + 1
-        local next_page_results =  AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, currentPage)
-        if not next_page_results.success then
-            currentPage = currentPage - 1
-            UIManager:show(InfoMessage:new{
-                text = T("Error: %1", next_page_results.error),
-                icon = "notice-warning",
-            })
-            return {}
-        end
-
-        return next_page_results.works
-    end
-
-    -- Fetch the first page of results
-    local search_results = AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, currentPage)
-
-    if not search_results.success then
-        UIManager:show(InfoMessage:new{
-            text = T("Error: %1", search_results.error),
-            icon = "notice-warning",
-        })
-        return false
-    end
-
-    return true, search_results.works, fetchNextPage
-
-end
-
-function Fanfic:executeSearch(parameters)
-
-    local currentPage = 1
-
-    -- Define the function to fetch the next page for the search parameters
-    local function fetchNextPage()
-        currentPage = currentPage + 1
-        local request_result = AO3DownloaderClient:searchByParameters(parameters, currentPage)
-
-        if not request_result.success then
-            UIManager:show(InfoMessage:new{
-                text = _("Error: ") .. (request_result.error or "Unknown error"),
-            })
-            currentPage = currentPage - 1
-            return false
-        end
-
-        -- no more works to fetch
-        if #request_result.works == 0 then
-            currentPage = currentPage - 1
-            return {}
-        end
-
-        return request_result.works
-    end
-
-    -- Fetch the first page of results
-    local request_result = AO3DownloaderClient:searchByParameters(parameters, currentPage)
-
-    if not request_result.success then
-        UIManager:show(InfoMessage:new{
-            text = _("Error: ") .. (request_result.error or "Unknown error"),
-        })
-        return false
-    end
-
-    return true, request_result.works, fetchNextPage
-end
-
-
-function Fanfic:searchForUsers(query)
-    local search_results = AO3DownloaderClient:searchForUsers(query)
-    if not search_results.success then
-        UIManager:show(InfoMessage:new{
-            text = "Error: User search request failed. " .. (search_results.error or "Unknown error"),
-        })
-        return false
-    end
-
-    logger.dbg(search_results.result_users)
-
-    local current_page = 1
-
-    local function getNextPage()
-        current_page = current_page + 1
-        local next_page_result = AO3DownloaderClient:searchForUsers(query, current_page)
-        if not next_page_result.success then
-            current_page = current_page - 1
-            UIManager:show(InfoMessage:new{
-                text = "Error: User search request failed. " .. (next_page_result.error or "Unknown error"),
-            })
-            return {}
-        end
-
-        -- no more users to fetch
-        if #next_page_result.result_users == 0 then
-            current_page = current_page - 1
-            return {}
-        end
-
-        return  next_page_result.result_users
-    end
-
-    return true,search_results.result_users, getNextPage
-end
-
 function Fanfic:showUserInfo(username, pseud)
     if Network.defer(function() self:showUserInfo(username, pseud) end) then return end
     local AO3UserBrowser = require("AO3_user_browser")
@@ -436,41 +287,6 @@ function Fanfic:getUserData(username, pseud)
 
 end
 
-function Fanfic:getWorksFromUserPage(username, pseud, category, fandom_id)
-    local works_result = AO3DownloaderClient:getWorksFromUserPage(username, pseud, category, fandom_id)
-    if not works_result.success then
-        UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch works from user page: " .. (works_result.error or "Unknown error"),
-        })
-        return false
-    end
-
-    local currentPage = 1
-
-    local function getNextPage()
-        currentPage = currentPage + 1
-        local next_page_result = AO3DownloaderClient:getWorksFromUserPage(username, pseud, category, fandom_id, currentPage)
-        if not next_page_result.success then
-            currentPage = currentPage - 1
-            UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch works from user page: " .. (next_page_result.error or "Unknown error"),
-            })
-            return {}
-        end
-
-        -- no more works to fetch
-        if #next_page_result.works == 0 then
-            currentPage = currentPage - 1
-            return {}
-        end
-
-        return  next_page_result.works
-    end
-
-    return true, works_result.works, getNextPage
-
-end
-
 function Fanfic:getPseudsForUser(username)
     local pseuds_result = AO3DownloaderClient:getUserPseuds(username)
     if not pseuds_result.success then
@@ -481,152 +297,6 @@ function Fanfic:getPseudsForUser(username)
     end
 
     return true, pseuds_result.pseuds
-
-end
-
-function Fanfic:getSeriesFromUserPage(username, pseud)
-
-
-    local current_page = 1
-
-    local series_result = AO3DownloaderClient:getUserSeries(username, pseud, current_page)
-
-    local function getNextPage()
-        current_page = current_page + 1
-        local next_page_result = AO3DownloaderClient:getUserSeries(username, pseud, current_page)
-        if not next_page_result.success then
-            current_page = current_page - 1
-            UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch series from users page: " .. (next_page_result.error or "Unknown error"),
-            })
-            return {}
-        end
-
-        -- no more series to fetch
-        if #next_page_result.series == 0 then
-            current_page = current_page - 1
-            return {}
-        end
-
-        return  next_page_result.series
-
-    end
-    if not series_result.success then
-        UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch series from users page: " .. (series_result.error or "Unknown error"),
-        })
-        return false
-    end
-
-    return true, series_result.series, getNextPage
-
-end
-
-function Fanfic:getCollectionsFromUserPage(username)
-
-    local currentPage = 1
-
-    local works_result = AO3DownloaderClient:getUserCollections(username, currentPage)
-    if not works_result.success then
-        UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch collections from users collections page: " .. (works_result.error or "Unknown error"),
-        })
-        return false
-    end
-
-
-    local function getNextPage()
-        currentPage = currentPage + 1
-        local next_page_result = AO3DownloaderClient:getUserCollections(username, currentPage)
-        if not next_page_result.success then
-            currentPage = currentPage - 1
-            UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch collections from users collections page: " .. (next_page_result.error or "Unknown error"),
-            })
-            return {}
-        end
-
-        -- no more works to fetch
-        if #next_page_result.collections == 0 then
-            currentPage = currentPage - 1
-            return {}
-        end
-
-        return  next_page_result.collections
-    end
-
-    return true, works_result.collections, getNextPage
-end
-
-function Fanfic:getWorksFromSeries(series_id)
-    local works_result = AO3DownloaderClient:getWorksFromSeries(series_id)
-    if not works_result.success then
-        UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch works from series: " .. (works_result.error or "Unknown error"),
-        })
-        return false
-    end
-
-    local currentpage = 1
-
-    local function fetchNextPage()
-        currentpage = currentpage + 1
-        local next_page_result = AO3DownloaderClient:getWorksFromSeries(series_id, currentpage)
-        if not next_page_result.success then
-            currentpage = currentpage - 1
-            UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch works from series: " .. (next_page_result.error or "Unknown error"),
-            })
-            return {}
-        end
-
-        -- no more works to fetch
-        if #next_page_result.works == 0 then
-            currentpage = currentpage - 1
-            return {}
-        end
-
-        return  next_page_result.works
-
-    end
-
-    return true, works_result.works, fetchNextPage
-
-end
-
-function Fanfic:getWorksFromCollection(collection_id)
-    local works_result = AO3DownloaderClient:getWorksFromCollection(collection_id)
-    if not works_result.success then
-        UIManager:show(InfoMessage:new{
-            text = "Error: Failed to fetch works from collection: " .. (works_result.error or "Unknown error"),
-        })
-        return false
-    end
-
-    local currentpage = 1
-
-    local function fetchNextPage()
-        currentpage = currentpage + 1
-        local next_page_result = AO3DownloaderClient:getWorksFromCollection(collection_id, currentpage)
-        if not next_page_result.success then
-            currentpage = currentpage - 1
-            UIManager:show(InfoMessage:new{
-                text = "Error: Failed to fetch works from collection: " .. (next_page_result.error or "Unknown error"),
-            })
-            return {}
-        end
-
-        -- no more works to fetch
-        if #next_page_result.works == 0 then
-            currentpage = currentpage - 1
-            return {}
-        end
-
-        return  next_page_result.works
-
-    end
-
-    return true, works_result.works, fetchNextPage
 
 end
 
@@ -688,6 +358,45 @@ function Fanfic:logoutOfAO3()
             text = _("Error: Failed to log out. ") .. (request_result.error or "Unknown error"),
         })
         return false
+    end
+end
+
+-- Each endpoint is defined once for both sequential and numbered navigation.
+local result_pages = {
+    fetchFanficsByTag = {method="searchByTag", arguments=2, field="result_works", numbered=true,
+        advance_empty=true, warning=true},
+    getWorksFromAccountHistory = {method="getWorksFromAccountHistory", arguments=1, field="works", numbered=true,
+        advance_empty=true, warning=true},
+    executeSearch = {method="searchByParameters", arguments=1, field="works", numbered=true,
+        failure=false},
+    searchForUsers = {method="searchForUsers", arguments=1, field="result_users",
+        error="Error: User search request failed. "},
+    getWorksFromUserPage = {method="getWorksFromUserPage", arguments=4, field="works", numbered=true,
+        error="Error: Failed to fetch works from user page: "},
+    getSeriesFromUserPage = {method="getUserSeries", arguments=2, field="series",
+        error="Error: Failed to fetch series from users page: "},
+    getCollectionsFromUserPage = {method="getUserCollections", arguments=1, field="collections",
+        error="Error: Failed to fetch collections from users collections page: "},
+    getWorksFromSeries = {method="getWorksFromSeries", arguments=1, field="works", numbered=true,
+        error="Error: Failed to fetch works from series: "},
+    getWorksFromCollection = {method="getWorksFromCollection", arguments=1, field="works", numbered=true,
+        error="Error: Failed to fetch works from collection: "},
+}
+for name, spec in pairs(result_pages) do
+    Fanfic[name] = function(self, ...)
+        local args = Tables.deepCopy({...})
+        local function request(page)
+            -- Explicit arity preserves optional nil arguments before the page.
+            args[spec.arguments + 1] = page
+            return AO3DownloaderClient[spec.method](AO3DownloaderClient,
+                unpack(args, 1, spec.arguments + 1))
+        end
+        return ResultPages.open(request, spec, function(err)
+            UIManager:show(InfoMessage:new{
+                text = (spec.error or _("Error: ")) .. (err or "Unknown error"),
+                icon = spec.warning and "notice-warning" or nil,
+            })
+        end)
     end
 end
 
