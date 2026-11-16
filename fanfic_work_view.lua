@@ -96,31 +96,34 @@ end
 -- alignment, relative sizes for device scaling, no browser-only layout rules.
 M.css=[[
 @page { margin: 0; }
-body { margin: 0; line-height: 1.22; color: #111; }
-a { color: #111; text-decoration: none; }
+body { margin: 0; line-height: 1.22; color: #000; background-color: #fff; }
+a { color: #000; text-decoration: none; }
 p { margin: .25em 0; }
-h1 { font-size: 1.3em; line-height: 1.1; margin: 0 0 .12em; }
-.tag-group .tag-heading { font-size: .72em; font-weight: bold; letter-spacing: .1em; text-transform: uppercase; color: #555; }
+h1 { font-size: 1.25em; font-weight: bold; line-height: 1.1; margin: 0 0 .12em; }
+h1, h1 a, h1 a:link, h1 a:visited, h1 a:active { color: #000; }
+.tag-group .tag-heading { font-size: .72em; font-weight: bold; color: #000; }
 table.heading { width: 100%; border-spacing: 0; margin: 0 0 .3em; }
 table.heading td { vertical-align: top; padding: 0; }
 table.heading td.square { width: 4em; padding-right: .5em; }
 table.badges { border-spacing: .1em; width: 3.6em; }
 table.badges td { width: 1.7em; height: 1.7em; }
 table.badges img { width: 1.7em; height: 1.7em; }
-.author { font-size: .95em; font-style: italic; margin: 0; }
+.author { font-size: .95em; font-style: normal; margin: 0; }
 .author a, .series a { text-decoration: underline; }
-.fandom { font-size: .82em; color: #555; margin: .2em 0 0; }
-.series { font-size: .9em; font-style: italic; margin: .25em 0; }
+.fandom { font-size: .82em; color: #111; margin: .2em 0 0; }
+.series { font-size: .9em; font-style: normal; margin: .25em 0; }
 .work-facts { font-size: .85em; margin: .35em 0 .2em; }
-.advisory { font-size: .74em; color: #444; margin: .2em 0; }
+.advisory { font-size: .74em; color: #111; margin: .2em 0; }
+.status { font-weight: bold; color: #000; }
 .summary { margin: .55em 0; }
 .summary p { margin: .4em 0; }
 .tag-group { margin: .3em 0; }
 .tag-group p { font-size: .85em; line-height: 1.4; }
-.chip { background-color: #eee; border-bottom: 1px solid #aaa; padding: .03em .15em; }
-.relationships .chip { font-style: italic; }
-.footnote { border-top: 1px solid #aaa; margin-top: 1.1em; padding-top: .4em; font-size: .72em; color: #555; }
-.date { font-style: italic; }
+.chip { background-color: #fff; border-bottom: 1px solid #777; padding: .03em .15em; }
+.relationships .chip { font-style: normal; }
+.footnote { border-top: 1px solid #777; margin-top: 1.1em; padding-top: .4em; font-size: .72em; color: #111; }
+.footnote b { color: #000; }
+.date { font-style: normal; }
 ]]
 
 -- Controller kept separate from rendering so paging/connection lifecycle can
