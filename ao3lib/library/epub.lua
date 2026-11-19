@@ -211,13 +211,42 @@ function M.flush()
     end
 end
 
-function M.invalidate(path)
+function M.invalidate(path, defer)
     local entries = getCache()
     if entries[path] ~= nil then
         entries[path] = nil
         cache_dirty = true
-        M.flush()
+        if defer then
+            if not flush_scheduled then
+                flush_scheduled=true
+                require("ui/uimanager"):scheduleIn(1,M.flush)
+            end
+        else M.flush() end
     end
+end
+-- Return indexed works without checking the filesystem. Callers validate in a
+-- worker so temporarily inaccessible storage does not erase the index.
+function M.indexWorks(roots)
+    local out,normalized={},{}
+    for _,root in ipairs(roots or {}) do
+        if type(root)=="string" and root~="" then
+            root=(require("ffi/util").realpath(root) or root):gsub("/+$","")
+            normalized[#normalized+1]=root=="" and "/" or root
+        end
+    end
+    for path,entry in pairs(getCache()) do
+        if type(path)=="string" and type(entry)=="table" and type(entry.work)=="table" and entry.work.id
+                and entry.metadata_version==2 then
+            for _,root in ipairs(normalized) do
+                if (root=="/" and path:sub(1,1)=="/") or path:sub(1,#root+1)==root.."/" then
+                    local work=util.tableDeepCopy(entry.work);work.path=path
+                    out[tostring(work.id)]=work
+                    break
+                end
+            end
+        end
+    end
+    return out
 end
 
 local function current(path, entry)

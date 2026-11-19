@@ -127,6 +127,7 @@ function M.apply(entry)
     if #chapters==0 and n==1 and #(old.chapter_data or {})==1 then updated.chapter_data=old.chapter_data end
     if #updated.chapter_data > 0 or (n and count(entry.local_work) and n>count(entry.local_work)) then updated.read=nil end
     local saved, save_err = History.update(updated)
+    pcall(function() require('ao3lib.library.local_cache').index(updated.path) end)
     -- Let the library discover the changed file without changing any
     -- Bookshelf source or touching the document's reading-state sidecar.
     pcall(function()

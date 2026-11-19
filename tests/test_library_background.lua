@@ -8,7 +8,11 @@ for i=1,30 do
 end
 fs['/books']={mode='directory'}
 local closed=0
-package.loaded['libs/libkoreader-lfs']={attributes=function(p,key) local s=fs[p];return key and s and s[key] or s end,
+package.loaded['libs/libkoreader-lfs']={attributes=function(p,key)
+    local s=fs[p]
+    if not s then return nil,'No such file or directory',2 end
+    return key and s[key] or s
+end,
 symlinkattributes=function(p) return fs[p] end,
 dir=function()
     local i=0;local handle={close=function() closed=closed+1 end}
@@ -77,4 +81,31 @@ Library.scan({'/books'},function(_,err) error=err end,nil,{read_only=true});H.dr
 assert(error and error:find('Could not start',1,true))
 _,known=Epub.cached('/books/2.epub');assert(not known)
 assert(closed>0)
+-- Loading the shared library snapshot must use a real worker and keep
+-- differently rooted libraries isolated.
+for _,s in pairs(fs) do if s.mode=='file' then s.modification=1 end end
+local LocalCache=require('ao3lib.library.local_cache')
+local seeded
+LocalCache.load({'/books'},function(found) seeded=found end)
+H.drain()
+assert(seeded and seeded['1'] and LocalCache.get({'/books'})['1'])
+assert(not LocalCache.get({'/other'}),'A different library must not reuse the snapshot')
+fs['/books/31.epub']={mode='file',size=100,modification=1,change=1}
+LocalCache.index('/books/31.epub');H.drain()
+assert(LocalCache.get({'/books'})['31'] and Epub.cached('/books/31.epub'),
+    'A successful download must enter the shared and persistent EPUB indexes')
+fs['/books/1.epub']=nil
+LocalCache.load({'/books'},function(found) seeded=found end);H.drain()
+assert(not seeded['1'] and not LocalCache.get({'/books'})['1'],
+    'A file deleted outside AO3Lib must be removed during validation')
+fs['/books']=nil;fs['/books/2.epub']=nil
+LocalCache.load({'/books'},function(found) seeded=found end);H.drain()
+assert(seeded['2'],'An unavailable library root must not erase indexed works')
+local scan_error
+Library.scan({'/books'},function(_,err) scan_error=err end,nil,{read_only=true});H.drain()
+assert(scan_error and LocalCache.get({'/books'})['2'],
+    'A rescan of inaccessible storage must fail without replacing the index')
+LocalCache.removePath('/books/31.epub')
+assert(not LocalCache.get({'/books'})['31'] and not Epub.cached('/books/31.epub'),
+    'An AO3Lib deletion must remove both indexes immediately')
 print('PASS: real batched EPUB workers; progressive discovery; parent-only cache writes; warm cache fast path; changed-file rejection; cancellation; worker failure without negative caching')

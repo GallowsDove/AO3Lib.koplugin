@@ -25,38 +25,50 @@ local grouped
 package.loaded["ao3lib.ui.downloaded_menu"].show=function(_,_,_,_,_,works) grouped=works;owner.item_table={} end
 local a={id='1',path='/books/1.epub',title='First',author='Writer'}
 local b={id='2',path='/books/2.epub',title='Second',author='Writer'}
+local cache_jobs={}
+package.loaded['ao3lib.ao3.background']={available=function() return true end,
+    run=function(task,done,options)
+        local job={task=task,done=done,options=options}
+        function job:cancel() self.cancelled=true end
+        cache_jobs[#cache_jobs+1]=job;return job
+    end}
+package.loaded['ao3lib.library.epub'].cachedPaths=function(roots)
+    assert(roots[1]=='/books');return {'/books/1.epub'}
+end
+package.loaded['ao3lib.library.epub'].cached=function(path)
+    if path==a.path then return a,true end
+end
 Menu:onViewDownloadedFanfics()
-local scan=requests[#requests]
-scan.progress({['1']=a})
-assert(owner.item_table[1].text:find('1 AO3 works found',1,true))
-assert(owner.item_table[4].text:find('First',1,true))
+local cache_job=cache_jobs[#cache_jobs]
+assert(#requests==0,'Opening Downloaded Works must not start a directory scan')
+cache_job.done({found={['1']=a},changed={},missing={}})
+assert(owner.item_table[1].text:find('Found 1 AO3 works',1,true))
+assert(owner.item_table[3].text:find('First',1,true))
 local actions
 UI.show=function(_,dialog) actions=dialog end
-owner.item_table[4].callback()
+owner.item_table[3].callback()
 assert(not opened and actions.buttons[1][1].text=='Work details')
 actions.buttons[2][1].callback()
 assert(opened.id=='1' and opened.read and opened.chapter_data[1].read)
 owner.item_table[2].callback()
 assert(grouped['1'].read)
 local child=owner.item_table
-scan.done({['1']=a,['2']=b})
-assert(owner.item_table==child,'Completing a scan must not replace a child menu')
-assert(grouped['2'] and grouped['1'].read,'Menus opened mid-scan must retain the live results table and progress')
+assert(grouped['1'].read and owner.item_table==child)
+require('ao3lib.library.local_cache').put({'/books','/books'},{['1']=a,['2']=b})
 Menu:onViewDownloadedFanfics()
-scan=requests[#requests];scan.progress({['1']=a})
-owner.item_table[3].callback() -- Stop scanning
-assert(scan.cancelled())
-scan.done({['1']=a,['2']=b})
-assert(#owner.item_table==3,'Results arriving after Stop must be discarded')
+assert(owner.item_table[1].text:find('Found 2 AO3 works',1,true),
+    'Reopening Downloaded Works should immediately reuse the session snapshot')
+assert(#requests==0,'Reopening must not start another directory scan')
+for _,item in ipairs(owner.item_table) do assert(item.text~='Rescan library') end
 Menu:onViewDownloadedFanfics()
-scan=requests[#requests];scan.progress({['1']=a})
+local pending=cache_jobs[#cache_jobs]
 owner.paths[#owner.paths].onReturn()
-assert(scan.cancelled(),'Backing out of Downloaded Works must cancel discovery immediately')
-scan.done({['1']=a,['2']=b})
+assert(pending.cancelled,'Backing out of Downloaded Works must cancel validation immediately')
+pending.done({found={['1']=a},changed={},missing={}})
 Menu:onViewDownloadedFanfics()
-scan=requests[#requests];visible=false
-assert(scan.cancelled(),'Closing the plugin menu must cancel discovery')
-print('PASS: progressive Downloaded Works UI; saved progress on partial results; live author/fandom results; no forced navigation; Stop/close discards stale results')
+pending=cache_jobs[#cache_jobs];visible=false
+assert(not pending.options.valid(),'Closing the plugin menu must cancel validation')
+print('PASS: cached Downloaded Works UI; saved progress; no directory scans; back/close cancels validation')
 
 -- All nested downloaded/author/fandom/chapter pages inherit the same menu
 -- class; do not let the default Menu row borders creep back into these lists.

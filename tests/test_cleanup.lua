@@ -60,6 +60,8 @@ assert(fs['/book.epub'].bytes==original)
 assert(M.commit(plan))
 local cleaned=fs['/book.epub'].bytes
 assert(cleaned~=original)
+local folder='/settings/ao3_formatting/123/'..digest(cleaned)
+assert(fs[folder..'/ao3-formatting.json'] and not fs[folder..'/manifest.json'])
 local revert=assert(M.findBackup('/book.epub','123'))
 assert(M.commit(revert));assert(fs['/book.epub'].bytes==original)
 assert(not M.findBackup('/book.epub','123'))

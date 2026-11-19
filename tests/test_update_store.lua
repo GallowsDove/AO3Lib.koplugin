@@ -4,7 +4,7 @@ local Buffer=require('string.buffer')
 local directory=os.tmpname();os.remove(directory)
 assert(os.execute('mkdir '..directory)==0)
 local fail=false
-package.loaded["ao3lib.core.paths"]={getHomeDirectory=function() return directory end}
+package.loaded["ao3lib.core.persistent"]={path=function(name) return directory..'/'..name end}
 package.loaded.util={makePath=function(path) assert(path==directory);return not fail end}
 local Store=require('ao3lib.updates.store')
 local state={version=1,entries={{work={id='1',path='/books/1.epub'},status='update'}},pending={'1\n/books/1.epub'}}

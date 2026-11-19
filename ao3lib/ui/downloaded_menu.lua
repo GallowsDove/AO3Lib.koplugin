@@ -10,7 +10,7 @@ local DownloadedFanficsMenu = {}
 
 local Fields = require("ao3lib.library.fields")
 
-function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic, local_works)
+function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic, local_works, onDeleted)
     self.Fanfic = Fanfic
     local browse_by_author = false
 
@@ -127,6 +127,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                                 require("ao3lib.ui.work_actions").show(Fanfic, fanfic, {
                                     deleted=function()
                                         local_works[tostring(fanfic.id)] = nil
+                                        if onDeleted then onDeleted(fanfic) end
                                         for i = #parentMenu.item_table, 1, -1 do
                                             if tostring(parentMenu.item_table[i].id) == tostring(fanfic.id) then
                                                 table.remove(parentMenu.item_table, i)

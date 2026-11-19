@@ -487,10 +487,16 @@ function FanficMenu:onBrowseByTag(selectedTag)
     self.menuWidget:GoDownInMenu(_("Search works"),CustomFilterMenu:filterMenuRows())
 end
 
+-- Reuse the last discovered library within this KOReader session. The EPUB
+-- cache supplies the initial snapshot in a worker on a cold start.
 function FanficMenu:onViewDownloadedFanfics()
-    local cancelled,complete=false,false
-    local scan_handle
+    local cancelled=false
+    local cache_job
     local works,rows,deleted={},{},{}
+    local cached_found={}
+    local loading=true
+    local roots
+    local LocalCache=require('ao3lib.library.local_cache')
     local owner=self.menuWidget
     local function replace(found)
         -- Keep this table stable for author/fandom menus opened mid-scan.
@@ -512,30 +518,32 @@ function FanficMenu:onViewDownloadedFanfics()
     local function invalid()
         return cancelled or (UIManager.isWidgetShown and not UIManager:isWidgetShown(owner))
     end
+    local function stop()
+        cancelled=true
+        if cache_job and cache_job.cancel then cache_job:cancel() end
+    end
+    local function forget(work)
+        local id=tostring(work.id)
+        deleted[id]=true
+        works[id]=nil
+        LocalCache.remove(roots,id)
+    end
     local render
     render=function()
         for i=#rows,1,-1 do rows[i]=nil end
         local sorted={}
         for _,work in pairs(works) do sorted[#sorted+1]=work end
         table.sort(sorted,function(a,b) return (a.title or "")<(b.title or "") end)
-        rows[#rows+1]={text=complete and T("Found %1 AO3 works",#sorted)
-            or T("Scanning… %1 AO3 works found",#sorted),enabled=false}
+        rows[#rows+1]={text=loading and #sorted==0 and _("Loading downloaded works…")
+            or T("Found %1 AO3 works",#sorted),enabled=false}
         rows[#rows+1]={text=_("Browse by fandom or author"),enabled=#sorted>0,callback=function()
             if #sorted==0 then return end
-            DownloadedFanficsMenu:show(self.fanfic.ui,owner,function(work) self.fanfic:UpdateFanfic(work) end,self.fanfic,works)
+            DownloadedFanficsMenu:show(self.fanfic.ui,owner,function(work) self.fanfic:UpdateFanfic(work) end,self.fanfic,works,forget)
         end}
-        if not complete then rows[#rows+1]={text=_("Stop scanning"),callback=function()
-            cancelled=true;complete=true
-            if scan_handle and scan_handle.cancel then scan_handle.cancel() end
-            render()
-        end} end
         for _,work in ipairs(sorted) do
             rows[#rows+1]={text=(work.title or work.path).." — "..(work.author or ""),callback=function()
                 require("ao3lib.ui.work_actions").show(self.fanfic, work, {
-                    deleted=function()
-                        deleted[tostring(work.id)]=true
-                        works[tostring(work.id)]=nil
-                    end,
+                    deleted=function() forget(work) end,
                     refresh=function() render() end,
                 })
             end}
@@ -546,22 +554,27 @@ function FanficMenu:onViewDownloadedFanfics()
     owner:GoDownInMenu(_("Downloaded Works"),rows)
     local path=owner.paths and owner.paths[#owner.paths]
     if path then
-        path.onReturn=function()
-            if not complete then
-                cancelled=true;complete=true
-                if scan_handle and scan_handle.cancel then scan_handle.cancel() end
-            end
+        path.onReturn=stop
+    end
+    roots={}
+    local function addRoot(root)
+        if type(root)=="string" and root~="" then
+            roots[#roots+1]=root
         end
     end
-    local roots={Config:readSetting("fanfic_folder_path"),filemanagerutil.getHomeFolder()}
-    scan_handle=require("ao3lib.library.discovery").scan(roots,function(found,err)
+    addRoot(Config:readSetting("fanfic_folder_path"));addRoot(filemanagerutil.getHomeFolder())
+    local snapshot=LocalCache.get(roots)
+    if snapshot then
+        cached_found=snapshot
+        replace(cached_found);render()
+    end
+    cache_job=LocalCache.load(roots,function(found)
         if invalid() then return end
-        replace(found);complete=true;render()
-        if err then UIManager:show(InfoMessage:new{text=_("Could not finish the library scan: ")..err}) end
-    end,invalid,{progress=function(found)
-        replace(found)
+        loading=false
+        if found then cached_found=found;replace(cached_found) end
         render()
-    end})
+    end,function() return not invalid() end)
+    if not cache_job then loading=false;render() end
 end
 
 function FanficMenu:onSelectUserSearch()
@@ -757,6 +770,9 @@ function FanficMenu:onOpenSettings()
         { text = "Download layout", setting = "author_folders", type = "Bool", on = "Author/Title", off = "Flat (filename template)" },
         { text = "Flat filename template", description = "%I = id, %T = title, %A = author", setting = "filename_template", type = "String", check = checkFilenameTemplate },
         { text = "Fanfic folder",   setting = "fanfic_folder_path",  type = "Folder"},
+        { text = _("Rescan library"), type = "Action", call_function = function()
+            require("ao3lib.ui.library_rescan").show()
+        end },
         { text = "Organize downloaded works…", type = "Action", call_function = function()
             require("ao3lib.ui.organizer").show(self.fanfic)
         end },

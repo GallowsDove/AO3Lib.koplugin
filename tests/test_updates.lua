@@ -199,6 +199,7 @@ stub('ao3lib.updates.store',{
     flush=function(state) persisted=copy(state);return true end,
 })
 local Review=require('ao3lib.ui.update_review')
+require('ao3lib.ui.library_rescan').show()
 Review.show({ui={}})
 local menu=shown[#shown]
 assert(menu.title=='Downloaded work updates')

@@ -23,6 +23,7 @@ function M.delete(work, options)
                     return
                 end
                 History.delete(work.id)
+                pcall(function() require('ao3lib.library.local_cache').removePath(work.path) end)
                 if options.deleted then options.deleted(work) end
                 if options.refresh then options.refresh() end
                 UI:show(InfoMessage:new{text=T(_("'%1' has been deleted."), work.title)})

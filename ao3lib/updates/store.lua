@@ -1,11 +1,10 @@
-local Paths=require("ao3lib.core.paths")
+local Persistent=require("ao3lib.core.persistent")
 local M={}
 local generation=0
 M.error=nil
 
-local function path()
-    return Paths.getHomeDirectory() .. "/ao3_update_checks.bin"
-end
+local filename=Persistent.path("ao3_update_checks.bin")
+local function path() return filename end
 local function decode_file(filename)
     local file,err=io.open(filename,"rb")
     if not file then return nil,err end
@@ -37,7 +36,7 @@ end
 function M.flush(state)
     generation=generation+1
     local util=require("util")
-    local home=Paths.getHomeDirectory()
+    local home=filename:match('^(.*)/[^/]+$')
     if util.makePath and not util.makePath(home) then M.error="Could not create update-check storage directory";return nil,M.error end
     local ok,err=write_atomic(state,path())
     if not ok then M.error=tostring(err);return nil,M.error end
@@ -47,7 +46,7 @@ function M.save(state)
     generation=generation+1
     local current=generation
     local util=require("util")
-    local home=Paths.getHomeDirectory()
+    local home=filename:match('^(.*)/[^/]+$')
     if util.makePath and not util.makePath(home) then M.error="Could not create update-check storage directory";return nil,M.error end
     local filename=path()
     local named,staging=pcall(os.tmpname)

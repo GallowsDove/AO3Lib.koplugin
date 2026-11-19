@@ -27,7 +27,7 @@ stub('dkjson',{encode=function(data)
     if fail_encode then return nil,'simulated encoding failure' end
     local key='snapshot-'..encodes;encoded[key]=copy(data);return key
 end,decode=function(key) return copy(encoded[key]) end})
-stub('ao3lib.core.paths',{getHomeDirectory=function() return '/history' end})
+stub('ao3lib.core.persistent',{path=function(name) return '/history/'..name end})
 stub('libs/libkoreader-lfs',{attributes=function(path)
     if fs[path] then return {size=#fs[path],modification=fs[path]} end
 end})

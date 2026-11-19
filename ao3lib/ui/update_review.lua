@@ -27,9 +27,14 @@ local function describe(entry)
         .. "\n\n" .. tostring(work.path)
 end
 
-local function openReview(fanfic, works, check_now, focused_work)
-    local session=Updates.new(works,previous)
+local function openReview(fanfic, works, check_now, focused_work, on_close)
+    local prior=previous
+    local session=Updates.new(works,prior)
     previous=session
+    local prior_entries={}
+    for _,entry in ipairs(prior and prior.entries or {}) do
+        prior_entries[tostring(entry.work.id).."\n"..tostring(entry.work.path)]=entry
+    end
     local scope={}
     if focused_work then
         for _,entry in ipairs(session.entries) do
@@ -43,6 +48,7 @@ local function openReview(fanfic, works, check_now, focused_work)
     local menu, refresh
     local show_all=false
     local screen_closed=false
+    local loading=false
     local function details(entry)
         UI:show(require("ao3lib.ui.navigation").bind(fanfic,
             TextViewer:new{title=_("Work update details"), text=describe(entry)}))
@@ -73,6 +79,10 @@ local function openReview(fanfic, works, check_now, focused_work)
             end
         end
         local rows={{text=string.format(_("%d/%d checked · %d updates · %d failed"),checked,#scopeEntries(),available,failed),enabled=false}}
+        if loading then rows[#rows+1]={text=_("Loading downloaded works…"),enabled=false} end
+        if not loading and #scopeEntries()==0 then
+            rows[#rows+1]={text=_("No downloaded AO3 works found."),enabled=false}
+        end
         if session.pause_reason then
             rows[#rows+1]={text=_("Requests paused: ") .. session.pause_reason, enabled=false}
         end
@@ -88,7 +98,7 @@ local function openReview(fanfic, works, check_now, focused_work)
             callback=function() run("update",selections) end}
         rows[#rows+1]={text=_("Select all available updates"),enabled=available>0 and not session.busy,
             callback=function()
-                for __, entry in ipairs(session.entries) do if entry.status=="update" then entry.selected=true end end
+                for __, entry in ipairs(session.entries) do if scope[entry] and entry.status=="update" then entry.selected=true end end
                 refresh()
             end}
         rows[#rows+1]={text=_("Clear selection"),enabled=selected>0 and not session.busy,
@@ -109,7 +119,7 @@ local function openReview(fanfic, works, check_now, focused_work)
             callback=function() show_all=not show_all; refresh() end}
         rows[#rows+1]={text=_("Tap a work to select it; hold for details."), enabled=false}
         for __, entry in ipairs(session.entries) do
-            if show_all or (entry.status~="current" and entry.status~="unchecked") then
+            if scope[entry] and (show_all or (entry.status~="current" and entry.status~="unchecked")) then
                 local prefix=eligible(entry) and (entry.selected and "☑ " or "☐ ") or ""
                 rows[#rows+1]={text=prefix .. (entry.work.title or tostring(entry.work.id)) .. " — " .. statusLabel(entry),
                     callback=function()
@@ -126,6 +136,7 @@ local function openReview(fanfic, works, check_now, focused_work)
     local function close()
         if screen_closed then return end
         screen_closed=true
+        if on_close then on_close() end
         if fanfic.ui and fanfic.ui.file_chooser then pcall(function() fanfic.ui.file_chooser:refreshPath() end) end
     end
     menu=Menu:new(require("ao3lib.ui.widgets").menu{title=_("Downloaded work updates"), item_table={}, close_callback=close,
@@ -144,7 +155,38 @@ local function openReview(fanfic, works, check_now, focused_work)
     refresh()
     UI:show(menu)
     if check_now then run("check", scopeEntries()) end
-    return session,menu
+    local controls={}
+    function controls.loading(value) loading=value;refresh() end
+    function controls.merge(works,authoritative)
+        if screen_closed then return end
+        local byid={}
+        for _,entry in ipairs(session.entries) do
+            byid[tostring(entry.work.id).."\n"..tostring(entry.work.path)]=entry
+        end
+        local seen={}
+        for _,work in pairs(works or {}) do
+            if work.id and work.path then
+                local key=tostring(work.id).."\n"..tostring(work.path)
+                local entry=byid[key]
+                if not entry then
+                    local old=prior_entries[key]
+                    entry=old and Updates.new({work},{entries={old}}).entries[1]
+                        or {work=work,status="unchecked",selected=false}
+                    session.entries[#session.entries+1]=entry;byid[key]=entry
+                elseif entry.status=="unchecked" then entry.work=work end
+                scope[entry]=true;seen[entry]=true
+            end
+        end
+        if authoritative then
+            for entry in pairs(scope) do if not seen[entry] then scope[entry]=nil end end
+        end
+        table.sort(session.entries,function(a,b)
+            if (a.work.title or "")~=(b.work.title or "") then return (a.work.title or "")<(b.work.title or "") end
+            return tostring(a.work.id)<tostring(b.work.id)
+        end)
+        refresh()
+    end
+    return session,menu,controls
 end
 
 function M.showWork(fanfic, work)
@@ -158,19 +200,27 @@ end
 
 function M.show(fanfic)
     local cancelled=false
-    local scanning=InfoMessage:new{text=_("Scanning downloaded AO3 EPUBs…"),
-        dismiss_callback=function() cancelled=true end}
-    UI:show(scanning)
+    local cache_job
+    local function close()
+        cancelled=true
+        if cache_job and cache_job.cancel then cache_job:cancel() end
+    end
     local Config=require("ao3lib.core.config")
-    local roots={Config:readSetting("fanfic_folder_path"),require("apps/filemanager/filemanagerutil").getHomeFolder()}
-    require("ao3lib.library.discovery").scan(roots,function(works,err)
-        scanning.dismiss_callback=nil
-        UI:close(scanning)
-        if cancelled then return end
-        if err then UI:show(InfoMessage:new{text=_("Could not finish the library scan: ")..err});return end
-        if next(works)==nil then UI:show(InfoMessage:new{text=_("No downloaded AO3 works found.")}); return end
-        openReview(fanfic,works)
-    end,function() return cancelled end)
+    local roots={}
+    local function add(root) if type(root)=="string" and root~="" then roots[#roots+1]=root end end
+    add(Config:readSetting("fanfic_folder_path"));add(require("apps/filemanager/filemanagerutil").getHomeFolder())
+    local LocalCache=require("ao3lib.library.local_cache")
+    local cached=LocalCache.get(roots)
+    local session,menu,controls=openReview(fanfic,cached or {},false,nil,close)
+    controls.loading(not cached)
+    cache_job=LocalCache.load(roots,function(works)
+        if not cancelled then
+            controls.loading(false)
+            if works then controls.merge(works,true) end
+        end
+    end,function() return not cancelled end)
+    if not cache_job then controls.loading(false) end
+    return session,menu
 end
 
 return M

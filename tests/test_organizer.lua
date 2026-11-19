@@ -95,6 +95,7 @@ stub('util',util)
 stub('ffi/util',{realpath=function(path) if path:sub(1,1)=='/' and disk[norm(path)] then return norm(path) end end})
 stub('logger',{dbg=function() end,warn=function() end})
 stub('datastorage',{getDataDir=function() return '/ko' end,getSettingsDir=function() return '/ko/settings' end})
+stub('ao3lib.core.persistent',{path=function(name) return '/ko/settings/ao3lib/'..name end})
 stub('ao3lib.core.paths',{getHomeDirectory=function() return '/ko/fanfic' end})
 stub('ao3lib.core.config',{readSetting=function(_,key,default) return default end})
 G_reader_settings={readSetting=function(_,key,default) return default end}
@@ -135,7 +136,7 @@ local Epub={read=function(path)
     if id then return {id=id,path=path} end
 end}
 stub('ao3lib.library.epub',Epub)
-mkdir('/ko/settings'); mkdir('/ko/fanfic'); mkdir('/books'); mkdir('/cwd')
+mkdir('/ko/settings'); mkdir('/ko/settings/ao3lib'); mkdir('/ko/fanfic'); mkdir('/books'); mkdir('/cwd')
 put('/ko/history.lua','original history')
 put('/ko/settings/collection.lua','original collections')
 put('/ko/settings.reader.lua','original settings')
@@ -194,7 +195,12 @@ for _,backup in ipairs(plan.backups) do
         metadataBackedUp=disk[backup.backup..'/metadata.epub.lua'].data=='XP0INTER+ANNOTATIONS+BOOKMARKS'
     end
 end
-assert(metadataBackedUp and disk['/ko/fanfic/fanfic_history.json'])
+assert(metadataBackedUp and disk['/ko/settings/ao3lib/fanfic_history.json'])
+local historyBackedUp=false
+for _,backup in ipairs(plan.backups) do
+    if backup.source=='/ko/settings/ao3lib/fanfic_history.json' then historyBackedUp=true end
+end
+assert(historyBackedUp)
 -- Re-running is idempotent. Orphan sidecars and case-insensitive reservations
 -- are collisions too, without overwriting any old state.
 local again=assert(Organizer.plan(History.getAll(),'/books',opts))

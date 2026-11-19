@@ -129,7 +129,7 @@ function M.backup(plan)
         DataStorage:getDataDir() .. '/settings.reader.lua',
         DataStorage:getSettingsDir() .. '/collection.lua',
         DataStorage:getSettingsDir() .. '/bookshelf',
-        require('ao3lib.core.paths').getHomeDirectory() .. '/fanfic_history.json',
+        DataStorage:getSettingsDir() .. '/ao3lib/fanfic_history.json',
     }
     local DocSettings = require('docsettings')
     local seen = {}

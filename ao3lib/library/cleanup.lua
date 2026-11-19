@@ -120,8 +120,9 @@ function M.findBackup(path,id)
         if not lfs.attributes(dir) then return end
         local current=hash(path)
         local folder=dir..'/'..current
-        if not lfs.attributes(folder..'/manifest.json') then return end
-        local m=assert(json.decode(read(folder..'/manifest.json')))
+        local record=folder..'/ao3-formatting.json'
+        if not lfs.attributes(record) then return end
+        local m=assert(json.decode(read(record)))
         assert(m.version==1 and m.after==current and tostring(m.id)==tostring(id),'Invalid formatting backup record')
         assert(type(m.before)=='string' and m.before:match('^%x+$'),'Invalid original fingerprint')
         assert(hash(folder..'/original.epub')==m.before,'Original EPUB backup is damaged')
@@ -157,8 +158,8 @@ function M.commit(plan)
                 assert(os.rename(pending,original),'Cannot save original EPUB backup')
             end
             local manifest={version=1,id=plan.id,before=plan.before,after=plan.after,path=plan.path}
-            write(folder..'/manifest.json.tmp',assert(json.encode(manifest)))
-            assert(os.rename(folder..'/manifest.json.tmp',folder..'/manifest.json'),'Cannot save backup record')
+            write(folder..'/ao3-formatting.json.tmp',assert(json.encode(manifest)))
+            assert(os.rename(folder..'/ao3-formatting.json.tmp',folder..'/ao3-formatting.json'),'Cannot save backup record')
         end
         assert(hash(plan.stage)==plan.after,'Replacement EPUB verification failed')
         assert(hash(plan.path)==plan.before,'The EPUB changed before replacement')

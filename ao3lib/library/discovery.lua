@@ -10,7 +10,7 @@ local M = {}
 -- Cache lookups include size/mtime, so later scans only reopen changed EPUBs.
 function M.scan(roots, done, cancelled, options)
     options=options or {}
-    local stack, seen, found = {}, {}, {}
+    local stack, seen, found, errors = {}, {}, {}, {}
     local stopped=false
     local function invalid() return stopped or (cancelled and cancelled()) end
     local function progress()
@@ -24,16 +24,23 @@ function M.scan(roots, done, cancelled, options)
     local function push(path)
         if type(path) ~= "string" or path == "" then return end
         path = ffiUtil.realpath(path) or path
-        if seen[path] or lfs.attributes(path, "mode") ~= "directory" then return end
+        if seen[path] then return end
+        if lfs.attributes(path, "mode") ~= "directory" then
+            errors[#errors+1]="Cannot read directory: "..path;return
+        end
         seen[path] = true
         local ok, iter, handle = pcall(lfs.dir, path)
-        if ok then stack[#stack + 1] = { path = path, iter = iter, handle = handle } end
+        if ok then stack[#stack + 1] = { path = path, iter = iter, handle = handle }
+        else errors[#errors+1]="Cannot read directory: "..path end
     end
     for i = #roots, 1, -1 do push(roots[i]) end
     local step
     local function finish(err)
         closeDirectories()
         if invalid() then Epub.flush();return end
+        if not err and #errors>0 then err=table.concat(errors,"; ") end
+        local cache=package.loaded['ao3lib.library.local_cache']
+        if not err and cache and cache.merge then cache.merge(roots,found) end
         if options.read_only then Epub.flush();done(found,err);return end
         local works,changed={},false
         for id,work in pairs(found) do
@@ -54,7 +61,10 @@ function M.scan(roots, done, cancelled, options)
             end
             local ok, name = pcall(frame.iter, frame.handle)
             if not ok or not name then
-                if not ok and frame.handle then pcall(function() frame.handle:close() end) end
+                if not ok then
+                    errors[#errors+1]="Cannot read directory: "..frame.path
+                    if frame.handle then pcall(function() frame.handle:close() end) end
+                end
                 table.remove(stack)
             elseif name ~= "." and name ~= ".." then
                 local path = frame.path .. "/" .. name

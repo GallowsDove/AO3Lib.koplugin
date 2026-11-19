@@ -1,11 +1,11 @@
 local json = require("dkjson")
-local Paths = require("ao3lib.core.paths")
+local Persistent = require("ao3lib.core.persistent")
 local logger = require("logger")
 local lfs = require("libs/libkoreader-lfs")
 
 local DownloadedFanfics = {}
 
-local history_file_path = Paths.getHomeDirectory() .. "/fanfic_history.json"
+local history_file_path = Persistent.path("fanfic_history.json")
 local downloaded_fanfics = {}
 local revision = 0
 local progress_dirty, save_scheduled, worker

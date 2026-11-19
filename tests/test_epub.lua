@@ -167,6 +167,7 @@ assert(Epub.read('/home/missing.epub') == nil and Epub.read('/home/book.pdf') ==
 -- Load real history code. It supplies progress, but cannot recognize a work.
 stub('dkjson', {})
 stub('ao3lib.core.paths', {getHomeDirectory=function() return '/data/fanfic' end})
+stub('ao3lib.core.persistent', {path=function(name) return '/data/fanfic/'..name end})
 stub('logger', {dbg=function() end, err=function() end})
 stub('ffi/util', {realpath=function(path) return path end})
 stub('device', {isAndroid=function() return false end})
@@ -322,6 +323,8 @@ local cold_flush=flushes
 Library.scan({'/downloads','/home'},function() end,nil,{read_only=true})
 drain()
 assert(flushes==cold_flush,'Warm library scans must not write the metadata cache')
+Epub.read('/home/localized.epub')
+Epub.flush();cold_flush=flushes
 Epub.invalidate('/home/localized.epub')
 assert(flushes==cold_flush+1,'Explicit invalidation must still persist cache removal')
 Epub.invalidate('/not-cached.epub')
