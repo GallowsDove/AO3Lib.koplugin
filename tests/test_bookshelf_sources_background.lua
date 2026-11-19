@@ -2,16 +2,16 @@ package.path='./?.lua;'..package.path
 local H=dofile('tests/support/async.lua')
 package.loaded.gettext=function(s) return s end
 local folder='/books'
-package.loaded.fanfic_config={readSetting=function() return folder end}
+package.loaded["ao3lib.core.config"]={readSetting=function() return folder end}
 package.loaded['apps/filemanager/filemanagerutil']={getHomeFolder=function() return '/home' end}
-package.loaded.downloaded_fanfics={revision=function() return 0 end}
+package.loaded["ao3lib.library.history"]={revision=function() return 0 end}
 local works={}
 for i=1,200 do works['/books/'..i..'.epub']={id=i,title='Book '..i,authors={'Author '..i%5},fandoms=i%2==0 and {'Fandom'} or {}} end
-package.loaded.fanfic_epub={read=function(path)
+package.loaded["ao3lib.library.epub"]={read=function(path)
     assert(H.inChild(),'EPUB metadata read on UI thread')
     return works[path]
 end}
-package.loaded.fanfic_library={scan=function(_,done)
+package.loaded["ao3lib.library.discovery"]={scan=function(_,done)
     local found={};for path,work in pairs(works) do found[#found+1]={path=path} end
     done(found)
 end}
@@ -49,8 +49,9 @@ local Repo={dataGeneration=function() return generation end,
         local out={};for _,book in ipairs(all) do if book._ao3_fields.ao3_authors[1]==filter.author then out[#out+1]=book end end
         return out
     end}
-local Extension=require('fanfic_bookshelf_sources')
+local Extension=require('ao3lib.bookshelf.sources')
 assert(Extension.install(Repo))
+assert(H.forks==1,'AO3 grouped-shelf metadata should preload in a background worker at plugin startup')
 local source={kind='ao3_authors'}
 -- Use v6.5's actual subshelf memo and source-change handler: publishing a
 -- worker result must evict the initially empty preview, not merely redraw it.

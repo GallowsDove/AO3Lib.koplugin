@@ -1,6 +1,6 @@
 -- Run from the plugin directory: luajit tests/test_cleanup_xml.lua
 package.path='./?.lua;'..package.path
-local X=require('fanfic_cleanup_xml')
+local X=require('ao3lib.library.cleanup_xml')
 local function doc(s) return '<?xml version="1.0"?><html><body><div id="chapters"><div class="userstuff">'..s..'</div></div></body></html>' end
 local function clean(s,css)
     local out,stats=X.clean(doc(s),X.protectedClasses(css or ''))

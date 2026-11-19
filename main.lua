@@ -1,4 +1,4 @@
-local Network = require("fanfic_network")
+local Network = require("ao3lib.ao3.network")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 local FFIUtil = require("ffi/util")
@@ -8,17 +8,17 @@ local UIManager = require("ui/uimanager")
 local InfoMessage = require("ui/widget/infomessage")
 local ConfirmBox = require("ui/widget/confirmbox")
 local BD = require("ui/bidi")
-local DownloadedFanfics = require("downloaded_fanfics")
-local FanficBrowser = require("fanficbrowser")
-local FanficMenu = require("fanfic_menu")
-local FanficReader = require("fanfic_reader")
-local Config = require("fanfic_config")
+local DownloadedFanfics = require("ao3lib.library.history")
+local FanficBrowser = require("ao3lib.ui.work_browser")
+local FanficMenu = require("ao3lib.ui.menu")
+local FanficReader = require("ao3lib.ui.reader")
+local Config = require("ao3lib.core.config")
 local Event = require("ui/event")
 local Dispatcher = require("dispatcher")
-local AO3DownloaderClient = require("AO3_downloader_client")
+local AO3DownloaderClient = require("ao3lib.ao3.client")
 local util = require("util")
-local Tables = require("fanfic_table")
-local ResultPages = require("fanfic_result_pages")
+local Tables = require("ao3lib.core.table")
+local ResultPages = require("ao3lib.ao3.result_pages")
 
 local Fanfic = WidgetContainer:extend{
     name = "AO3 downloader",
@@ -27,7 +27,7 @@ local Fanfic = WidgetContainer:extend{
 }
 
 function Fanfic:init()
-    require("fanfic_icons").install()
+    require("ao3lib.ui.icons").install()
     DownloadedFanfics.load() -- Reader activation needs saved chapter progress.
     if self.ui.name == "ReaderUI" then
         FanficReader:initializeFromReaderUI(self.ui)
@@ -40,7 +40,7 @@ function Fanfic:init()
     -- Optional integration is owned entirely by this plugin. Bookshelf's
     -- existing tables are extended once, after enabled plugin paths are ready.
     local integrated, integration_err = pcall(function()
-        require("fanfic_bookshelf_integration").install()
+        require("ao3lib.bookshelf.integration").install()
     end)
     if not integrated then logger.warn("AO3 Bookshelf integration:", integration_err) end
     -- FileManager builds file_chooser after loading plugins. Register against
@@ -51,18 +51,31 @@ function Fanfic:init()
 end
 
 function Fanfic:onSuspend()
+    local checks = package.loaded["ao3lib.updates.service"]
+    if checks then checks.suspend() end
     return self:onFlushSettings()
 end
+
+function Fanfic:onResume()
+    local checks = package.loaded["ao3lib.updates.service"]
+    if checks then checks.resume() end
+end
+Fanfic.onNetworkConnected = Fanfic.onResume
 
 function Fanfic:onFlushSettings()
     local ok, err = DownloadedFanfics.flushPending()
     if not ok then logger.warn("Could not save pending AO3 progress:", err) end
+    local checks = package.loaded["ao3lib.updates.service"]
+    if checks then
+        local saved, why = checks.flush()
+        if not saved then logger.warn("Could not save AO3 update checks:", why) end
+    end
 end
 
 function Fanfic:registerWorkDetailsAction()
     self.ui:addFileDialogButtons("ao3_work_details", function(file, is_file)
         if not is_file then return end
-        local epub = require("fanfic_epub").read(file)
+        local epub = require("ao3lib.library.epub").read(file)
         if not epub then return end
         local work = DownloadedFanfics.rememberLocal(epub)
         return {{
@@ -119,11 +132,11 @@ function Fanfic:onOpenFanficReader(fanfic_path, current_fanfic, start_chapter)
 end
 
 function Fanfic:closeAllMenus()
-    require("fanfic_navigation").closeAll(self)
+    require("ao3lib.ui.navigation").closeAll(self)
 end
 
 function Fanfic.GenerateFileName(metadata)
-    return require("fanfic_layout").filename(metadata, Config:readSetting("filename_template", "%I"))
+    return require("ao3lib.library.layout").filename(metadata, Config:readSetting("filename_template", "%I"))
 end
 
 function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
@@ -182,7 +195,7 @@ function Fanfic:DownloadFanfic(id)
 
     os.execute("sleep " .. math.random(1, 3))
 
-    local destination, path_err = require("fanfic_layout").destination(request_result.work_metadata, Config:readSetting("fanfic_folder_path"))
+    local destination, path_err = require("ao3lib.library.layout").destination(request_result.work_metadata, Config:readSetting("fanfic_folder_path"))
     if not destination then UIManager:show(InfoMessage:new{text=path_err}); return end
     local made, mkdir_err = util.makePath(destination:match("^(.*)/[^/]+$"))
     if not made then UIManager:show(InfoMessage:new{text=tostring(mkdir_err or "Could not create the author folder")}); return end
@@ -247,13 +260,13 @@ end
 
 function Fanfic:UpdateFanfic(fanfic)
     if Network.defer(function() self:UpdateFanfic(fanfic) end) then return end
-    local Updates = require("fanfic_updates")
+    local Updates = require("ao3lib.updates.checks")
     local ok, result = pcall(function()
         local entry = Updates.check(fanfic)
         if not entry.remote then return {success=false, error=entry.error} end
         return Updates.apply(entry)
     end)
-    if not ok and require("fanfic_background").isCancelled(result) then error(result,0) end
+    if not ok and require("ao3lib.ao3.background").isCancelled(result) then error(result,0) end
     UIManager:show(InfoMessage:new{
         text = ok and result.success
             and T(_("Fanfic '%1' has been updated successfully."), fanfic.title)
@@ -263,7 +276,7 @@ end
 
 function Fanfic:showUserInfo(username, pseud)
     if Network.defer(function() self:showUserInfo(username, pseud) end) then return end
-    local AO3UserBrowser = require("AO3_user_browser")
+    local AO3UserBrowser = require("ao3lib.ui.user_browser")
     local request_result = AO3DownloaderClient:getUserData(username, pseud)
     if not request_result.success then
         UIManager:show(InfoMessage:new{

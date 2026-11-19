@@ -9,8 +9,8 @@ local disk,exists,generation={version=1,AO3_domain='https://archiveofourown.org'
 local opens,flushes,closes=0,0,0
 stub('datastorage',{getSettingsDir=function() return '/settings' end})
 stub('logger',{})
-stub('FanficPaths',{getHomeDirectory=function() return '/fanfic' end})
-stub('downloaded_fanfics',{updateDownloadFile_1=function() error('Unexpected migration') end})
+stub('ao3lib.core.paths',{getHomeDirectory=function() return '/fanfic' end})
+stub('ao3lib.library.history',{updateDownloadFile_1=function() error('Unexpected migration') end})
 stub('frontend/util',{fileExists=function() return exists end,makePath=function() end,tableDeepCopy=copy})
 stub('libs/libkoreader-lfs',{attributes=function()
     if exists then return {size=100,modification=generation,change=generation} end
@@ -26,7 +26,7 @@ stub('luasettings',{open=function()
     function store:close() closes=closes+1;self:flush() end
     return store
 end})
-local Config=require('fanfic_config')
+local Config=require('ao3lib.core.config')
 local initial_opens,initial_flushes=opens,flushes
 for _=1,1000 do assert(Config:readSetting('AO3_domain')=='https://archiveofourown.org') end
 assert(opens==initial_opens and flushes==initial_flushes and closes==0,
@@ -53,9 +53,9 @@ local before=opens
 assert(Config:readSetting('AO3_domain')=='https://example.test' and opens==before+1)
 assert(flushes==initial_flushes+2)
 -- Fresh install writes defaults once, rather than flush + close (another flush).
-package.loaded.fanfic_config=nil;disk={};exists=false
+package.loaded["ao3lib.core.config"]=nil;disk={};exists=false
 before=flushes
-Config=require('fanfic_config')
+Config=require('ao3lib.core.config')
 assert(flushes==before+1 and Config:readSetting('author_folders')==true)
 assert(disk.filename_template=='%I' and disk.version==1)
 print('PASS: 1000 setting reads use one cached load and zero writes; single explicit saves; external edits; false defaults; table isolation; fresh install')

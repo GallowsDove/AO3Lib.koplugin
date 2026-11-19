@@ -2,12 +2,12 @@
 package.path='./?.lua;'..package.path
 dofile('tests/test_failures.lua')
 local H=dofile('tests/support/async.lua')
-package.loaded.fanfic_background=nil
-package.loaded.fanfic_network=nil
+package.loaded["ao3lib.ao3.background"]=nil
+package.loaded["ao3lib.ao3.network"]=nil
 package.loaded['ui/network/manager']={isConnected=function() return true end}
-local Network=require('fanfic_network')
-local Client=require('AO3_downloader_client')
-local Config=require('fanfic_config')
+local Network=require('ao3lib.ao3.network')
+local Client=require('ao3lib.ao3.client')
+local Config=require('ao3lib.core.config')
 local cookies,saves={},0
 Config.readSetting=function(_,key,default)
     if key=='AO3_domain' then return 'https://archiveofourown.org' end
@@ -35,12 +35,13 @@ end
 local requests=os.tmpname()
 local function log(line) local f=assert(io.open(requests,'ab'));f:write(line..'\n');f:close() end
 local slow,status,body=false,200,'SEARCH'
+local cookie_value='updated'
 package.loaded['ssl.https'].request=function(req)
     assert(H.inChild(),'HTTPS ran in the UI process')
     log(req.method)
     if slow then H.sleep(80) end
     assert(req.sink(body));req.sink(nil)
-    return 1,status,{['set-cookie']='session=updated; Path=/; HttpOnly'}
+    return 1,status,{['set-cookie']='session='..cookie_value..'; Path=/; HttpOnly'}
 end
 local origin={input='Writer',item_table={}}
 H.UI:show(origin)
@@ -87,6 +88,30 @@ slow=true;write('KEEP');result=nil
 Network.run(function() result=Client:downloadEpub('https://archiveofourown.org/download/123',destination,true) end)
 H.tick();H.UI:close(H.stack[#H.stack]);H.drain()
 assert(not result and H.read(destination)=='KEEP')
+-- Use the actual client wrapper in silent scopes, alongside ordinary AO3
+-- browsing. Old background cookies must never undo newer foreground cookies.
+local Background=require('ao3lib.ao3.background')
+local quiet,foreground
+local initial_stack=#H.stack
+slow=true;status=200;body='SEARCH';cookie_value='older'
+Background.wrap(function() quiet=Client:searchForUsers('background') end,{silent=true,detached=true})
+local forks=H.forks
+while H.forks==forks do H.tick() end
+assert(#H.stack==initial_stack,'A detached client request displayed a modal overlay')
+slow=false;cookie_value='fresh'
+Network.run(function() foreground=Client:searchForUsers('foreground') end)
+H.drain()
+assert(quiet.success and foreground.success and cookies['https://archiveofourown.org'].session.value=='fresh')
+assert(#H.stack==initial_stack)
+quiet=nil;foreground=nil
+slow=true;cookie_value='foreground'
+Network.run(function() foreground=Client:searchForUsers('foreground') end)
+forks=H.forks
+while H.forks==forks do H.tick() end
+slow=false;cookie_value='background'
+Background.wrap(function() quiet=Client:searchForUsers('background') end,{silent=true,detached=true})
+H.drain()
+assert(quiet.success and foreground.success and cookies['https://archiveofourown.org'].session.value=='foreground')
 os.remove(requests);os.remove(destination)
 assert(#H.warnings==0,'An asynchronous continuation failed')
 print('PASS: HTTPS and parsing in real workers; cookies applied only by parent; search cancellation preserves input; POST once; staged downloads recheck/commit only in parent; cancel keeps existing EPUB')

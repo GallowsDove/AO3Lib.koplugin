@@ -8,7 +8,7 @@ package.loaded['lib/bookshelf_sources']=Sources
 package.loaded['lib/bookshelf_settings_store'].generation=function() return 1 end
 local Sort=require('lib/bookshelf_sort_engine')
 local folder,home='/downloads','/home'
-package.loaded.fanfic_config={readSetting=function() return folder end}
+package.loaded["ao3lib.core.config"]={readSetting=function() return folder end}
 package.loaded['apps/filemanager/filemanagerutil']={getHomeFolder=function() return home end}
 local works={
     ['/downloads/one.epub']={id='1',path='/downloads/one.epub',title='Beta',authors={'Writer','Coauthor'},
@@ -17,13 +17,13 @@ local works={
     ['/home/unknown.epub']={id='3',path='/home/unknown.epub',title='Untitled'},
     ['/home/duplicate.epub']={id='1',path='/home/duplicate.epub',title='Duplicate'},
 }
-package.loaded.fanfic_epub.read=function(path)
+package.loaded["ao3lib.library.epub"].read=function(path)
     if path=='/broken.epub' then error('corrupt EPUB') end
     return works[path]
 end
-package.loaded.downloaded_fanfics.get=function() error('Source identity must never use history') end
+package.loaded["ao3lib.library.history"].get=function() error('Source identity must never use history') end
 local scans={}
-package.loaded.fanfic_library={scan=function(roots,done,cancelled,options)
+package.loaded["ao3lib.library.discovery"]={scan=function(roots,done,cancelled,options)
     assert(options.read_only)
     scans[#scans+1]={roots=roots,done=done,cancelled=cancelled,progress=options.progress}
 end}
@@ -43,7 +43,7 @@ Repo.getBySource=function(source,filter,priority,offset,limit,opts)
     for i=(offset or 0)+1,math.min((offset or 0)+(limit or #list),#list) do page[#page+1]=list[i] end
     return page,#list
 end
-local Extension=require('fanfic_bookshelf_sources')
+local Extension=require('ao3lib.bookshelf.sources')
 assert(Extension.install(Repo));local wrapped=Repo.getBySource
 assert(Extension.install(Repo) and Repo.getBySource==wrapped)
 local expected={'AO3 downloaded works','AO3 authors','AO3 fandoms'}

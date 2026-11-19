@@ -9,7 +9,7 @@ local function findParser(fn,seen)
         if type(value)=='function' then local found=findParser(value,seen);if found then return found end end
     end
 end
-local Parser=assert(findParser(require('AO3_downloader_client').getWorkMetadata))
+local Parser=assert(findParser(require('ao3lib.ao3.client').getWorkMetadata))
 local function node(content,attrs,selectors)
     return {attributes=attrs or {},getcontent=function() return content or '' end,
         select=function(_,selector) return (selectors or {})[selector] or {} end}
@@ -47,7 +47,7 @@ local slots=Parser:parseWorkSearchResults(missing)
 assert(#slots==2 and slots[1].is_unavailable and slots[2].id==123)
 -- Render through the real work browser, including older records with no series.
 dofile('tests/test_network.lua')
-local Browser=require('fanficbrowser')
+local Browser=require('ao3lib.ui.work_browser')
 local function seriesRows(record)
     local out={}
     for _,row in ipairs(Browser:generateTable({}, {record},function() end,function() end)) do

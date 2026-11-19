@@ -6,7 +6,7 @@ package.loaded.gettext = identity
 package.loaded['lib/bookshelf_i18n'] = {gettext=identity}
 local warnings = 0
 package.loaded.logger = {warn=function() warnings=warnings+1 end}
-package.loaded.downloaded_fanfics = setmetatable({}, {__index=function()
+package.loaded["ao3lib.library.history"] = setmetatable({}, {__index=function()
     error('Tokens must not consult download history')
 end})
 package.loaded.docsettings = setmetatable({}, {__index=function()
@@ -19,12 +19,12 @@ local works = {
         relationships={'A/B','C/D'}, characters={'Alice','Bob'}, tags={'Slow Burn','Fluff, with a comma'}},
     ['/partial.epub'] = {id='456', title='Partial', chapters='?/?'},
 }
-package.loaded.fanfic_epub = {read=function(path)
+package.loaded["ao3lib.library.epub"] = {read=function(path)
     if path=='/broken.epub' then error('corrupt archive') end
     return works[path]
 end}
 local Tokens = require('lib/bookshelf_tokens')
-local Extension = require('fanfic_bookshelf_tokens')
+local Extension = require('ao3lib.bookshelf.tokens')
 local book = {filepath='/imported.epub',title='Ordinary title',authors={'Ordinary author'},rating=4}
 local function expand(s, fixture) return Tokens.expand(s, fixture or book, {}) end
 local builtin = expand('%title|%authors|%rating')

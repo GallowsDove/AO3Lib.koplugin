@@ -50,7 +50,7 @@ stub('ffi/archiver',{
         close=function(self) fs[self.path]=file(corrupt and 'broken' or archive(self.entries)) end,
     } end},
 })
-local M=require('fanfic_cleanup')
+local M=require('ao3lib.library.cleanup')
 local story='<html><body><div id="chapters"><div class="userstuff"><p>A<br/><br/>B</p><p> </p><p>C</p></div></div></body></html>'
 local original=archive({{path='mimetype',data='application/epub+zip'},{path='story.xhtml',data=story},{path='content.opf',data='metadata unchanged'}})
 fs['/book.epub']=file(original)

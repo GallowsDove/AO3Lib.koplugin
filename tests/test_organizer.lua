@@ -95,8 +95,8 @@ stub('util',util)
 stub('ffi/util',{realpath=function(path) if path:sub(1,1)=='/' and disk[norm(path)] then return norm(path) end end})
 stub('logger',{dbg=function() end,warn=function() end})
 stub('datastorage',{getDataDir=function() return '/ko' end,getSettingsDir=function() return '/ko/settings' end})
-stub('FanficPaths',{getHomeDirectory=function() return '/ko/fanfic' end})
-stub('fanfic_config',{readSetting=function(_,key,default) return default end})
+stub('ao3lib.core.paths',{getHomeDirectory=function() return '/ko/fanfic' end})
+stub('ao3lib.core.config',{readSetting=function(_,key,default) return default end})
 G_reader_settings={readSetting=function(_,key,default) return default end}
 local function sidecar(path) return path:gsub('%.[^/.]+$','')..'.sdr' end
 local DS={}
@@ -134,14 +134,14 @@ local Epub={read=function(path)
     local e=disk[path]; local id=e and e.data and e.data:match('^EPUB:(%d+)')
     if id then return {id=id,path=path} end
 end}
-stub('fanfic_epub',Epub)
+stub('ao3lib.library.epub',Epub)
 mkdir('/ko/settings'); mkdir('/ko/fanfic'); mkdir('/books'); mkdir('/cwd')
 put('/ko/history.lua','original history')
 put('/ko/settings/collection.lua','original collections')
 put('/ko/settings.reader.lua','original settings')
-local History=require('downloaded_fanfics')
-local Layout=require('fanfic_layout')
-local Organizer=require('fanfic_organizer')
+local History=require('ao3lib.library.history')
+local Layout=require('ao3lib.library.layout')
+local Organizer=require('ao3lib.library.organizer')
 local function work(id,author,title,path,withState)
     path=path or ('/books/'..id..'.epub')
     put(path,'EPUB:'..id)
@@ -263,13 +263,13 @@ stub('gettext',function(s) return s end)
 stub('apps/filemanager/filemanagerutil',{getHomeFolder=function() return '/books' end})
 local uiWork=work('13','Writer','Preview book',nil,true)
 local uiSource=uiWork.path
-stub('fanfic_library',{scan=function(roots,done)
+stub('ao3lib.library.discovery',{scan=function(roots,done)
     assert(roots[1]=='/books' and roots[2]=='/books'); done({uiWork})
 end})
-stub('fanfic_config',{readSetting=function(_,key,default)
+stub('ao3lib.core.config',{readSetting=function(_,key,default)
     if key=='fanfic_folder_path' then return '/books' end; return default
 end})
-local OrganizerUI=require('fanfic_organizer_ui')
+local OrganizerUI=require('ao3lib.ui.organizer')
 local beforeUI=writes
 OrganizerUI.show({ui={}})
 local preview=shown[#shown]

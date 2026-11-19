@@ -22,7 +22,7 @@ package.loaded.luasettings={open=function() return {
 } end}
 package.loaded.datastorage={getDataDir=function() return '/data' end}
 package.loaded.util={tableDeepCopy=copy,trim=function(s) return s:match('^%s*(.-)%s*$') end,unicodeCodepointToUtf8=string.char}
-package.loaded.downloaded_fanfics={rememberLocal=function() error('Read-only discovery wrote history') end,save=function() error('Read-only discovery saved history') end}
+package.loaded["ao3lib.library.history"]={rememberLocal=function() error('Read-only discovery wrote history') end,save=function() error('Read-only discovery saved history') end}
 local Reader={}
 function Reader:new() return setmetatable({}, {__index=self}) end
 function Reader:open(path)
@@ -42,8 +42,8 @@ function Reader:iterate() local i=0;return function() i=i+1;return self.entries[
 function Reader:extractToMemory(p) return self.bytes[p] end
 function Reader:close() end
 package.loaded['ffi/archiver']={Reader=Reader}
-local Epub=require('fanfic_epub')
-local Library=require('fanfic_library')
+local Epub=require('ao3lib.library.epub')
+local Library=require('ao3lib.library.discovery')
 local final,progress,error
 local partials={}
 Library.scan({'/books'},function(works,err) final=works;error=err end,nil,{read_only=true,progress=function(works)

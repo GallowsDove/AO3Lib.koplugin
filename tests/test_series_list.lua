@@ -1,5 +1,5 @@
 dofile('tests/test_network.lua')
-local Browser=require('AO3_user_browser')
+local Browser=require('ao3lib.ui.user_browser')
 local series={id=12,title='First series',fandoms={'Fandom'},work_count=3,word_count='84,250',
     author='Writer',date_posted='2026-11-16',summary='A summary'}
 local more={id=34,title='Second series',fandoms={},work_count=2,word_count='12,345',author='Writer'}

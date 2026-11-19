@@ -1,6 +1,6 @@
 package.path='./?.lua;'..package.path
 local H=dofile('tests/support/async.lua')
-local B=require('fanfic_background')
+local B=require('ao3lib.ao3.background')
 local anchor={item_table={}}
 H.UI:show(anchor)
 local result,completed

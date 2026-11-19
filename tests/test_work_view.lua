@@ -1,6 +1,6 @@
 dofile('tests/test_network.lua')
-local WorkView=require('fanfic_work_view')
-local Browser=require('fanficbrowser')
+local WorkView=require('ao3lib.ui.work_view')
+local Browser=require('ao3lib.ui.work_browser')
 local work={id='formatted',title='<Story & title>',author='Writer',rating='Explicit',category='M/M',
     warnings={'No Archive Warnings Apply'},chapters='2/?',words='12345',language='English',
     fandoms={'Fandom'},series={{id=12,title='Series',position='2'}},
@@ -110,7 +110,7 @@ package.loaded.device={hasKeys=function() return true end,
     input={group={PgFwd={'LPgFwd','RPgFwd'},PgBack={'LPgBack','RPgBack'}}},screen={getWidth=function() return 600 end,getHeight=function() return 800 end,
     scaleBySize=function(_,n) return n end}}
 package.loaded['ffi/blitbuffer']={COLOR_WHITE=0}
-local Config=package.loaded.fanfic_config
+local Config=package.loaded["ao3lib.core.config"]
 local formatted,fontSize=true,nil
 Config.readSetting=function(_,key,default)
     if key=='formatted_work_view' then return formatted end
@@ -179,7 +179,7 @@ assert(press(homeChild.window,'Home') and homeChild.closed and not visible[homeC
 assert(#plugin._ao3_navigation==1 and Browser.browse_window==parentWindow)
 
 -- The settings picker persists the chosen base size, with Reset to 18.
-local Menu=require('fanfic_menu')
+local Menu=require('ao3lib.ui.menu')
 local settings,spin
 local read=Config.readSetting
 Config.readSetting=function(self,key,default)

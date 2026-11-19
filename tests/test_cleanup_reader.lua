@@ -14,19 +14,19 @@ stub('ui/uimanager',{
 })
 stub('util',{tableDeepCopy=copy})
 local invalidations=0
-stub('fanfic_epub',{invalidate=function() invalidations=invalidations+1 end})
+stub('ao3lib.library.epub',{invalidate=function() invalidations=invalidations+1 end})
 stub('lib/bookshelf_book_repository',{forgetBook=function() end,invalidateWalkCache=function() end})
 G_reader_settings={readSetting=function() return nil end}
 local commit_ok=true
 local commits,discards,closed=0,0,false
 local prepared
-stub('fanfic_cleanup',{
+stub('ao3lib.library.cleanup',{
     commit=function() assert(closed,'Never replace an open EPUB');commits=commits+1;return commit_ok, 'simulated replacement failure' end,
     discard=function() discards=discards+1 end,
     findBackup=function() return nil end,
     prepare=function(path,id,yield_fn) yield_fn();return prepared end,
 })
-local M=require('fanfic_cleanup_reader')
+local M=require('ao3lib.ui.cleanup_reader')
 local reader={isActiveReader=function(self,ui) return self.ui==ui end}
 local function fresh()
     closed=false
@@ -98,7 +98,7 @@ print('AO3 reader cleanup lifecycle tests passed')
 -- Progress replaces the overlay without cancelling the worker. Dismissal does
 -- cancel it, and a completed worker explicitly invalidates the screen.
 ui=fresh()
-local cleanup=package.loaded['fanfic_cleanup']
+local cleanup=package.loaded['ao3lib.library.cleanup']
 local real_prepare=cleanup.prepare
 local real_clock,real_time=os.clock,os.time
 local clock=0

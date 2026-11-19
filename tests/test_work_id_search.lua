@@ -4,10 +4,10 @@ package.loaded['ui/network/manager']={
     isConnected=function() return connected end,
     runWhenConnected=function(_,callback) pending=callback;prompts=prompts+1 end,
 }
-package.loaded.fanfic_network=nil
-package.loaded.fanfic_search=nil
-package.loaded.fanfic_menu=nil
-local Menu=require('fanfic_menu')
+package.loaded["ao3lib.ao3.network"]=nil
+package.loaded["ao3lib.ui.search"]=nil
+package.loaded["ao3lib.ui.menu"]=nil
+local Menu=require('ao3lib.ui.menu')
 local UI=require('ui/uimanager')
 local shown,closed={},{}
 UI.show=function(_,widget) shown[#shown+1]=widget end
@@ -17,7 +17,7 @@ UI.close=function(_,widget)
 end
 local calls,opened={},{}
 local fail=true
-require('AO3_downloader_client').getWorkMetadata=function(_,id)
+require('ao3lib.ao3.client').getWorkMetadata=function(_,id)
     calls[#calls+1]=id
     if fail then return {success=false,error='AO3 maintenance'} end
     return {success=true,work_metadata={title='Found work',author='Writer',chapters='2/3'}}

@@ -71,7 +71,7 @@ function Reader:extractToMemory(name)
 end
 function Reader:close() archivesClosed = archivesClosed + 1 end
 stub('ffi/archiver', {Reader=Reader})
-local Epub = require('fanfic_epub')
+local Epub = require('ao3lib.library.epub')
 local function preface(id)
     return [[<div class='calibre1' id='preface'><h2>Preface</h2>
       <p class='message extra'><b>Title</b><a href='https://archiveofourown.org/'>Archive</a>
@@ -130,8 +130,8 @@ local saved_flushes = flushes
 Epub.flush()
 assert(flushes == saved_flushes, 'An unchanged metadata cache must not be rewritten')
 assert(#tasks == 0, 'Manual flush must cancel its scheduled duplicate')
-package.loaded.fanfic_epub = nil
-Epub = require('fanfic_epub')
+package.loaded["ao3lib.library.epub"] = nil
+Epub = require('ao3lib.library.epub')
 before = opens
 assert(Epub.read('/home/renamed.epub').id == '123' and opens == before) -- persisted cache
 -- Previously cached EPUBs acquire separate category values without modifying
@@ -157,11 +157,11 @@ fs['/home/missing.epub'] = nil
 assert(Epub.read('/home/missing.epub') == nil and Epub.read('/home/book.pdf') == nil)
 -- Load real history code. It supplies progress, but cannot recognize a work.
 stub('dkjson', {})
-stub('FanficPaths', {getHomeDirectory=function() return '/data/fanfic' end})
+stub('ao3lib.core.paths', {getHomeDirectory=function() return '/data/fanfic' end})
 stub('logger', {dbg=function() end, err=function() end})
 stub('ffi/util', {realpath=function(path) return path end})
 stub('device', {isAndroid=function() return false end})
-local History = require('downloaded_fanfics')
+local History = require('ao3lib.library.history')
 local saves = 0
 History.save = function() saves = saves + 1 end
 History.add({id='123', path='/old/name.epub', title='Saved title', read=true, chapter_data={{id='chapter',read=true}}})
@@ -179,7 +179,7 @@ fs['/home'], dirs['/home'] = {mode='directory'}, {'renamed.epub','ordinary.epub'
 fs['/home/.hidden'], dirs['/home/.hidden'] = {mode='directory'}, {'private.epub'}
 fixture('/home/.hidden/private.epub', '999')
 fs['/home/loop'] = {mode='link'}
-local Library = require('fanfic_library')
+local Library = require('ao3lib.library.discovery')
 local discovered
 local beforeReadOnly=saves
 Library.scan({'/downloads','/home','/home'}, function(works) discovered=works end, nil, {read_only=true})
@@ -212,16 +212,16 @@ local unknown = History.rememberLocal(Epub.read('/home/localized.epub'))
 local Class = {}
 function Class:new(t) return t end
 for _, module in ipairs({'ui/widget/buttondialog','ui/widget/infomessage','ui/widget/textviewer'}) do stub(module, Class) end
-stub('fanfic_reader', {})
-stub('fanfic_network', {schedule=function(delay,fn) UI:scheduleIn(delay,fn) end})
-stub('fanfic_config', {readSetting=function(_, _, default) return default end})
+stub('ao3lib.ui.reader', {})
+stub('ao3lib.ao3.network', {schedule=function(delay,fn) UI:scheduleIn(delay,fn) end})
+stub('ao3lib.core.config', {readSetting=function(_, _, default) return default end})
 stub('gettext', function(s) return s end)
 require('ffi/util').template = function(s, ...)
     local args = {...}; return (s:gsub('%%(%d)', function(i) return tostring(args[tonumber(i)]) end))
 end
 local title, menu
 local parent = {GoDownInMenu=function(_, t, items) title, menu = t, items end}
-require('downloaded_fanfics_menu'):show({}, parent, function() end, {}, {['222']=unknown})
+require('ao3lib.ui.downloaded_menu'):show({}, parent, function() end, {}, {['222']=unknown})
 assert(title == 'Downloaded Works' and menu[1].text == 'By fandom' and menu[2].text == 'By author')
 menu[1].callback()
 assert(title == 'Downloaded Works by Fandom' and menu[1].text == '(1) Unknown Fandom')
@@ -260,7 +260,7 @@ local realUpdate, realDelete = History.update, History.delete
 History.update = function(work) assert(work == latest) end
 History.delete = function(id) deleted = id end
 require('util').removeFile = function() return true end
-require('downloaded_fanfics_menu'):show({}, parent, function() end, {
+require('ao3lib.ui.downloaded_menu'):show({}, parent, function() end, {
     onOpenFanficReader = function(_, path, work) opened = work end,
 }, works)
 local modes = menu
@@ -295,7 +295,7 @@ local many={
     a={id='a',title='Alpha',author='Writer',chapters='1/1',fandoms=names},
     b={id='b',title='Beta',author='Writer',chapters='1/1',fandoms=names},
 }
-require('downloaded_fanfics_menu'):show({},parent,function() end,{},many)
+require('ao3lib.ui.downloaded_menu'):show({},parent,function() end,{},many)
 local real_sort,sorts=table.sort,0
 table.sort=function(...) sorts=sorts+1;return real_sort(...) end
 menu[1].callback()

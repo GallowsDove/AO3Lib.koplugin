@@ -1,11 +1,11 @@
 dofile('tests/test_network.lua')
 local UI = require('ui/uimanager')
-local Nav = require('fanfic_navigation')
-local Menu = require('fanfic_menu')
+local Nav = require('ao3lib.ui.navigation')
+local Menu = require('ao3lib.ui.menu')
 local NativeMenu = require('ui/widget/menu')
-package.loaded.AO3_user_browser = nil -- test_network replaces show with a spy.
-local Profile = require('AO3_user_browser')
-local Browser = require('fanficbrowser')
+package.loaded["ao3lib.ui.user_browser"] = nil -- test_network replaces show with a spy.
+local Profile = require('ao3lib.ui.user_browser')
+local Browser = require('ao3lib.ui.work_browser')
 local visible, closed = {}, {}
 UI.setDirty = function() end
 UI.show = function(_, window) visible[window] = true end

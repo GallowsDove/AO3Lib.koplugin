@@ -17,8 +17,8 @@ local parked
 stub('lib/bookshelf_reader_park',{parkedFile=function() return parked end})
 stub('libs/libkoreader-lfs',{attributes=function(path) return copy(files[path]) end,
     symlinkattributes=function(path) return copy(files[path]) end})
-stub('fanfic_epub',{read=function(path) return copy(epubs[path]) end})
-stub('downloaded_fanfics',{
+stub('ao3lib.library.epub',{read=function(path) return copy(epubs[path]) end})
+stub('ao3lib.library.history',{
     get=function(id) return copy(saved[tostring(id)]) end,
     update=function(work)
         saves=saves+1; saved[tostring(work.id)]=copy(work)
@@ -27,7 +27,7 @@ stub('downloaded_fanfics',{
     end,
     save=function() if fail_save then return nil,'disk full' end; return true end,
 })
-stub('AO3_downloader_client',{
+stub('ao3lib.ao3.client',{
     getWorkMetadata=function(_,id)
         checks=checks+1
         local value=remote[tostring(id)]
@@ -60,7 +60,7 @@ local function fixture(id,chapters)
         epub_link='https://example.test/'..id..'.epub',chapterData={{id='10'},{id='20'},{id='30'}}}
     return copy(saved[id])
 end
-local Updates=require('fanfic_updates')
+local Updates=require('ao3lib.updates.checks')
 local work=fixture('1')
 work.chapters='99/99' -- History metadata must never replace the actual EPUB baseline.
 local entry=Updates.check(work)
@@ -185,14 +185,20 @@ stub('ui/network/manager',{
 })
 local Class={new=function(self,args) return setmetatable(args,{__index=self}) end,
     updateItems=function() end}
-for _,name in ipairs({'menu','infomessage','textviewer'}) do stub('ui/widget/'..name,Class) end
-stub('fanfic_config',{readSetting=function() return '/books' end})
+for _,name in ipairs({'menu','infomessage','textviewer','notification'}) do stub('ui/widget/'..name,Class) end
+stub('ao3lib.core.config',{readSetting=function() return '/books' end})
 stub('apps/filemanager/filemanagerutil',{getHomeFolder=function() return '/home' end})
 local ui1,ui2=fixture('ui1'),fixture('ui2')
-stub('fanfic_library',{scan=function(roots,done)
+stub('ao3lib.library.discovery',{scan=function(roots,done)
     assert(roots[1]=='/books' and roots[2]=='/home'); done({ui1,ui2})
 end})
-local Review=require('fanfic_update_review')
+local persisted
+stub('ao3lib.updates.store',{
+    load=function() return copy(persisted) end,
+    save=function(state) persisted=copy(state) end,
+    flush=function(state) persisted=copy(state);return true end,
+})
+local Review=require('ao3lib.ui.update_review')
 Review.show({ui={}})
 local menu=shown[#shown]
 assert(menu.title=='Downloaded work updates')
@@ -230,24 +236,26 @@ tap('Check all works again')
 assert(pending_connection)
 menu:onCloseWidget()
 connected=true; reconnect=pending_connection; pending_connection=nil; reconnect(); drain()
-assert(checks==start_checks+2, 'Closing a review must invalidate a pending Wi-Fi continuation')
+assert(checks==start_checks+4, 'Closing a review must leave background checks running')
 Review.show({ui={}})
 menu=shown[#shown]
-assert(find('Work ui2').text:find('Updated',1,true))
+assert(find('2/2 checked') and find('Work ui1'))
 tap('Check all works again'); drain()
-assert(checks==start_checks+4 and find('Work ui1'))
-print('PASS: actual review UI; explicit check/selection; preserved Wi-Fi continuation; stop/resume; hold details; selective update; close cancels pending work; reopen and recheck')
+assert(checks==start_checks+6 and find('Work ui1'))
+print('PASS: actual review UI; explicit check/selection; preserved Wi-Fi continuation; stop/resume; hold details; selective update; close detaches checks; reopen and recheck')
 
 -- A work action checks only that work, without a library scan or download.
 local single=fixture('single-ui')
-stub('fanfic_library',{scan=function() error('Single-work review must not scan the library') end})
+stub('ao3lib.library.discovery',{scan=function() error('Single-work review must not scan the library') end})
 connected=false
 local before_checks,before_downloads=checks,downloads
 local single_session,single_menu=Review.showWork({ui={}},single)
-assert(#single_session.entries==1 and single_session.entries[1].work.id==single.id)
+assert(#single_session.entries==3 and single_menu.item_table[1].text:find('0/1 checked',1,true))
 assert(pending_connection and checks==before_checks and downloads==before_downloads)
 connected=true;reconnect=pending_connection;pending_connection=nil;reconnect();drain()
 assert(checks==before_checks+1 and downloads==before_downloads)
-assert(single_session.entries[1].status=='update' and not single_session.entries[1].selected)
+local single_entry
+for _,entry in ipairs(single_session.entries) do if entry.work.id==single.id then single_entry=entry end end
+assert(single_entry.status=='update' and not single_entry.selected)
 single_menu:onCloseWidget()
 print('PASS: single-work review auto-checks only the chosen work, preserves Wi-Fi continuation and never applies an update automatically')

@@ -9,9 +9,9 @@ local Class={new=function(self,t) return setmetatable(t or {},{__index=self}) en
 for _,name in ipairs({'container/widgetcontainer','notification','infomessage','inputdialog','buttondialog','multiinputdialog'}) do
     stub('ui/widget/'..name,Class)
 end
-stub('fanfic_network',{wrap=function(fn) return fn end})
-stub('fanfic_bookmark_dialog',{})
-stub('AO3_downloader_client',setmetatable({}, {__index=function() error('Reading must stay offline') end}))
+stub('ao3lib.ao3.network',{wrap=function(fn) return fn end})
+stub('ao3lib.ui.bookmark_dialog',{})
+stub('ao3lib.ao3.client',setmetatable({}, {__index=function() error('Reading must stay offline') end}))
 stub('ffi/util',{template=function(s) return s end})
 local warnings=0
 stub('logger',{dbg=function() end,warn=function() warnings=warnings+1 end})
@@ -28,7 +28,7 @@ local epubs={
     ['/books/import.epub']={id='3',path='/books/import.epub',title='Imported'},
 }
 local identified={}
-stub('fanfic_epub',{read=function(path)
+stub('ao3lib.library.epub',{read=function(path)
     identified[#identified+1]=path
     if path=='/books/corrupt.epub' then error('Corrupt archive') end
     return copy(epubs[path])
@@ -39,7 +39,7 @@ local saved={
     ['stale']={id='stale',path='/books/ordinary.epub',chapter_data={{id='bogus'}}},
 }
 local chapter_writes,whole_writes=0,0
-stub('downloaded_fanfics',{
+stub('ao3lib.library.history',{
     rememberLocal=function(work)
         local current=copy(saved[work.id] or work)
         current.id,current.path,current.title=work.id,work.path,work.title
@@ -61,7 +61,7 @@ stub('downloaded_fanfics',{
 })
 local ReaderUI={}
 stub('apps/reader/readerui',ReaderUI)
-local Reader=require('fanfic_reader')
+local Reader=require('ao3lib.ui.reader')
 local function ui(path)
     local instance={name='ReaderUI',post={},registrations=0,[1]={},
         document={file=path,getPageCount=function() return 100 end,
@@ -190,7 +190,7 @@ assert(menu.AO3_formatting.sub_item_table[2].text=='Revert formatting cleanup')
 print('PASS: manual reader formatting menu; reload position updates cannot mark chapters read')
 
 local flushes=0
-package.loaded.downloaded_fanfics.flushPending=function() flushes=flushes+1;return true end
+package.loaded["ao3lib.library.history"].flushPending=function() flushes=flushes+1;return true end
 local closing=open('/books/one.epub')
 closing._ao3_reader_listener:onCloseWidget()
 assert(flushes==1,'Closing the active reader must checkpoint pending chapter progress')

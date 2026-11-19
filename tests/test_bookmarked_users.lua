@@ -1,6 +1,6 @@
 dofile('tests/test_network.lua')
-local Menu=require('fanfic_menu')
-local Config=require('fanfic_config')
+local Menu=require('ao3lib.ui.menu')
+local Config=require('ao3lib.core.config')
 local UI=require('ui/uimanager')
 local users={'Writer','Pen Name (Account)'}
 local saved, profiles, dialogs, closed = nil, {}, {}, {}

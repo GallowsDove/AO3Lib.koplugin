@@ -27,7 +27,7 @@ stub('dkjson',{encode=function(data)
     if fail_encode then return nil,'simulated encoding failure' end
     local key='snapshot-'..encodes;encoded[key]=copy(data);return key
 end,decode=function(key) return copy(encoded[key]) end})
-stub('FanficPaths',{getHomeDirectory=function() return '/history' end})
+stub('ao3lib.core.paths',{getHomeDirectory=function() return '/history' end})
 stub('libs/libkoreader-lfs',{attributes=function(path)
     if fs[path] then return {size=#fs[path],modification=fs[path]} end
 end})
@@ -48,7 +48,7 @@ stub('ffi/util',{
 local function tick() assert(#tasks>0);table.remove(tasks,1).fn() end
 local function finish() children[forks].done=true;tick() end
 local path='/history/fanfic_history.json'
-local History=require('downloaded_fanfics')
+local History=require('ao3lib.library.history')
 History.load()
 local missing_reads=reads
 History.load()

@@ -1,6 +1,6 @@
 dofile('tests/test_network.lua')
-local Actions = require('fanfic_work_actions')
-local History = require('downloaded_fanfics')
+local Actions = require('ao3lib.ui.work_actions')
+local History = require('ao3lib.library.history')
 local UI = require('ui/uimanager')
 local shown, closed = {}, {}
 UI.show = function(_, widget) shown[#shown+1] = widget end
@@ -22,7 +22,7 @@ end,onShowFanficBrowser=function(_, works, fetch, title)
     assert(fetch==nil and title=='AO3 work details' and works.total==1)
     detail=works[1]
 end}
-package.loaded.fanfic_update_review = {showWork=function(owner, work)
+package.loaded["ao3lib.ui.update_review"] = {showWork=function(owner, work)
     assert(owner==plugin and work==latest);checked=work
 end}
 local expected = {'Work details','Check for updates','Open for reading','Select chapter','Delete local copy','Cancel'}

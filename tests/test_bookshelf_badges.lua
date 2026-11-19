@@ -6,7 +6,7 @@ package.loaded.util = {arrayReverse=function() error('AO3 positions must not mir
 package.loaded.logger = {warn=function() end}
 package.loaded.dbg = {guard=function(fn) return fn end}
 local eink = false
-package.loaded.fanfic_config = {readSetting=function(_, key, default)
+package.loaded["ao3lib.core.config"] = {readSetting=function(_, key, default)
     if key == "ao3_eink_symbols" then return eink end
     return default
 end}
@@ -14,11 +14,11 @@ local dpi = 1
 package.loaded.device = {screen={scaleBySize=function(_, n) return n*dpi end}}
 local epub = {id='123', rating='Explicit', categories={'F/M'},
     warnings={'Creator Chose Not To Use Archive Warnings'}, chapters='2/?'}
-package.loaded.fanfic_epub = {read=function(fp)
+package.loaded["ao3lib.library.epub"] = {read=function(fp)
     if fp == '/broken.epub' then error('corrupt EPUB') end
     if fp == '/ao3.epub' then return epub end
 end}
-package.loaded.downloaded_fanfics = setmetatable({}, {__index=function()
+package.loaded["ao3lib.library.history"] = setmetatable({}, {__index=function()
     error('Cover rendering must not read history')
 end})
 local Widget = require('ui/widget/widget')
@@ -37,7 +37,7 @@ function Image:paintTo(_, x, y)
 end
 function Image:free() self.freed = true end
 package.loaded['ui/widget/imagewidget'] = Image
-local Badges = require('fanfic_bookshelf_badges')
+local Badges = require('ao3lib.bookshelf.badges')
 local P = require('lib/bookshelf_placeholders')
 local Spine = {_renderFallback=function(self)
     local custom = P.widgetFor({filepath='/ao3.epub'}, 100, 160, self.ctx)

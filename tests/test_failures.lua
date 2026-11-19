@@ -25,7 +25,7 @@ stub('ffi/util', {template=function(s,...)
 end})
 stub('logger',{dbg=function() end,warn=function() warnings=warnings+1 end})
 local settings={cookies={}}
-stub('fanfic_config',{readSetting=function(_,key)
+stub('ao3lib.core.config',{readSetting=function(_,key)
     if key=='AO3_domain' then return 'https://archiveofourown.org' end
     return settings[key]
 end,saveSetting=function(_,key,value) settings[key]=value end})
@@ -54,7 +54,7 @@ stub('htmlparser',{parse=function(body)
         return {}
     end}
 end})
-local Client=require('AO3_downloader_client')
+local Client=require('ao3lib.ao3.client')
 local function fails(result, match)
     assert(result.success==false and type(result.error)=='string')
     if match then assert(result.error:find(match,1,true), result.error) end
@@ -115,7 +115,7 @@ fails(Client:getUserData('Writer','Writer'),'too many')
 enqueue(response(301,'missing destination'))
 fails(Client:getUserData('Writer','Writer'),'destination')
 -- POST failures are never replayed, and intentional login 302s remain visible.
-local Http=require('fanfic_http')
+local Http=require('ao3lib.ao3.http')
 local handler={get_default_headers=function() return {} end,getCookies=function() return '' end,setCookies=function() end}
 local data={}
 before=#calls

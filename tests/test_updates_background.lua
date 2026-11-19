@@ -1,19 +1,19 @@
 package.path='./?.lua;'..package.path
 dofile('tests/test_updates.lua')
 local H=dofile('tests/support/async.lua')
-package.loaded.fanfic_background=nil
-local B=require('fanfic_background')
-local Updates=require('fanfic_updates')
+package.loaded["ao3lib.ao3.background"]=nil
+local B=require('ao3lib.ao3.background')
+local Updates=require('ao3lib.updates.checks')
 local path='/books/worker.epub'
 local work={id='worker',path=path,title='Worker',chapters='1/2',chapter_data={{id='first',read=true}}}
 local fs=require('libs/libkoreader-lfs')
 local attr=fs.attributes
 fs.attributes=function(p) if p==path then return {mode='file',size=100,modification=1,change=1} end;return attr(p) end
 fs.symlinkattributes=fs.attributes
-local Epub=require('fanfic_epub')
+local Epub=require('ao3lib.library.epub')
 local read=Epub.read
 Epub.read=function(p) if p==path then return work end;return read(p) end
-local Client=require('AO3_downloader_client')
+local Client=require('ao3lib.ao3.client')
 Client.getWorkMetadata=function()
     local result,err=B.await(function() H.sleep(80);return {id='worker',chapters='2/2',
         chapterData={{id='first'},{id='second'}},epub_link='https://example.test/work.epub'} end)

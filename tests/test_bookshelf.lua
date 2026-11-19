@@ -6,12 +6,12 @@ stub('gettext', function(s) return s end)
 stub('lib/bookshelf_i18n', {gettext=function(s) return s end})
 local epubs, saved, sidecars = {}, {}, {}
 local reads, sidecar_reads, revision = 0, 0, 1
-stub('fanfic_epub', {read=function(fp)
+stub('ao3lib.library.epub', {read=function(fp)
     reads = reads+1
     if fp == '/broken.epub' then error('Corrupt archive') end
     return epubs[fp]
 end})
-stub('downloaded_fanfics', {
+stub('ao3lib.library.history', {
     get=function(id) return saved[tostring(id)] end,
     revision=function() return revision end,
 })
@@ -22,7 +22,7 @@ stub('docsettings', {
         return {readSetting=function(_, key) return sidecars[fp][key] end}
     end,
 })
-local Metadata = require('fanfic_bookshelf')
+local Metadata = require('ao3lib.bookshelf.metadata')
 local fp1, fp2, fp3 = '/one.epub', '/two.epub', '/imported.epub'
 epubs[fp1] = {id='1', title='First', author='Writer, Coauthor',
     fandoms={'Fandom A', 'Fandom A'}, relationships={'A/B'}, chapters='3/3',
@@ -117,7 +117,7 @@ stub('lib/bookshelf_sources', {
         return {books[fp2]}
     end,
 })
-local Integration = require('fanfic_bookshelf_integration')
+local Integration = require('ao3lib.bookshelf.integration')
 local native_search = Repo.searchBooks
 Repo.searchBooks = nil
 assert(not Integration.install() and #Filter.dimensions()==8, 'Unsupported versions must remain untouched')

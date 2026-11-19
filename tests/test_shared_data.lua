@@ -1,4 +1,4 @@
-local Tables = require('fanfic_table')
+local Tables = require('ao3lib.core.table')
 local shared = {progress=0.75}
 local key = {}
 local original = {first=shared, second=shared, [key]=key}
@@ -19,7 +19,7 @@ assert(shallow ~= original and shallow.first == shared and shallow.self == origi
 assert(next(Tables.shallowCopy(nil)) == nil)
 
 package.loaded.util = {trim=function(text) return text:match('^%s*(.-)%s*$') end}
-local Fields = require('fanfic_fields')
+local Fields = require('ao3lib.library.fields')
 local stored = Fields.list('Smith, John')
 assert(#stored == 1 and stored[1] == 'Smith, John')
 local displayed = Fields.list(' First, Second , ,Third', true)

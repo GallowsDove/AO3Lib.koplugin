@@ -1,7 +1,7 @@
 dofile('tests/test_network.lua')
 local Fanfic = require('main')
-local Client = require('AO3_downloader_client')
-local Paging = require('fanfic_work_paging')
+local Client = require('ao3lib.ao3.client')
+local Paging = require('ao3lib.ao3.work_paging')
 
 -- Exercise every public adapter, especially optional nils before the page.
 local endpoints = {

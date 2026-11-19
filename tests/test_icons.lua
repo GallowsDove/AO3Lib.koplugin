@@ -12,7 +12,7 @@ package.loaded['ui/widget/iconwidget']=Icon
 local user_items={{icon='custom',label='Custom'}}
 local Picker={_scanUserIcons=function() return user_items end}
 package.loaded['lib/bookshelf_icons_library']=Picker
-local Icons=require('fanfic_icons')
+local Icons=require('ao3lib.ui.icons')
 assert(Icons.installBookshelf())
 local init,scan=Icon.init,Picker._scanUserIcons
 assert(Icons.installBookshelf() and Icon.init==init and Picker._scanUserIcons==scan)

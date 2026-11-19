@@ -50,15 +50,15 @@ stub('ffi/util', { template = function(s, ...)
 end })
 stub('logger', { dbg = function() end })
 stub('util', { trim = function(s) return s:match('^%s*(.-)%s*$') end })
-stub('fanfic_config', { readSetting = function(_, _, default) return default end })
-for _, name in ipairs({ 'ui/bidi', 'ui/event', 'dispatcher', 'fanfic_reader',
-    'fanfic_search', 'downloaded_fanfics_menu', 'custom_filter_menu',
-    'apps/filemanager/filemanagerutil', 'apps/reader/readerui', 'fanfic_bookmark_dialog' }) do stub(name, {}) end
+stub('ao3lib.core.config', { readSetting = function(_, _, default) return default end })
+for _, name in ipairs({ 'ui/bidi', 'ui/event', 'dispatcher', 'ao3lib.ui.reader',
+    'ao3lib.ui.search', 'ao3lib.ui.downloaded_menu', 'ao3lib.ui.search_filters_menu',
+    'apps/filemanager/filemanagerutil', 'apps/reader/readerui', 'ao3lib.ui.bookmark_dialog' }) do stub(name, {}) end
 local work = { id = '123', path = '/books/test.epub', title = 'Test', author = 'Writer',
     wordcount = '1234', updated = '2026-01-01', chapters = '1/1' }
 local updates = 0
-stub('fanfic_epub', { read = function(path) if path == work.path then return work end end })
-stub('downloaded_fanfics', {
+stub('ao3lib.library.epub', { read = function(path) if path == work.path then return work end end })
+stub('ao3lib.library.history', {
     rememberLocal = function(epub) return epub end,
     checkIfStored = function(id) if id == work.id then return work end end,
     update = function() updates = updates + 1 end,
@@ -84,8 +84,8 @@ local client = {
     end,
     kudosWork = function() return { success = true } end,
 }
-stub('AO3_downloader_client', client)
-local Network = require('fanfic_network')
+stub('ao3lib.ao3.client', client)
+local Network = require('ao3lib.ao3.network')
 -- Preserve parameters (including nils) and synchronous return values online.
 connected = true
 local fn = Network.wrap(function(a,b,c) assert(a == 1 and b == nil and c == 3); return true, 'result' end)
@@ -99,8 +99,8 @@ pending = nil -- cancel connection
 assert(count == 0)
 
 local Fanfic = require('main')
-local Menu = require('fanfic_menu')
-local Browser = require('fanficbrowser')
+local Menu = require('ao3lib.ui.menu')
+local Browser = require('ao3lib.ui.work_browser')
 local fm = { addFileDialogButtons = function(self, _, builder) self.row_builder = builder end }
 local plugin = Fanfic:extend{ ui = fm, menu_stack = {} }
 -- KOReader initializes plugins before FileManager creates file_chooser.
@@ -108,7 +108,7 @@ local plugin = Fanfic:extend{ ui = fm, menu_stack = {} }
 fm.name = 'FileManager'
 fm.menu = { registerToMainMenu = function() end }
 plugin.onDispatcherRegisterActions = function() end
-require('downloaded_fanfics').load = function() end
+require('ao3lib.library.history').load = function() end
 assert(fm.file_chooser == nil and fm.row_builder == nil)
 plugin:init()
 assert(type(fm.row_builder) == 'function', 'AO3 action must register before file_chooser exists')
@@ -133,7 +133,7 @@ connect()
 assert(#queries == 1 and queries[1] == 'Writer query' and closed[search])
 assert(#navigations == 1 and #navigations[1][2] == 1)
 -- Direct profile opening used to bypass Wi-Fi entirely.
-local UserBrowser = require('AO3_user_browser')
+local UserBrowser = require('ao3lib.ui.user_browser')
 local profileShown
 UserBrowser.show = function(_, data) profileShown = data end
 offline()
@@ -174,8 +174,8 @@ connect()
 assert(fetched == 1)
 -- Reader inputs survive Wi-Fi cancellation, and submitting after connection
 -- performs the action and closes the input dialog exactly once.
-package.loaded.fanfic_reader = nil
-local Reader = require('fanfic_reader')
+package.loaded["ao3lib.ui.reader"] = nil
+local Reader = require('ao3lib.ui.reader')
 Reader.current_fanfic = work
 local entries = {}
 Reader:addToMainMenu(entries)
@@ -200,7 +200,7 @@ work.chapter_data = {}
 Reader.is_showing = true
 require('apps/reader/readerui').instance = { document = {file=work.path, getPageCount = function() return 100 end } }
 Reader._reader_ui = require('apps/reader/readerui').instance
-require('downloaded_fanfics').markWorkAsRead = function(id)
+require('ao3lib.library.history').markWorkAsRead = function(id)
     assert(id == work.id)
     completed = completed + 1
     work.read = true
@@ -219,8 +219,8 @@ stub('ui/size', {})
 function Class:getTextHeight() return 20 end
 local stopAfterButtons = {}
 Class.init = function() error(stopAfterButtons) end
-package.loaded.fanfic_bookmark_dialog = nil
-local Bookmark = require('fanfic_bookmark_dialog')
+package.loaded["ao3lib.ui.bookmark_dialog"] = nil
+local Bookmark = require('ao3lib.ui.bookmark_dialog')
 local saved, deleted, bookmarkClosed = 0, 0, false
 local function field(text) return { getText = function() return text end } end
 local bookmark = Bookmark:new{
@@ -268,7 +268,7 @@ connect()
 assert(selection[1].name == 'Found collection' and closed[collections])
 -- Deletion from an already-downloaded work requires confirmation, preserves
 -- history on file errors, and refreshes the downloaded marker on success.
-local history = require('downloaded_fanfics')
+local history = require('ao3lib.library.history')
 local stored, removals, reloads, removeOK = true, 0, 0, false
 history.checkIfStored = function(id) if stored and id == work.id then return work end end
 history.delete = function(id) assert(id == work.id); stored = false; removals = removals + 1 end
@@ -340,7 +340,7 @@ assert(pages[1]==1 and pages[2]==2 and pages[3]==2)
 print('PASS: online failures retain search/login inputs and account state; author/category errors remain in UI; pagination can retry the failed page')
 -- Future downloads use the configured Author/Title layout and reserve names
 -- against existing EPUBs/sidecars; re-downloading a tracked ID updates it.
-local Config=require('fanfic_config')
+local Config=require('ao3lib.core.config')
 Config.readSetting=function(_,key,default)
     if key=='fanfic_folder_path' then return '/books' end
     if key=='author_folders' then return true end
@@ -354,8 +354,8 @@ util.getSafeFilename=function(s) return s end
 local made
 util.makePath=function(path) made=path; return true end
 local added,downloaded,updated,downloadCalls
-require('downloaded_fanfics').add=function(data) added=data end
-require('downloaded_fanfics').checkIfStored=function(id) if added and id==added.id then return added end end
+require('ao3lib.library.history').add=function(data) added=data end
+require('ao3lib.library.history').checkIfStored=function(id) if added and id==added.id then return added end end
 client.getWorkMetadata=function(_,id)
     return {success=true,work_metadata={id=id,title='Fresh title',author='Pseud (Account)',epub_link='https://example.test/file.epub',chapterData={{read=true}}}}
 end
@@ -378,7 +378,7 @@ assert(downloadCalls==1 and updated==added and updated.chapter_data[1].read)
 print('PASS: new downloads use Author/Title and safe collision suffixes; downloading an existing ID preserves tracked progress through Update')
 
 local history_flushes=0
-package.loaded.downloaded_fanfics.flushPending=function() history_flushes=history_flushes+1;return true end
+package.loaded["ao3lib.library.history"].flushPending=function() history_flushes=history_flushes+1;return true end
 Fanfic:onSuspend()
 Fanfic:onFlushSettings()
 assert(history_flushes==2,'Suspend and explicit settings flush must checkpoint pending AO3 progress')

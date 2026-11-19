@@ -1,8 +1,8 @@
 dofile('tests/test_work_view.lua')
-local Paging=require('fanfic_work_paging')
-local View=require('fanfic_work_view')
-local Browser=require('fanficbrowser')
-local Config=package.loaded.fanfic_config
+local Paging=require('ao3lib.ao3.work_paging')
+local View=require('ao3lib.ui.work_view')
+local Browser=require('ao3lib.ui.work_browser')
+local Config=package.loaded["ao3lib.core.config"]
 local function batch(page,total)
     local works={total=total}
     for i=(page-1)*20+1,math.min(page*20,total) do works[#works+1]={id=i,title='Work '..i} end
@@ -71,7 +71,7 @@ assert(listed.index==247 and listed.window.show_page==247 and #requested==before
 assert(listed.window.kv_pairs[(247-1)*15+1][1]=='Work 247')
 -- Snapshot query parameters when registering a native search fetcher.
 local Fanfic=require('main')
-local client=package.loaded.AO3_downloader_client
+local client=package.loaded["ao3lib.ao3.client"]
 local calls={}
 client.searchByParameters=function(_,params,page)
     calls[#calls+1]={query=params.query,sort=params.sort,page=page or 1}
