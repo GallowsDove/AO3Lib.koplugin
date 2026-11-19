@@ -134,6 +134,15 @@ package.loaded["ao3lib.library.epub"] = nil
 Epub = require('ao3lib.library.epub')
 before = opens
 assert(Epub.read('/home/renamed.epub').id == '123' and opens == before) -- persisted cache
+stub('ffi/util', {realpath=function(path) return path end})
+local cached=Epub.cachedPaths({'/home'})
+local cached_set={};for _,path in ipairs(cached) do cached_set[path]=true end
+assert(cached_set['/home/renamed.epub'] and not cached_set['/home-sibling/renamed.epub'])
+fs['/home/renamed.epub'].modification=11
+for _,path in ipairs(Epub.cachedPaths({'/home'})) do
+    assert(path~='/home/renamed.epub','A changed EPUB cannot seed a shelf')
+end
+fs['/home/renamed.epub'].modification=10
 -- Previously cached EPUBs acquire separate category values without modifying
 -- the book, while the negative cache and current-schema entries stay warm.
 persistent.preface_v1['/home/renamed.epub'].metadata_version=nil

@@ -41,6 +41,8 @@ for _,item in ipairs(widget.item_table) do
 end
 widget.item_table[1].callback()
 assert(widget.title=='Search works' and widget.item_table[1].text=='New search')
+assert(Filter.menuWidget==widget and Filter.fanfic==fanfic,
+    'Opening saved filters must bind the editor even before starting a new search')
 assert(widget.item_table[2].text=='Saved filters:','Named saved filters must remain visible')
 widget.item_table[1].callback()
 assert(widget.item_table[1].text:find('Work Info',1,true))

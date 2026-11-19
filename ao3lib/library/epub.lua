@@ -225,6 +225,29 @@ local function current(path, entry)
     return stat and stat.mode=="file" and entry and (not entry.work or entry.metadata_version==2)
         and entry.size==stat.size and entry.mtime==stat.modification and entry.change==stat.change
 end
+-- Used in a background worker to seed library shelves before a directory walk
+-- completes. Only current, positive entries under the configured roots qualify.
+function M.cachedPaths(roots)
+    local out,normalized={},{}
+    for _,root in ipairs(roots or {}) do
+        if type(root)=="string" and root~="" then
+            root=(require("ffi/util").realpath(root) or root):gsub("/+$","")
+            normalized[#normalized+1]=root=="" and "/" or root
+        end
+    end
+    for path,entry in pairs(getCache()) do
+        if type(path)=="string" and type(entry)=="table" and entry.work and entry.metadata_version==2 then
+            for _,root in ipairs(normalized) do
+                if (root=="/" and path:sub(1,1)=="/")
+                        or path:sub(1,#root+1)==root.."/" then
+                    if current(path,entry) then out[#out+1]=path end
+                    break
+                end
+            end
+        end
+    end
+    return out
+end
 local function result(path,entry)
     if not entry or not entry.work then return end
     local work=util.tableDeepCopy(entry.work)

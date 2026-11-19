@@ -221,7 +221,14 @@ end
 
 function FanficMenu:onSearchFanficMenu()
     local widget=self.menuWidget
+    -- Saved-filter actions can open the editor without going through the
+    -- "New search" callback, so bind the filter menu as soon as this route
+    -- is entered.
+    CustomFilterMenu.menuWidget=widget
+    CustomFilterMenu.fanfic=self.fanfic
     widget:GoDownInMenu(_("Search"),{{text=_("Search works"),callback=function()
+        CustomFilterMenu.menuWidget=widget
+        CustomFilterMenu.fanfic=self.fanfic
         local filters=require("ao3lib.ui.saved_searches").saved(Config)
         local rows={{text=_("New search"),callback=function()
             CustomFilterMenu.menuWidget=widget
@@ -234,11 +241,15 @@ function FanficMenu:onSearchFanficMenu()
                 local options
                 options=ButtonDialog:new{buttons={{
                     {text=_("Search using filter"),callback=function()
+                        CustomFilterMenu.menuWidget=widget
+                        CustomFilterMenu.fanfic=self.fanfic
                         CustomFilterMenu.filter=require("ao3lib.core.table").deepCopy(saved_filter.parameters)
                         CustomFilterMenu:executeSearch();UIManager:close(options)
                     end},
                 },{
                     {text=_("Edit filter"),callback=function()
+                        CustomFilterMenu.menuWidget=widget
+                        CustomFilterMenu.fanfic=self.fanfic
                         CustomFilterMenu:UpdateFilterCrafter(saved_filter);UIManager:close(options)
                     end},
                 },{

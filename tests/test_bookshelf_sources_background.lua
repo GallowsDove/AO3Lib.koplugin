@@ -21,14 +21,36 @@ local Sources={API=1,register=function(id,spec) specs[id]=spec;return true end,
     changed=function(id) notices=notices+1;if on_changed then on_changed(id) end end,
     list=function(id) return specs[id].list() end}
 package.loaded['lib/bookshelf_sources']=Sources
+local saved_source={kind='ao3_authors',id='stored-shelf'}
+local saved_sort={{key='series_name',reverse=true}}
+local saved_filter={author='Author 1'}
+-- Match the source/filter/sort values of the device's affected Genres shelf.
+local fandom_source={kind='ao3_fandoms'}
+local fandom_sort={{key='book_count',reverse=true}}
+package.loaded['lib/bookshelf_settings_store']={read=function(key,default)
+    if key=='tabs' then return {
+        {source=saved_source,filter={},sort_priority=saved_sort},
+        {source={kind='ao3_authors'},filter=saved_filter,sort_priority=saved_sort},
+        {id='genres',source=fandom_source,filter={},sort_priority=fandom_sort},
+    } end
+    return default
+end}
 package.loaded['lib/bookshelf_sort_engine']={chainedComparator=function(priority)
     assert(H.inChild(),'Sorting on UI thread')
-    return function(a,b) if priority[1].reverse then return a.title>b.title end;return a.title<b.title end
+    return function(a,b)
+        if priority[1].key=='book_count' and a.book_count~=b.book_count then
+            if priority[1].reverse then return a.book_count>b.book_count end
+            return a.book_count<b.book_count
+        end
+        if priority[1].reverse then return a.title>b.title end;return a.title<b.title
+    end
 end}
 local generation,repo_epoch=0,0
 local publication_invalidations=0
 local favorite=false
+local generation_listener
 local Repo={dataGeneration=function() return generation end,
+    onDataGeneration=function(owner,fn) generation_listener=function() fn(owner) end end,
     cacheEpoch=function() return repo_epoch end,
     invalidateBookCache=function(reason)
         assert(not H.inChild(),'Shelf publication must happen in the parent')
@@ -79,13 +101,36 @@ if memo_body then
     assert(loadstring('return function(self,UIManager) self._on_source_changed=function(id)'..body..'\nend end'))()(preview,H.UI)
     on_changed=function(id) preview._on_source_changed(id) end
 end
+-- Simulate the reader leaving KOReader open through startup warmup before
+-- visiting the grouped shelf for the first time.
+H.drain()
+local fandoms,fandom_total=Repo.getBySource(fandom_source,{},fandom_sort,0,10)
+assert(fandom_total==2 and #fandoms==2 and fandoms[1].book_count==100,
+    'The device-style AO3 fandom shelf must be populated on its first fetch')
+assert(H.forks==1,'The device-style shelf must use the startup worker result')
+local variant,variant_total=Repo.getBySource(saved_source,{},saved_sort,0,2)
+assert(variant_total==5 and #variant==2 and variant[1].title=='Author 4',
+    'A saved shelf must be warmed with its actual sort and source')
+local filtered,filtered_total=Repo.getBySource({kind='ao3_authors'},saved_filter,saved_sort,0,2)
+assert(filtered_total==1 and filtered[1].title=='Author 1',
+    'A saved filtered shelf must be warmed with its actual filter')
+assert(H.forks==1,'First visits to saved shelves should not start another worker')
+-- An unchanged time-based rescan must not invalidate the warm results.
+local real_time=os.time
+os.time=function(...) return real_time(...)+301 end
+Repo.getBySource(saved_source,{},saved_sort,0,2)
+os.time=real_time
+H.drain()
+variant,variant_total=Repo.getBySource(saved_source,{},saved_sort,0,2)
+assert(variant_total==5 and variant[1].title=='Author 4' and H.forks==1,
+    'An unchanged discovery scan must preserve warmed shelf results')
 local page,total=Repo.getBySource(source,nil,nil,0,2)
-assert(#page==0 and total==0)
+assert(#page==2 and total==5,'The first shelf visit should use the completed startup warmup')
 local forks=H.forks
-assert(forks==1)
+assert(forks==1,'Opening a warmed default shelf should not start another worker')
 if preview then
     preview:_rebuild()
-    assert(#preview.items==0 and #preview.covers==0)
+    assert(#preview.items==5 and #preview.covers==4)
 end
 -- Several shelves may request different predicates during the same redraw.
 Repo.getBySource(source,{author='Author 1'},nil,0,2)
@@ -155,6 +200,19 @@ specs.ao3_authors.refresh(nil,nil,function() end)
 Repo.getBySource(source,nil,nil,0,2);H.drain()
 page,total=Repo.getBySource(source,nil,nil,0,10)
 assert(total==5 and notices>0 and #H.warnings==1)
+-- Bookshelf can invalidate caches after AO3 startup warmup, without visiting
+-- the AO3 shelf. Prepare its saved sort and filter again before the visit.
+generation=generation+1;repo_epoch=repo_epoch+1;generation_listener()
+H.drain()
+local after_generation=H.forks
+variant,variant_total=Repo.getBySource(saved_source,{},saved_sort,0,2)
+assert(variant_total==5 and variant[1].title=='Author 4' and H.forks==after_generation,
+    'A later metadata generation should rewarm saved shelves before they open')
+Repo.invalidateFavoritesCache();H.drain()
+local after_epoch=H.forks
+variant,variant_total=Repo.getBySource(saved_source,{},saved_sort,0,2)
+assert(variant_total==5 and variant[1].title=='Author 4' and H.forks==after_epoch,
+    'A cache-only invalidation should rewarm saved shelves before they open')
 -- Changing roots must clear the snapshot immediately, even with a worker pending.
 generation=generation+1
 Repo.getBySource(source,nil,nil,0,2)

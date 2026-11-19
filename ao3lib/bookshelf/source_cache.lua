@@ -19,12 +19,22 @@ local function key(value)
     table.sort(parts)
     return '{'..table.concat(parts,';')..'}'
 end
+local function trace(...)
+    local logger=require('logger')
+    if logger.info then logger.info('AO3 shelf cache:',...) end
+end
+local function queryId(id)
+    local hash=0
+    for i=1,#id do hash=(hash*33+id:byte(i))%2147483647 end
+    return tostring(hash)
+end
 function M.new(options)
-    local self={catalog={},queries={},previous={},queue={},epoch=0}
+    local self={catalog={},queries={},previous={},queue={},epoch=0,trace_misses={}}
     local pump
     local function synchronize()
         local stamp=options.stamp()
         if stamp~=self.stamp then
+            trace('generation changed',tostring(self.stamp),'->',stamp)
             self.stamp=stamp;self.epoch=self.epoch+1
             for id,entry in pairs(self.queries) do
                 if entry.list then self.previous[id]=entry end
@@ -38,15 +48,20 @@ function M.new(options)
         self.stamp=nil;self.catalog={};self.members_index=nil
         self.queries={};self.previous={};synchronize()
     end
-    local function request(query)
+    local function request(query,bootstrap)
         synchronize()
         local id=key(query)
-        if options.busy() then return self.queries[id] end
+        if query.kind and not (self.queries[id] and self.queries[id].list)
+                and not self.trace_misses[id] then
+            self.trace_misses[id]=true
+            trace('miss',query.kind,'query',queryId(id),'scan busy',tostring(options.busy()))
+        end
+        if options.busy() and not bootstrap then return self.queries[id] end
         if not self.queries[id] then
             self.queries[id]={pending=true}
             -- Shelf editors can mutate filters while another query is queued.
             local buffer=require('string.buffer')
-            self.queue[#self.queue+1]={id=id,query=buffer.decode(buffer.encode(query))}
+            self.queue[#self.queue+1]={id=id,query=buffer.decode(buffer.encode(query)),bootstrap=bootstrap}
             pump()
         end
         return self.queries[id]
@@ -55,10 +70,12 @@ function M.new(options)
         if self.job or #self.queue==0 then return end
         local item=table.remove(self.queue,1)
         local epoch,stamp=self.epoch,self.stamp
+        trace('worker started',item.query.kind or 'catalog','query',queryId(item.id))
         self.job=Background.run(function()
             self.worker=true
             local needs_warm=self.catalog_stamp~=stamp
-            local catalog=not needs_warm and self.catalog or options.build()
+            local paths=item.bootstrap and options.bootstrap and options.bootstrap() or nil
+            local catalog=not needs_warm and self.catalog or options.build(paths)
             self.worker_catalog=catalog
             local list=item.query.kind and options.group(item.query) or nil
             local members={}
@@ -72,7 +89,9 @@ function M.new(options)
             end
             local defaults={}
             if needs_warm then
-                for _,query in ipairs(options.default_queries or {}) do
+                local queries=type(options.default_queries)=='function' and options.default_queries()
+                    or options.default_queries or {}
+                for _,query in ipairs(queries) do
                     local query_id=key(query)
                     defaults[query_id]=query_id==item.id and list or options.group(query)
                 end
@@ -84,6 +103,14 @@ function M.new(options)
             if options.stamp()~=stamp then synchronize();options.changed();return end
             local entry=self.queries[item.id]
             if result then
+                local warmed=0
+                for _ in pairs(result.defaults or {}) do warmed=warmed+1 end
+                trace('worker ready',item.query.kind or 'catalog','records',#result.catalog,
+                    'saved queries',warmed,'query',queryId(item.id))
+                for id in pairs(result.defaults or {}) do
+                    trace('warmed query',queryId(id))
+                    self.trace_misses[id]=nil
+                end
                 self.catalog,self.members_index=result.catalog,result.members
                 self.catalog_stamp=stamp
                 entry.list=result.list;entry.pending=nil
@@ -119,9 +146,13 @@ function M.new(options)
         if self.catalog_stamp~=self.stamp then request({}) end
         return clones(self.catalog)
     end
+    function self:bootstrap(source,priority)
+        return request({kind=source.kind,source=source,priority=priority},true)
+    end
     function self:groups(source,filter,priority,offset,limit)
         local entry=request({kind=source.kind,source=source,filter=filter,priority=priority})
-        local previous=self.previous[key({kind=source.kind,source=source,filter=filter,priority=priority})]
+        local query={kind=source.kind,source=source,filter=filter,priority=priority}
+        local previous=self.previous[key(query)]
         local list=entry and entry.list or previous and previous.list or {}
         local page,total={},#list
         for i=(offset or 0)+1,math.min((offset or 0)+(limit or total),total) do

@@ -11,8 +11,19 @@ local state = {paths={}, generation=0, dirty=true, completed=0}
 local Sources, Repo, cache
 local revision=0
 local published_epochs=0
-local warmCache
+local warmCache, scheduleWarm
 local copy = require("ao3lib.core.table").shallowCopy
+local function trace(...)
+    local ok,logger=pcall(require,"logger")
+    if ok and logger.info then logger.info("AO3 shelf:",...) end
+end
+local function same(a,b)
+    if type(a)~=type(b) then return false end
+    if type(a)~="table" then return a==b end
+    for k,v in pairs(a) do if not same(v,b[k]) then return false end end
+    for k in pairs(b) do if a[k]==nil then return false end end
+    return true
+end
 local function roots()
     local paths={}
     local function add(path) if type(path)=="string" and path~="" then paths[#paths+1]=path end end
@@ -38,7 +49,7 @@ local function ensureScan(force, done)
     local paths, signature=roots()
     if signature~=state.signature then
         state.generation=state.generation+1
-        state.signature, state.paths, state.busy, state.dirty=signature, {}, false, true
+        state.signature, state.paths, state.busy, state.dirty, state.works=signature, {}, false, true, nil
         if cache then cache:clear() end
     end
     if done then
@@ -51,6 +62,7 @@ local function ensureScan(force, done)
     end
     if not force and not state.dirty and os.time()-state.completed<60 then return end
     state.busy, state.dirty=true, false
+    trace("discovery started", "forced", tostring(not not force))
     local generation=state.generation
     local function publish(works)
         if generation~=state.generation then return end
@@ -62,14 +74,22 @@ local function ensureScan(force, done)
     end
     local function finish(works,err)
         if generation~=state.generation then return end
+        local changed=force or not same(state.works,works)
+        local count=0
+        for _ in pairs(works or {}) do count=count+1 end
+        trace("discovery finished", "works", count, "changed", tostring(not not changed),
+            "error", tostring(err or "none"))
+        state.works=works
         publish(works)
-        revision=revision+1
+        if changed then revision=revision+1 end
         if err then state.dirty=true;require("logger").warn("AO3 shelf discovery:",err) end
         state.busy, state.completed=false, os.time()
         local waiters=state.waiters or {}; state.waiters=nil
         for __,fn in ipairs(waiters) do pcall(fn) end
+        -- An invalidation may have arrived during the scan. Even an unchanged
+        -- scan must restart any warmup that was deferred while it was busy.
         if warmCache then warmCache() end
-        notify()
+        if changed then notify() end
     end
     local ok,err=pcall(function()
         require("ao3lib.library.discovery").scan(paths, finish,
@@ -86,9 +106,9 @@ local function ensureScan(force, done)
     end
 end
 
-local function buildRecords()
+local function buildRecords(bootstrap_paths)
     local out, seen, paths={}, {}, {}
-    for i,path in ipairs(state.paths) do paths[i]=path end
+    for i,path in ipairs(bootstrap_paths or state.paths) do paths[i]=path end
     table.sort(paths)
     for __,path in ipairs(paths) do
         local ok, work=pcall(Epub.read,path)
@@ -189,18 +209,72 @@ function M.install(repository)
                     history.revision and history.revision() or 0},":")
             end,
             busy=function() return state.busy end,
+            bootstrap=function()
+                if type(Epub.cachedPaths)~="function" then return {} end
+                local paths=roots()
+                return Epub.cachedPaths(paths)
+            end,
             build=buildRecords,groupAll=grouped,specs={groups.ao3_authors,groups.ao3_fandoms},
             group=function(query) return calculate(query.source,query.filter,query.priority) end,
-            default_queries={
-                {kind="ao3_authors",source={kind="ao3_authors"},priority=default_priority},
-                {kind="ao3_fandoms",source={kind="ao3_fandoms"},priority=default_priority},
-            },
+            default_queries=function()
+                local queries={
+                    {kind="ao3_authors",source={kind="ao3_authors"},priority=default_priority},
+                    {kind="ao3_fandoms",source={kind="ao3_fandoms"},priority=default_priority},
+                }
+                local ok, settings=pcall(require,"lib/bookshelf_settings_store")
+                local read, tabs=false,nil
+                if ok and type(settings.read)=="function" then read,tabs=pcall(settings.read,"tabs",{}) end
+                if read and type(tabs)=="table" then
+                    for _,tab in ipairs(tabs) do
+                        local source=type(tab)=="table" and tab.source
+                        if type(source)=="table" and groups[source.kind] then
+                            local filter=tab.filter
+                            if type(filter)=="table" and next(filter)==nil then filter=nil end
+                            queries[#queries+1]={kind=source.kind,source=source,filter=filter,
+                                priority=tab.sort_priority or default_priority}
+                        end
+                    end
+                end
+                trace("startup queries", #queries, "saved settings available", tostring(read))
+                return queries
+            end,
             changed=notify,
         }
         warmCache=function()
-            -- One startup worker builds both default grouped shelves from the
-            -- same EPUB catalog, before either shelf is first opened.
-            cache:groups({kind="ao3_authors"},nil,default_priority,0,1)
+            -- The worker prepares the saved grouped shelves as well as the
+            -- defaults, using the same EPUB catalog for all of them.
+            if state.busy then cache:bootstrap({kind="ao3_authors"},default_priority)
+            else cache:groups({kind="ao3_authors"},nil,default_priority,0,1) end
+        end
+        local scheduled=false
+        scheduleWarm=function()
+            if scheduled then return end
+            scheduled=true
+            require("ui/uimanager"):scheduleIn(1,function()
+                scheduled=false
+                ensureScan()
+                warmCache()
+            end)
+        end
+        -- Bookshelf changes its generations after startup (e.g. when its
+        -- initial metadata sweep completes). Rebuild before a shelf is opened,
+        -- including invalidations that only bump the wider cache epoch.
+        if type(Repo.onDataGeneration)=="function" then
+            Repo.onDataGeneration(M,function() scheduleWarm() end)
+        end
+        for name,fn in pairs(Repo) do
+            if type(fn)=="function" and (name:match("^invalidate") or name=="forgetBook") then
+                local original_invalidate,method=fn,name
+                Repo[name]=function(...)
+                    -- Keep the original arguments separate from its return values.
+                    local own=method=="invalidateBookCache" and select(1,...)=="ao3-source"
+                    local function done(...)
+                        if not own then scheduleWarm() end
+                        return ...
+                    end
+                    return done(original_invalidate(...))
+                end
+            end
         end
     end
     Repo.getBySource=function(source, filter, priority, offset, limit, opts)
@@ -218,7 +292,7 @@ function M.install(repository)
         return page,total
     end
     Repo._fanfic_sources_installed=true
-    if cache then ensureScan(false) end
+    if cache then ensureScan(false); if state.busy then warmCache() end end
     return true
 end
 
