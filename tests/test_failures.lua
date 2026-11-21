@@ -6,7 +6,7 @@ local function enqueue(...) for _,r in ipairs({...}) do queue[#queue+1] = r end 
 local function response(status, body, headers) return {status=status,body=body or '',headers=headers or {}} end
 stub('ssl.https', {request=function(req)
     assert(req.redirect == false)
-    calls[#calls+1] = {url=req.url,method=req.method}
+    calls[#calls+1] = {url=req.url,method=req.method,body=req.source and req.source()}
     local r = assert(table.remove(queue,1), 'unexpected request')
     if r.throw then error('TLS exception') end
     if r.body then assert(req.sink(r.body)) end
@@ -47,8 +47,9 @@ stub('htmlparser',{parse=function(body)
         if body=='BROKEN PROFILE' and selector=='div #user-fandoms > ol > li' then
             return {{select=function() return {} end}}
         end
-        if (body=='SEARCH' or body=='SESSION' or body:find('logged%-in')) and selector=='#main' then return {element('main')} end
+        if (body=='SEARCH' or body=='SESSION' or body:find('logged%-in') or body:find('logged%-out')) and selector=='#main' then return {element('main')} end
         if body=='SEARCH' and selector=='#main > h3' then return {element('0 Found')} end
+        if body:find('logged%-out') and selector=='body.logged-out' then return {element('body')} end
         if body:find('logged%-in') and selector=='body.logged-in' then return {element('body')} end
         if body:find('logged%-in') and selector=='a[href^="/users/"]' then return {element('Writer',{href='/users/Writer'})} end
         return {}
@@ -127,6 +128,7 @@ local posted=Http.request({url='https://archiveofourown.org/users/login',method=
 assert(posted.success and posted.status==302)
 enqueue(response(200,'SESSION'),response(200,'TOKEN'),response(302,'',{location='https://archiveofourown.org/users/Writer'}),response(200,'<body class="logged-in"></body>'))
 assert(Client:startLoggedInSession('Writer','password').success)
+assert(calls[#calls-1].body:find('user%%5Bremember_me%%5D=1'))
 enqueue(response(200,'<body class="logged-in"></body>'),response(200,'TOKEN'),response(503,maintenance))
 fails(Client:setWorkSubscription('123',nil),'maintenance')
 -- Downloads are staged: failures, maintenance pages, invalid ZIPs, and partial
@@ -224,3 +226,18 @@ assert(Client:downloadEpub(source,destination,true).success)
 os.remove(destination)
 assert(#queue==0)
 print('PASS: HTML fallback opt-in, EPUB preference, missing EPUB link, staged commits and changed-source protection')
+
+-- Only explicit, valid AO3 logged-out pages establish authentication expiry.
+enqueue(response(200,'SESSION'))
+local unknown=Client:GetSessionStatus()
+assert(not unknown.success and unknown.logged_in==nil)
+enqueue(response(200,'<body class="logged-out"></body>'))
+local expired=Client:kudosWork('123')
+assert(not expired.success and expired.auth_required)
+enqueue(response(503,maintenance))
+local unavailable=Client:getWorksFromAccountHistory(false,1)
+assert(not unavailable.success and not unavailable.auth_required)
+enqueue(response(200,'SESSION'))
+local malformed=Client:kudosWork('123')
+assert(not malformed.success and not malformed.auth_required)
+print('PASS: unavailable and unrecognized pages never establish expiry; explicit logout blocks submissions')

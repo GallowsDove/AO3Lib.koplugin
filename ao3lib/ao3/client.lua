@@ -142,7 +142,7 @@ function AO3LibClient:requestAO3Token()
     end
 end
 
-function AO3LibClient:startLoggedInSession(username, password)
+function AO3LibClient:startLoggedInSession(username, password, remember_me)
     local homepage_url = getAO3URL()
 
     local response_body = {}
@@ -178,6 +178,7 @@ function AO3LibClient:startLoggedInSession(username, password)
         ["authenticity_token"] = ao3_token.token,
         ["user[login]"] = username,
         ["user[password]"] = password,
+        ["user[remember_me]"] = remember_me == false and "0" or "1",
         ["commit"] = "Log+In",
     })
 
@@ -361,7 +362,7 @@ function AO3LibClient:GetSessionStatus()
             username = username,
             success = true,
         }
-    else
+    elseif #root:select("body.logged-out") > 0 then
         return {
             session_exists = true,
             logged_in = false,
@@ -370,6 +371,7 @@ function AO3LibClient:GetSessionStatus()
         }
 
     end
+    return {success=false, unexpected_response=true, error="AO3 returned an unexpected session page. Please try again later."}
 end
 
 function AO3LibClient:getWorkMetadata(work_id)
@@ -817,9 +819,11 @@ function AO3LibClient:getWorksFromAccountHistory(marked_for_later, page_no)
 
     local login_status = self:GetSessionStatus()
 
-    if not login_status.success or not login_status.logged_in then
+    if not login_status.success then return login_status end
+    if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User is not logged in. Please log in to access " .. (marked_for_later and "marked for later list." or "account history.")),
         }
     end
@@ -1185,6 +1189,7 @@ function AO3LibClient:kudosWork(work_id)
     if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User must be logged in to kudos works."),
         }
     end
@@ -1271,6 +1276,7 @@ function AO3LibClient:commentOnWork(comment_content, work_id, chapter_id)
     if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User must be logged in to comment on works."),
         }
     end
@@ -1376,6 +1382,7 @@ function AO3LibClient:markForLaterWork(work_id, later_or_read)
     if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User must be logged in to mark work."),
         }
     end
@@ -1441,6 +1448,7 @@ function AO3LibClient:setWorkSubscription(work_id, subscription_id)
     if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User must be logged in to subscribe."),
         }
     end
@@ -1550,6 +1558,7 @@ function AO3LibClient:getUsersWorkBookmark(work_id)
     if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User must be logged in to fetch bookmarks."),
         }
     end
@@ -1632,6 +1641,7 @@ function AO3LibClient:updateBookmark(work_id, bookmark_id, notes, tags, collecti
     if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User must be logged in to edit bookmarks."),
         }
     end
@@ -1738,6 +1748,7 @@ function AO3LibClient:deleteBookmark(bookmark_id)
     if not login_status.logged_in then
         return {
             success = false,
+            auth_required = true,
             error = T("User must be logged in to delete bookmarks."),
         }
     end
@@ -2765,67 +2776,7 @@ end
 -- HTTPQueryHandler
 HTTPQueryHandler.cookies = {}
 
-local function parseSetCookie(set_cookie_value)
-    local function isParameter(targetString)
-        local parameter_names = { "Domain", "Expires", "HttpOnly", "Max-Age", "Partioned", "Path", "SameSite", "Secure" }
-        for _, value in ipairs(parameter_names) do
-            if string.lower(targetString) == string.lower(value) then
-                return true
-            end
-        end
-        return false
-    end
-
-    local cookies_values = {}
-    -- Split the set-cookie string by ',' or ';' to handle each part separately
-    local parts = {}
-    local in_expires = false
-    local buffer = ""
-
-    for part in set_cookie_value:gmatch("[^,;]+") do
-        -- Allow for expires value to contain single ,
-        if part:find("expires=", 1, true) then
-            in_expires = true
-            buffer = part
-        elseif in_expires then
-            buffer = buffer .. "," .. part
-            if part:find(" ") then
-                table.insert(parts, buffer)
-                in_expires = false
-                buffer = ""
-            end
-        else
-            table.insert(parts, part)
-        end
-    end
-
-    if buffer ~= "" then
-        table.insert(parts, buffer)
-    end
-
-    local current_cookie = nil
-    for _, part in ipairs(parts) do
-        -- Trim leading and trailing spaces
-        part = part:match("^%s*(.-)%s*$")
-        -- Match key-value pairs or key-only values
-        local name, value = part:match("([^=]+)=?(.*)")
-        if not isParameter(name) and value ~= "" and value ~= nil then
-            if current_cookie then
-                table.insert(cookies_values, current_cookie)
-            end
-            current_cookie = {}
-            current_cookie["name"] = name
-            current_cookie["value"] = value
-        elseif name then
-            current_cookie[name] = value or true
-        end
-    end
-    if current_cookie then
-        table.insert(cookies_values, current_cookie)
-    end
-
-    return cookies_values
-end
+local CookieJar = require("ao3lib.ao3.cookies")
 
 function HTTPQueryHandler:saveCookiesToConfig()
     if self.in_worker then self.cookies_dirty=true;return end
@@ -2847,7 +2798,9 @@ function HTTPQueryHandler:getCookies(custom_cookies, url)
     local cookies_for_this_domain = self.cookies[request_domain] or {}
 
     for __, cookie in pairs(cookies_for_this_domain) do
-        table.insert(cookieHeader, T("%1=%2", cookie.name, cookie.value))
+        if CookieJar.matches(cookie, url) then
+            table.insert(cookieHeader, T("%1=%2", cookie.name, cookie.value))
+        end
     end
 
     if custom_cookies then
@@ -2863,13 +2816,17 @@ function HTTPQueryHandler:setCookies(response_headers, request_url)
     local request_domain = request_url:match("^(https?://[^/]+)")
     if response_headers["set-cookie"] then
         local set_cookie_value = response_headers["set-cookie"]
-        local parsed_cookies = parseSetCookie(set_cookie_value)
+        local parsed_cookies = CookieJar.parse(set_cookie_value, request_url)
 
         for _, current_cookie in ipairs(parsed_cookies) do
             if not self.cookies[request_domain] then
                 self.cookies[request_domain] = {}
             end
-            self.cookies[request_domain][current_cookie.name] = current_cookie
+            if CookieJar.expired(current_cookie) then
+                self.cookies[request_domain][current_cookie.name] = nil
+            else
+                self.cookies[request_domain][current_cookie.name] = current_cookie
+            end
         end
 
         self:saveCookiesToConfig()
@@ -2968,6 +2925,18 @@ for name, operation in pairs(AO3LibClient) do
             local payload=payloads[name]
             if result.success and payload and type(result[payload])~="table" then
                 return {success=false,unexpected_response=true,error="AO3 returned incomplete data."}
+            end
+            if result.auth_required and not Background.isDetached() and not AO3LibClient.recovering_auth then
+                AO3LibClient.recovering_auth = true
+                local ok, authenticated = pcall(require("ao3lib.ui.auth").recover, AO3LibClient)
+                if ok and authenticated then
+                    local retried, value = pcall(AO3LibClient[name], unpack(args,1,args.n))
+                    AO3LibClient.recovering_auth = nil
+                    if not retried then error(value,0) end
+                    return value
+                end
+                AO3LibClient.recovering_auth = nil
+                if not ok then error(authenticated,0) end
             end
             return result
         end

@@ -354,10 +354,10 @@ function Fanfic:checkLoggedIn()
 
 end
 
-function Fanfic:loginToAO3(username, password)
+function Fanfic:loginToAO3(username, password, remember_me)
 
     -- Attempt to log in using the Downloader module
-    local request_result = AO3LibClient:startLoggedInSession(username, password)
+    local request_result = AO3LibClient:startLoggedInSession(username, password, remember_me)
 
     if request_result.success then
         UIManager:show(InfoMessage:new{

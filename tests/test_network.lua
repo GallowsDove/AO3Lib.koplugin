@@ -9,6 +9,7 @@ function Class:new(t)
     t.pages = t.pages or 1
     return setmetatable(t, { __index = self })
 end
+function Class:addWidget(w) self.extra_widget=w end
 function Class:onShowKeyboard() end
 function Class:onCloseKeyboard() end
 function Class:getInputText() return self.input end
@@ -40,7 +41,7 @@ end
 local function offline() connected, pending = false, nil end
 local function lastShown() return shown[#shown] end
 for _, name in ipairs({ 'ui/widget/menu', 'ui/widget/inputdialog',
-    'ui/widget/multiinputdialog', 'ui/widget/buttondialog', 'ui/widget/keyvaluepage',
+    'ui/widget/multiinputdialog', 'ui/widget/checkbutton', 'ui/widget/buttondialog', 'ui/widget/keyvaluepage',
     'ui/widget/infomessage', 'ui/widget/confirmbox', 'ui/widget/notification',
     'ui/widget/container/widgetcontainer' }) do stub(name, Class) end
 stub('gettext', function(s) return s end)

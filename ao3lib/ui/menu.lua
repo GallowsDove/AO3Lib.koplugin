@@ -175,6 +175,7 @@ function FanficMenu:onAccountManagementMenu()
 end
 
 function FanficMenu:enterUserDetails()
+    local remember
     self.login_dialog = MultiInputDialog:new({
         title = "Enter login details:",
         fields = {
@@ -202,7 +203,7 @@ function FanficMenu:enterUserDetails()
                     text = "Login",
                     callback = Network.wrap(function()
                         local myfields = self.login_dialog:getFields()
-                        local logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2])
+                        local logged_in = self.fanfic:loginToAO3(myfields[1], myfields[2], remember.checked)
                         if not logged_in then return end
                         UIManager:close(self.login_dialog)
                         self.logged_in = logged_in
@@ -214,6 +215,8 @@ function FanficMenu:enterUserDetails()
             },
         },
     })
+    remember = require("ui/widget/checkbutton"):new{ text="Keep me signed in", checked=true, parent=self.login_dialog }
+    self.login_dialog:addWidget(remember)
     UIManager:show(self.login_dialog)
     self.login_dialog:onShowKeyboard()
 end
