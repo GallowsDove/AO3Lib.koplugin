@@ -18,7 +18,10 @@ function M.show(owner,checkFilenameTemplate)
                 end},
             {text=_('Formatted view text size'),key='work_view_font_size',type='Number',min=12,max=32,default=18,
                 value=function() return require('ao3lib.ui.work_view').baseTextSize() end},
-            {text=_('AO3 symbols'),key='ao3_eink_symbols',type='Bool',on=_('E-reader'),off=_('Original'),
+            {text=_('AO3 symbols'),key='ao3_symbol_style',type='Choice',
+                choices={{'original',_('Original')},{'eink',_('E-reader')},
+                    {'zerafina',_('Zerafina (color)')},{'zerafina_eink',_('Zerafina (E-reader)')}},
+                value=function() return require('ao3lib.bookshelf.badges').style() end,
                 changed=function() require('ao3lib.bookshelf.badges').refresh() end},
             {text=_('Show adult work warning'),key='show_adult_warning',type='Bool'},
             {text=_('Chapter progress format'),key='show_current_chapter',type='Bool',on=_('First unread'),off=_('Unread count')},
@@ -55,7 +58,16 @@ function M.show(owner,checkFilenameTemplate)
     end
     local function edit(option,group)
         local value=current(option)
-        if option.type=='Bool' then
+        if option.type=='Choice' then
+            local dialog
+            local buttons={}
+            for _,choice in ipairs(option.choices) do
+                local key=choice[1]
+                buttons[#buttons+1]={{text=choice[2],checked_func=function() return value==key end,
+                    no_refresh_checkmark=true,callback=function() save(option,key,group,dialog) end}}
+            end
+            dialog=ButtonDialog:new{title=option.text,buttons=buttons};UI:show(dialog)
+        elseif option.type=='Bool' then
             local dialog
             local function choice(label,state)
                 return {{text=label,checked_func=function() return (not not value)==state end,
@@ -99,6 +111,9 @@ function M.show(owner,checkFilenameTemplate)
         local rows={}
         for __,option in ipairs(group.options) do
             local value=current(option)
+            if option.type=='Choice' then
+                for _,choice in ipairs(option.choices) do if choice[1]==value then value=choice[2];break end end
+            end
             if option.type=='Bool' then value=value and (option.on or _('On')) or (option.off or _('Off')) end
             rows[#rows+1]={text=option.text,mandatory=tostring(value or '')..(option.unit and (' '..option.unit) or ''),
                 callback=function() edit(option,group) end}

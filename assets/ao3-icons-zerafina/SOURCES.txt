@@ -1,0 +1,13 @@
+Replace the AO3 Icons 2.0 by ZerafinaCSS.
+Copyright (c) 2025 Zerafina (https://github.com/ZerafinaCSS).
+License: MIT; included in LICENSE.
+
+Project: https://github.com/ZerafinaCSS/Replace-the-AO3-Icons-2.0
+PNG masks: https://github.com/ZerafinaCSS/zerafinacss.github.io/tree/main/ao3/icons
+Original masks, default CSS colors and Git blob SHAs are bundled in source/.
+
+tools/build_zerafina_icons.py composites those masks with the default CSS
+backgrounds and borders. Empty squares and the colored Multi quadrants follow
+the CSS. The E-reader variant uses the same conversion as ao3-icons-eink,
+including its flat backgrounds, ordered rating tones and four gray quadrants.
+Antialiasing is retained. No external resources are loaded at runtime.

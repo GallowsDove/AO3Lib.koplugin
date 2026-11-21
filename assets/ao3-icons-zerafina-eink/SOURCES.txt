@@ -1,0 +1,5 @@
+E-reader derivatives of ZerafinaCSS's Replace the AO3 Icons 2.0.
+See ../ao3-icons-zerafina/SOURCES.txt and LICENSE for attribution and license.
+Built by tools/build_zerafina_icons.py using the same conversion as
+../ao3-icons-eink/: flat gray backgrounds, ordered rating tones, preserved
+antialiasing, four gray Multi quadrants, and lightly framed empty squares.

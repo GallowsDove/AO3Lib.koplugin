@@ -35,3 +35,5 @@ To update, replace the plugin folder and restart KOReader. Bookshelf integration
 ## Credits
 
 Original plugin by [IntrovertedMage](https://github.com/IntrovertedMage/AO3Downloader.koplugin). The missing-cover badge design is inspired by [AO3 Plus](https://github.com/gin7uro/koreader-ao3-plus), using AO3's official symbols; asset sources and license are included in [assets/ao3-icons](assets/ao3-icons).
+
+Additional symbol styles by [ZerafinaCSS](https://github.com/ZerafinaCSS/Replace-the-AO3-Icons-2.0) (MIT).

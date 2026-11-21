@@ -8,10 +8,18 @@ local asset_dir = source:sub(1, 1) == "@" and
 asset_dir = (asset_dir or "./") .. "../../assets/"
 
 -- Use the same selection in Bookshelf's covers and the formatted work view.
+local styles={original='ao3-icons/',eink='ao3-icons-eink/',
+    zerafina='ao3-icons-zerafina/',zerafina_eink='ao3-icons-zerafina-eink/'}
+function M.style()
+    local Config=require('ao3lib.core.config')
+    local style=Config:readSetting('ao3_symbol_style')
+    if style=='zerafina_bw' then return 'zerafina_eink' end
+    if styles[style] then return style end
+    -- Keep the previous choice until a style is explicitly selected.
+    return Config:readSetting('ao3_eink_symbols',false) and 'eink' or 'original'
+end
 function M.relativePath(icon)
-    local folder = require("ao3lib.core.config"):readSetting("ao3_eink_symbols", false)
-        and "ao3-icons-eink/" or "ao3-icons/"
-    return folder .. icon .. ".png"
+    return styles[M.style()]..icon..'.png'
 end
 
 function M.assetPath(icon)
