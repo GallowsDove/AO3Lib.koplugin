@@ -26,10 +26,10 @@ assert(menu.title=='Downloaded work updates' and not scan and worker,
     'Review must open without starting directory discovery')
 assert(#session.entries==0)
 worker.done({cache=work1})
-assert(#session.entries==1 and menu.item_table[1].text:find('0/1 checked',1,true),
+assert(#session.entries==1 and menu.review_model.summary:find('0 of 1 checked',1,true),
     'Cached works must become available during discovery')
 local check_row
-for _,row in ipairs(menu.item_table) do if row.text=='Check for updates' then check_row=row end end
+for _,row in ipairs(menu.review_model.buttons[1]) do if row.text=='Check for updates' then check_row=row end end
 assert(check_row and check_row.enabled,'Checks must be available before discovery finishes')
 for _,row in ipairs(menu.item_table) do assert(row.text~='Rescan library') end
 assert(checks==0,'Opening a review must not start AO3 update checks')
@@ -38,7 +38,7 @@ menu2:onCloseWidget()
 assert(worker.cancelled and not worker.valid(),
     'Closing the review must cancel its cache worker')
 worker.done({cache=work1})
-assert(menu2.item_table[1].text:find('0/0 checked',1,true),
+assert(menu2.review_model.summary:find('0 of 0 checked',1,true),
     'A closed review must ignore late discovery results')
 Client.getWorkMetadata=original
 print('PASS: update review uses cache without exposing rescan and cancels validation on close')

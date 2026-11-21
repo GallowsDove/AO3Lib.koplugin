@@ -1,0 +1,44 @@
+dofile('tests/test_network.lua')
+local Class={}
+function Class:extend(fields) return setmetatable(fields,{__index=self}) end
+function Class:new(fields)
+    fields=setmetatable(fields or {},{__index=self})
+    if fields.init then fields:init() end
+    return fields
+end
+function Class:getSize() return {w=self.width or 600,h=self.height or 32} end
+function Class:getHeight() return self:getSize().h end
+for _,name in ipairs({'ui/geometry','ui/widget/container/framecontainer','ui/widget/verticalgroup',
+    'ui/widget/container/centercontainer','ui/widget/titlebar','ui/widget/focusmanager',
+    'ui/widget/button','ui/widget/horizontalgroup','ui/widget/horizontalspan'}) do package.loaded[name]=Class end
+local scroll
+package.loaded['ui/widget/scrollhtmlwidget']={new=function(_,fields) scroll=fields;return fields end}
+package.loaded['ui/bidi']={mirroredUILayout=function() return false end}
+package.loaded.device={hasKeys=function() return false end,
+    screen={getWidth=function() return 600 end,getHeight=function() return 800 end,scaleBySize=function(_,n) return n end}}
+package.loaded['ffi/blitbuffer']={COLOR_WHITE=0}
+local UI=require('ui/uimanager')
+UI.show=function() end
+UI.close=function(_,window) if window.onCloseWidget then window:onCloseWidget() end end
+UI.setDirty=function() end
+local selected,options,author,menus=nil,0,0,0
+local context={plugin={menu_stack={},ui={menu={onShowMenu=function() menus=menus+1 end}}},
+    works={{id='one',title='One'},{id='two',title='Two'}},summary_html=true,
+    rows=function(work) return {{work.title,callback=function() selected=work.id end},
+        {'Author:','Writer',callback=function() author=author+1 end}} end,
+    list=function() options=options+1 end,
+}
+local state=require('ao3lib.ui.work_view').show({},context)
+local window=state.window
+assert(not window.work_action_buttons and #window.layout[1]==1)
+assert(window.view_options_button.text=='View options…')
+window.view_options_button.callback();assert(options==1)
+window.titlebar.left_icon_tap_callback();assert(menus==1)
+assert(scroll.html_body:find('<h1><a',1,true))
+scroll.html_link_tapped_callback{uri='ao3-action:1'};assert(selected=='one')
+scroll.html_link_tapped_callback{uri='ao3-action:2'};assert(author==1)
+state:next()
+scroll.html_link_tapped_callback{uri='ao3-action:1'};assert(selected=='two','Title actions must follow the current page')
+assert(#context.plugin._ao3_navigation==1,'Changing works must replace the existing rendered page')
+state.window:onClose();assert(state.closed and #context.plugin._ao3_navigation==0)
+print('PASS: title action menu; only View options visible; author link; menu icon; page-specific actions; focus layout and navigation cleanup')

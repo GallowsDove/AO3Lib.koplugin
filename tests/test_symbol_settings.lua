@@ -25,8 +25,9 @@ UI.isWidgetShown=function(_,widget) assert(widget==live);return visible end
 UI.setDirty=function(_,widget) assert(widget==live);dirty=dirty+1 end
 local function selectStyle()
     Menu:onOpenSettings()
+    for _,item in ipairs(settings) do if item.text=='Reading and display' then item.callback();break end end
     for _,item in ipairs(settings) do
-        if item.text:find('AO3 symbols:',1,true) then item.callback();return shown,item.text end
+        if item.text=='AO3 symbols' then item.callback();return shown,item.text..': '..item.mandatory end
     end
     error('Missing AO3 symbols setting')
 end

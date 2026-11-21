@@ -45,6 +45,8 @@ local function createConfig()
         },
         filename_template = "%I",
         author_folders = true,
+        html_download_fallback = false,
+        update_check_delay_seconds = 4,
         fanfic_folder_path = Paths.getHomeDirectory() .. "/Downloads",
         show_current_chapter = true
     }

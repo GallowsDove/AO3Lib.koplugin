@@ -140,6 +140,14 @@ function Fanfic.GenerateFileName(metadata)
     return require("ao3lib.library.layout").filename(metadata, Config:readSetting("filename_template", "%I"))
 end
 
+-- Shared by online browsing and offline work details. showUserInfo handles
+-- the network continuation, so opening local details itself stays offline.
+function Fanfic:onShowAuthor(author)
+    local username=author:match('%((.-)%)') or author
+    local pseud=author:match('^(.-)%s*%(') or author
+    return self:showUserInfo(username,pseud)
+end
+
 function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
     logger.dbg("AO3Downloader.koplugin: Showing fanfic browser")
     FanficBrowser:show(
@@ -148,22 +156,7 @@ function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
         fetchNextPage,
         function(fanfic) self:UpdateFanfic(fanfic) end, -- Update callback
         function(fanficId) self:DownloadFanfic(fanficId) end, -- Download callback
-        function (author)
-            -- Check if author contains pseud, if yes parse the pseud (format: "pseeud (username)" or username)
-            local username
-            local pseud
-
-            if string.find(author, "%(") and string.find(author, "%)") then
-                username = string.match(author, "%((.-)%)")
-                pseud = string.match(author, "^(.-)%s*%(")
-            else
-                username = author
-                pseud = author
-            end
-            logger.dbg("Opening user browser for author: " .. username .. " pseud: " .. pseud)
-            self:showUserInfo(username, pseud)
-
-        end,-- Open author user browser callback
+        function(author) self:onShowAuthor(author) end,-- Open author user browser callback
         self,
         title
     )
@@ -186,7 +179,9 @@ function Fanfic:DownloadFanfic(id)
     end
 
     -- Extract the EPUB link from the metadata
-    local url = request_result.work_metadata.epub_link
+    local metadata = request_result.work_metadata
+    local fallback = Config:readSetting("html_download_fallback", false) and metadata.html_link
+    local url = fallback and metadata or metadata.epub_link
     if not url then
         UIManager:show(InfoMessage:new{
             text = _("Error: EPUB link not found for this work")
@@ -247,6 +242,7 @@ function Fanfic:DownloadFanfic(id)
 
     DownloadedFanfics.add(fanfic)
     pcall(function() require('ao3lib.library.local_cache').index(fanfic.path) end)
+    pcall(function() require('ao3lib.library.metadata_refresh').notify(fanfic.path) end)
 
 
 

@@ -409,7 +409,7 @@ function AO3DownloaderClient:getWorkMetadata(work_id)
 
 end
 
-function AO3DownloaderClient:downloadEpub(download_link, filepath, allow_replace, before_commit, staging)
+local function downloadNative(self, download_link, filepath, allow_replace, before_commit, staging)
     if type(download_link) ~= "string" or not download_link:match("^https?://") then
         return { success = false, error = "Invalid or missing EPUB download URL." }
     end
@@ -478,6 +478,61 @@ function AO3DownloaderClient:downloadEpub(download_link, filepath, allow_replace
         return { success = false, error = "Could not save EPUB: " .. tostring(rename_err) }
     end
     return { success = true, filepath = filepath }
+end
+
+-- A metadata table opts into HTML fallback; URL-only callers retain native behavior.
+function AO3DownloaderClient:downloadEpub(source, filepath, allow_replace, before_commit, staging)
+    if type(source) ~= "table" then
+        return downloadNative(self, source, filepath, allow_replace, before_commit, staging)
+    end
+    local native = downloadNative(self, source.epub_link, filepath, allow_replace, before_commit, staging)
+    if native.success or not Config:readSetting("html_download_fallback", false) or not source.html_link then return native end
+    local token = os.tmpname(); os.remove(token)
+    local partial = staging or (filepath .. ".ao3-" .. token:match("([^/]+)$") .. ".part")
+    local fetch_failure
+    local function fetch(url)
+        assert(type(url)=="string" and url:match("^https?://"), "Invalid HTML or image URL")
+        local chunks, size = {}, 0
+        local result = HTTPQueryHandler:performHTTPRequest{url=url, sink=function(chunk)
+            if chunk then
+                size=size+#chunk; assert(size<=16*1024*1024, "HTML or image exceeds 16 MiB")
+                chunks[#chunks+1]=chunk
+            end
+            return 1
+        end}
+        if not result.success then fetch_failure=result end
+        assert(result.success, result.error or "HTML download failed")
+        return table.concat(chunks)
+    end
+    local ok, err = pcall(function()
+        if allow_replace==false then
+            local lfs=require("libs/libkoreader-lfs")
+            assert(not (lfs.symlinkattributes or lfs.attributes)(filepath,"mode"), "The destination is already occupied.")
+        end
+        require("ao3lib.library.html_epub").convert(fetch(source.html_link), partial, source.id, fetch, source.html_link)
+    end)
+    if not ok then
+        os.remove(partial)
+        local failure=fetch_failure or {}
+        failure.success=false
+        failure.error="HTML fallback failed: "..tostring(err)
+        return failure
+    end
+    if staging then return {success=true,staged=partial} end
+    local allowed, reason = true
+    if allow_replace==false then
+        local lfs=require("libs/libkoreader-lfs")
+        allowed=not (lfs.symlinkattributes or lfs.attributes)(filepath,"mode")
+        reason="The destination became occupied during download."
+    end
+    if allowed and before_commit then
+        local checked, value, why=pcall(before_commit)
+        allowed=checked and value; reason=checked and why or tostring(value)
+    end
+    if not allowed then os.remove(partial); return {success=false,error=reason or "The book changed during download."} end
+    local renamed, why=os.rename(partial,filepath)
+    if not renamed then os.remove(partial); return {success=false,error="Could not save EPUB: "..tostring(why)} end
+    return {success=true,filepath=filepath}
 end
 
 function AO3DownloaderClient:searchByParameters(parameters, page_no)
@@ -2376,12 +2431,13 @@ function AO3WebParser:parseWorkPage(root)
     local bookmarkRecElement = root:select("#bookmark_rec")[1]
     bookmarkContent.rec = bookmarkRecElement and bookmarkRecElement.attributes and bookmarkRecElement.attributes.checked=="checked" or false
 
-    -- Extract EPUB link
-    local epub_link = nil
+    -- Extract available download links
+    local epub_link, html_link
     for _, e in ipairs(epubElement) do
         if encodeHelper:parseToCodepoints(e:getcontent()):lower() == "epub" then
-            epub_link = getAO3URL() .. e.attributes.href
-            break
+            epub_link = e.attributes.href:match("^https?://") and e.attributes.href or getAO3URL() .. e.attributes.href
+        elseif encodeHelper:parseToCodepoints(e:getcontent()):lower() == "html" then
+            html_link = e.attributes.href:match("^https?://") and e.attributes.href or getAO3URL() .. e.attributes.href
         end
     end
 
@@ -2418,6 +2474,7 @@ function AO3WebParser:parseWorkPage(root)
         chapters = chapters,
         language = language,
         epub_link = epub_link or nil,
+        html_link = html_link,
         hits = hits,
         kudos = kudos,
         comments = comments,

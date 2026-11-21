@@ -147,6 +147,10 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                         })
                     end
 
+                    submenu_items[#submenu_items+1]={text=browse_by_author and _("Review updates for this author") or _("Review updates for this fandom"),
+                        callback=function()
+                            require("ao3lib.ui.update_review").show(Fanfic,{kind=browse_by_author and "author" or "fandom",value=group_name})
+                        end}
                     -- Use GoDownInMenu to navigate into the submenu
                     parentMenu:GoDownInMenu(T(browse_by_author and _("Works by %1") or _("Fanfics in '%1'"), group_name), submenu_items)
                 end,

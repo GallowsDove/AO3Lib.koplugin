@@ -14,7 +14,14 @@ function M.update(window)
     local frame = window._ao3_navigation
     if not frame then return end
     local title = window.title_bar or window.titlebar
-    if not title or not title.setRightIcon then return end
+    if not title then return end
+    -- KeyValuePage captures the callback when constructing its IconButton;
+    -- update both that button and the definition used by later reinitialization.
+    local bar=title._ao3_titlebar or title
+    local callback=function() return M.menu(window) end
+    bar.left_icon_tap_callback=callback
+    if bar.left_button then bar.left_button.callback=callback end
+    if not title.setRightIcon then return end
     local root = frame.options.root and frame.options.root()
     local icon = "close"
     if not root then
@@ -114,6 +121,8 @@ function M.bind(owner, window, options)
     window.key_events.AO3Menu = {{"Menu"}}
     window.onHome = window.onClose
     window.onAO3Menu = function(self) return M.menu(self) end
+    window.onLeftButtonTap = window.onAO3Menu
+    window.title_bar_left_icon_tap_callback=function() return M.menu(window) end
     local closed = window.onCloseWidget
     window.onCloseWidget = function(self, ...)
         M.release(self)

@@ -1,11 +1,12 @@
 -- Run from the plugin directory: luajit tests/test_updates.lua
 package.path='./?.lua;'..package.path
 local function stub(name,t) package.loaded[name]=t end
+stub('ao3lib.core.config',{readSetting=function(_,key,default) if key=='update_check_delay_seconds' then return 9 end;return default end})
 local function copy(t)
     if type(t)~='table' then return t end
     local out={}; for k,v in pairs(t) do out[k]=copy(v) end; return out
 end
-stub('util',{tableDeepCopy=copy})
+stub('util',{tableDeepCopy=copy,trim=function(s) return s:match('^%s*(.-)%s*$') end})
 stub('gettext',function(s) return s end)
 stub('ffi/util',{})
 local files,epubs,saved,remote={},{},{},{}
@@ -113,6 +114,41 @@ assert(not Updates.apply(entry).success and downloads==old_downloads)
 work=fixture('9','2/2'); saved['9'].read=true; saved['9'].chapter_data={}
 remote['9'].chapters='2/2'; remote['9'].chapterData={{id='10'},{id='20'}}
 assert(Updates.apply(Updates.check(work)).success and saved['9'].chapter_data[1].read and saved['9'].chapter_data[2].read)
+-- AO3 omits the status date on many one-shots. The display placeholder
+-- sorts after ISO dates lexically, but is never evidence of an update.
+work=fixture('missing-date','1/1')
+remote['missing-date']=copy(epubs[work.path])
+remote['missing-date'].epub_link='https://example.test/missing-date.epub'
+for _,invalid in ipairs({'Unknown date','N/A','','2026-02-30','2026-13-01'}) do
+    remote['missing-date'].updated=invalid
+    local checked=Updates.check(work)
+    assert(checked.status=='current' and #checked.changes==0,invalid)
+end
+remote['missing-date'].updated=nil
+assert(Updates.check(work).status=='current')
+epubs[work.path].published='2026-02-01'
+epubs[work.path].updated='Unknown date'
+remote['missing-date'].published='2026-02-01'
+remote['missing-date'].updated='Unknown date'
+assert(Updates.check(work).status=='current')
+remote['missing-date'].published='2026-02-02'
+assert(Updates.check(work).status=='update','Valid publication dates remain comparable')
+epubs[work.path].updated='2026-02-01'
+remote['missing-date'].published='2026-02-01'
+remote['missing-date'].wordcount='3000'
+remote['missing-date'].chapterData={}
+entry=Updates.check(work)
+assert(entry.status=='update' and #entry.changes==1 and entry.changes[1]:find('Words:',1,true))
+assert(Updates.apply(entry).success)
+assert(saved['missing-date'].updated~='Unknown date','Unknown remote dates must not overwrite known saved dates')
+work=fixture('word-format','7/10')
+epubs[work.path].wordcount='43,199'
+remote['word-format'].wordcount='46494'
+remote['word-format'].chapters='8/10'
+entry=Updates.check(work)
+assert(entry.changes[1]=='1 new chapter · 7 → 8')
+assert(entry.changes[2]=='Words: 43,199 → 46,494')
+print('PASS: unknown/malformed dates ignored; publication fallback; real changes still detected; missing dates never saved over known dates')
 print('PASS: actual EPUB comparisons; edits/new chapters/completion; no downloads during review; ID-based latest progress; same paths; open/parked/changed sources; download/state-save failures')
 
 -- Scheduled checks can stop, resume, retry individual failures, and pause
@@ -126,7 +162,7 @@ local session=Updates.new({a,b,c})
 local start_checks=checks
 assert(session:run('check',session.entries,function() end,schedule))
 nextJob()
-assert(checks==start_checks+1 and session.busy and delays[2]>=3)
+assert(checks==start_checks+1 and session.busy and delays[2]==9)
 session:stop(); drain()
 assert(checks==start_checks+1)
 local pending={session.entries[2],session.entries[3]}
@@ -185,7 +221,7 @@ stub('ui/network/manager',{
 })
 local Class={new=function(self,args) return setmetatable(args,{__index=self}) end,
     updateItems=function() end}
-for _,name in ipairs({'menu','infomessage','textviewer','notification'}) do stub('ui/widget/'..name,Class) end
+for _,name in ipairs({'menu','infomessage','textviewer','notification','buttondialog'}) do stub('ui/widget/'..name,Class) end
 stub('ao3lib.core.config',{readSetting=function() return '/books' end})
 stub('apps/filemanager/filemanagerutil',{getHomeFolder=function() return '/home' end})
 local ui1,ui2=fixture('ui1'),fixture('ui2')
@@ -198,6 +234,10 @@ stub('ao3lib.updates.store',{
     save=function(state) persisted=copy(state) end,
     flush=function(state) persisted=copy(state);return true end,
 })
+stub('ui/bidi',{mirroredUILayout=function() return false end})
+stub('ao3lib.ui.update_review_header',{new=function()
+    return {update=function(self,model) self.model=model end}
+end})
 local Review=require('ao3lib.ui.update_review')
 require('ao3lib.ui.library_rescan').show()
 Review.show({ui={}})
@@ -207,7 +247,15 @@ assert(menu.is_borderless and not menu.is_popout and menu.linesize==0)
 assert(menu.with_bottom_line and menu.title_bar_left_icon=='ao3')
 local function find(text)
     for _,row in ipairs(menu.item_table) do if row.text:find(text,1,true) then return row end end
-    error('Missing menu item: '..text)
+    local model=menu.review_model
+    if model.summary:find(text,1,true) then return {text=model.summary} end
+    local actions={}
+    for _,row in ipairs(model.buttons) do for _,button in ipairs(row) do actions[#actions+1]=button end end
+    for _,button in ipairs(model.filters) do actions[#actions+1]=button end
+    for _,button in ipairs(model.more) do actions[#actions+1]=button end
+    if model.select_all then actions[#actions+1]=model.select_all end
+    for _,button in ipairs(actions) do if button.text:find(text,1,true) then return button end end
+    error('Missing control: '..text)
 end
 local function tap(text) menu:onMenuSelect(find(text)) end
 start_checks=checks; old_downloads=downloads
@@ -218,13 +266,13 @@ connected=true
 local reconnect=pending_connection; pending_connection=nil; reconnect()
 nextJob()
 assert(checks==start_checks+1 and downloads==old_downloads)
-tap('— Stop'); drain()
+tap('Stop checking'); drain()
 assert(checks==start_checks+1)
-tap('Continue checking unchecked works'); drain()
+tap('Continue checking'); drain()
 assert(checks==start_checks+2 and downloads==old_downloads)
-tap('Select all available updates')
+tap('Select all updates')
 assert(find('Update selected (2)').enabled)
-tap('Work ui1')
+menu:onMenuSelect(find('Work ui1'),{x=0.05})
 assert(find('Update selected (1)').enabled)
 local row=find('Work ui2')
 menu:onMenuHold(row)
@@ -233,15 +281,15 @@ assert(downloads==old_downloads)
 tap('Update selected (1)'); drain()
 assert(downloads==old_downloads+1 and saved.ui2.chapters=='3/3' and saved.ui1.chapters=='2/3')
 connected=false
-tap('Check all works again')
+tap('Recheck all')
 assert(pending_connection)
 menu:onCloseWidget()
 connected=true; reconnect=pending_connection; pending_connection=nil; reconnect(); drain()
 assert(checks==start_checks+4, 'Closing a review must leave background checks running')
 Review.show({ui={}})
 menu=shown[#shown]
-assert(find('2/2 checked') and find('Work ui1'))
-tap('Check all works again'); drain()
+assert(find('2 of 2 checked') and find('Work ui1'))
+tap('Recheck all'); drain()
 assert(checks==start_checks+6 and find('Work ui1'))
 print('PASS: actual review UI; explicit check/selection; preserved Wi-Fi continuation; stop/resume; hold details; selective update; close detaches checks; reopen and recheck')
 
@@ -251,7 +299,7 @@ stub('ao3lib.library.discovery',{scan=function() error('Single-work review must 
 connected=false
 local before_checks,before_downloads=checks,downloads
 local single_session,single_menu=Review.showWork({ui={}},single)
-assert(#single_session.entries==3 and single_menu.item_table[1].text:find('0/1 checked',1,true))
+assert(#single_session.entries==3 and single_menu.review_model.summary:find('0 of 1 checked',1,true))
 assert(pending_connection and checks==before_checks and downloads==before_downloads)
 connected=true;reconnect=pending_connection;pending_connection=nil;reconnect();drain()
 assert(checks==before_checks+1 and downloads==before_downloads)

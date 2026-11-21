@@ -4,9 +4,21 @@ local History = require("ao3lib.library.history")
 local lfs = require("libs/libkoreader-lfs")
 local util = require("util")
 local _ = require("gettext")
+local Format = require("ao3lib.core.format")
 local M = {}
 
 local function number(value) return tonumber((tostring(value or ""):gsub(",", ""))) end
+-- Display placeholders are not dates and must never participate in ordering.
+local function date(value)
+    if type(value)~="string" then return end
+    local year,month,day=value:match("^%s*(%d%d%d%d)%-(%d%d)%-(%d%d)%s*$")
+    year,month,day=tonumber(year),tonumber(month),tonumber(day)
+    if not year or year<1 or month<1 or month>12 then return end
+    local days={31,28,31,30,31,30,31,31,30,31,30,31}
+    if year%4==0 and (year%100~=0 or year%400==0) then days[2]=29 end
+    if day<1 or day>days[month] then return end
+    return string.format("%04d-%02d-%02d",year,month,day)
+end
 local function count(work) return tonumber((work.chapters or ""):match("^(%d+)%s*/")) end
 local function fingerprint(path)
     local stat = (lfs.symlinkattributes or lfs.attributes)(path)
@@ -23,7 +35,7 @@ local function failure(message, result)
         response_headers=result and result.response_headers}
 end
 
-function M.check(work)
+function M.check(work, native_only)
     local entry = {work=work, status="error", selected=false}
     local local_work = Epub.read(work.path)
     entry.fingerprint = fingerprint(work.path)
@@ -31,6 +43,12 @@ function M.check(work)
         entry.error=_("The local AO3 EPUB is missing or has changed."); return entry
     end
     entry.local_work = local_work
+    if native_only then
+        entry.native_only=true
+        if not local_work._ao3_html_conversion then
+            entry.status="current"; entry.changes={}; return entry
+        end
+    end
     local response = Client:getWorkMetadata(work.id)
     if not response.success then
         entry.status = (response.status==404 or response.status==403) and "unavailable" or "error"
@@ -38,23 +56,26 @@ function M.check(work)
         return entry
     end
     local remote = response.work_metadata
-    if not remote or tostring(remote.id) ~= tostring(work.id) or not remote.epub_link then
+    if native_only and remote and tostring(remote.id)==tostring(work.id) and not remote.epub_link then
+        entry.status="unavailable"; entry.error=_("Native EPUB download is not available yet."); return entry
+    end
+    if not remote or tostring(remote.id) ~= tostring(work.id) or not (remote.epub_link or (require("ao3lib.core.config"):readSetting("html_download_fallback", false) and remote.html_link)) then
         entry.error=_("AO3 returned incomplete work metadata."); return entry
     end
     entry.remote, entry.changes = remote, {}
     local old, new = count(local_work), count(remote)
     if old and new and new > old then
-        entry.changes[#entry.changes+1] = string.format(_("%d new chapter(s)"), new-old)
+        entry.changes[#entry.changes+1] = Format.newChapters(new-old)..string.format(" · %d → %d",old,new)
     elseif old and new and new < old then
         entry.status="review"
         entry.changes[#entry.changes+1] = _("AO3 reports fewer chapters than the local EPUB. Review before replacing it.")
     end
     local old_words, new_words = number(local_work.wordcount), number(remote.wordcount)
     if old_words and new_words and old_words ~= new_words then
-        entry.changes[#entry.changes+1] = string.format(_("Words: %s → %s"), local_work.wordcount, remote.wordcount)
+        entry.changes[#entry.changes+1] = string.format(_("Words: %s → %s"), Format.integer(local_work.wordcount), Format.integer(remote.wordcount))
     end
-    local old_date = local_work.updated or local_work.published
-    local new_date = remote.updated or remote.published
+    local old_date = date(local_work.updated) or date(local_work.published)
+    local new_date = date(remote.updated) or date(remote.published)
     if old_date and new_date and new_date > old_date then
         entry.changes[#entry.changes+1] = string.format(_("Updated: %s → %s"), old_date, new_date)
     elseif old_date and new_date and new_date < old_date then
@@ -71,6 +92,10 @@ function M.check(work)
             entry.status="review"
             entry.changes[1]=_("Local metadata is insufficient to determine whether this work changed.")
         end
+    end
+    if native_only then
+        entry.changes[#entry.changes+1]=_("Replace the HTML conversion with AO3’s native EPUB.")
+        if entry.status=="current" then entry.status="update" end
     end
     return entry
 end
@@ -96,6 +121,11 @@ function M.apply(entry)
     if not entry.remote or not entry.local_work then return failure(_("Check this work before updating it.")) end
     local unchanged, err = sourceUnchanged(entry)
     if not unchanged then return failure(err) end
+    if entry.native_only then
+        local local_work=Epub.read(entry.work.path)
+        if not local_work or not local_work._ao3_html_conversion then return failure(_("This book is no longer an HTML conversion.")) end
+        if not entry.remote.epub_link then return failure(_("Native EPUB download is not available yet.")) end
+    end
     local remote, old = entry.remote, History.get(entry.work.id) or util.tableDeepCopy(entry.work)
     local n = count(remote)
     local chapters = util.tableDeepCopy(remote.chapterData or {})
@@ -113,30 +143,30 @@ function M.apply(entry)
     end
     -- Keep the work at the same path: KOReader sidecars, annotations and
     -- bookmarks stay attached. The client stages the EPUB and commits atomically.
-    local response = Client:downloadEpub(remote.epub_link, entry.work.path, true,
+    -- URL-only calls cannot invoke HTML fallback, even when globally enabled.
+    local source=remote.epub_link
+    if not entry.native_only and remote.html_link and require("ao3lib.core.config"):readSetting("html_download_fallback", false) then source=remote end
+    local response = Client:downloadEpub(source, entry.work.path, true,
         function() return sourceUnchanged(entry) end)
     if not response.success then return failure(response.error, response) end
     local updated = util.tableDeepCopy(old)
     for __, key in ipairs({"title","author","chapters","summary","fandoms","tags","relationships","characters",
             "warnings","hits","kudos","bookmarks","comments","rating","category","iswip","updated","published","wordcount",
             "markedForLater","subscriptionID","bookmarkID","bookmarkContent"}) do
-        if remote[key]~=nil then updated[key]=util.tableDeepCopy(remote[key]) end
+        if key=="updated" or key=="published" then
+            -- A real chapter/word change may still warrant an update when the
+            -- date is absent. Do not overwrite a known date with a placeholder.
+            if date(remote[key]) then updated[key]=date(remote[key]) end
+        elseif remote[key]~=nil then updated[key]=util.tableDeepCopy(remote[key]) end
     end
     updated.id, updated.path = tostring(entry.work.id), entry.work.path
+    updated._ao3_html_conversion=nil
     updated.chapter_data = chapters
     if #chapters==0 and n==1 and #(old.chapter_data or {})==1 then updated.chapter_data=old.chapter_data end
     if #updated.chapter_data > 0 or (n and count(entry.local_work) and n>count(entry.local_work)) then updated.read=nil end
     local saved, save_err = History.update(updated)
     pcall(function() require('ao3lib.library.local_cache').index(updated.path) end)
-    -- Let the library discover the changed file without changing any
-    -- Bookshelf source or touching the document's reading-state sidecar.
-    pcall(function()
-        local UI = require("ui/uimanager")
-        UI:broadcastEvent(require("ui/event"):new("InvalidateMetadataCache", updated.path))
-        local Repo = require("lib/bookshelf_book_repository")
-        Repo.forgetBook(updated.path)
-        Repo.invalidateWalkCache()
-    end)
+    pcall(function() require("ao3lib.library.metadata_refresh").notify(updated.path) end)
     if not saved then
         local result=failure(_("The EPUB was updated, but its AO3 reading state could not be saved: ") .. tostring(save_err))
         result.downloaded=true
@@ -185,6 +215,7 @@ end
 function Session:stop()
     self.generation=self.generation+1
     self.busy=false
+    self.active_entry=nil
 end
 
 -- Requests run one at a time; scheduled gaps keep cancellation and the
@@ -205,8 +236,10 @@ function Session:run(operation, targets, changed, schedule)
         index=index+1
         local entry=targets[index]
         if not entry then self.busy=false; notify(); return end
-        local ok, result=pcall(operation=="check" and M.check or M.apply, operation=="check" and entry.work or entry)
+        self.active_entry=entry;notify()
+        local ok, result=pcall(operation=="check" and M.check or M.apply, operation=="check" and entry.work or entry, self.native_only)
         if self.closed or self.generation~=generation then return end
+        self.active_entry=nil
         if not ok and require("ao3lib.ao3.background").isCancelled(result) then
             self:stop();notify();return
         end
@@ -240,10 +273,11 @@ function Session:run(operation, targets, changed, schedule)
         end
         if index==#targets then self.busy=false; notify(); return end
         notify()
-        schedule(3+math.random()*2,step)
+        schedule(require("ao3lib.updates.pacing").delay(operation),step)
     end
     step=function()
         require("ao3lib.ao3.background").wrap(stepBody,{
+            silent=true,detached=true,
             valid=function() return not self.closed and self.generation==generation end,
             on_cancel=function()
                 if self.generation==generation then self:stop();notify() end

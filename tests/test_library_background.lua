@@ -36,7 +36,7 @@ function Reader:open(path)
     self.bytes={
         ['META-INF/container.xml']='<container><rootfile full-path="content.opf"/></container>',
         ['content.opf']='<package><dc:title>Work '..id..'</dc:title><dc:creator>Writer</dc:creator><manifest><item id="p" href="preface.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="p"/></spine></package>',
-        ['preface.xhtml']='<div id="preface"><p class="message"><a href="https://archiveofourown.org/works/'..id..'">Original</a></p></div>',
+        ['preface.xhtml']='<div id="preface"><p class="message"><a href="https://archiveofourown.org/works/'..id..'">Original</a></p><dl><dt>Series:</dt><dd>Part 2 of <a href="/series/42">Shared series</a></dd></dl></div>',
     }
     self.entries={}
     for p,s in pairs(self.bytes) do local e={path=p,size=#s,mode='file'};self.entries[p]=e;self.entries[#self.entries+1]=e end
@@ -94,6 +94,12 @@ fs['/books/31.epub']={mode='file',size=100,modification=1,change=1}
 LocalCache.index('/books/31.epub');H.drain()
 assert(LocalCache.get({'/books'})['31'] and Epub.cached('/books/31.epub'),
     'A successful download must enter the shared and persistent EPUB indexes')
+-- Old persistent metadata must seed validation and gain series automatically.
+cache['/books/2.epub'].metadata_version=3
+cache['/books/2.epub'].work.series=nil
+LocalCache.load({'/books'},function(found) seeded=found end);H.drain()
+assert(seeded['2'].series[1].id==42 and seeded['2'].series[1].position=='2',
+    'Opening the library must refresh old metadata without a manual directory rescan')
 fs['/books/1.epub']=nil
 LocalCache.load({'/books'},function(found) seeded=found end);H.drain()
 assert(not seeded['1'] and not LocalCache.get({'/books'})['1'],

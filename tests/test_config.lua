@@ -34,6 +34,7 @@ assert(opens==initial_opens and flushes==initial_flushes and closes==0,
 assert(Config:readSetting('missing')==nil)
 assert(Config:readSetting('show_adult_warning',false)==false,'Explicit false default must be respected')
 assert(Config:readSetting('show_adult_warning')==true)
+assert(Config:readSetting('update_check_delay_seconds')==4)
 assert(flushes==initial_flushes,'Reading missing defaults must not write settings')
 -- Neither returned tables, defaults, nor saved inputs may mutate the cache.
 local cookies=Config:readSetting('cookies');cookies.session='edited'

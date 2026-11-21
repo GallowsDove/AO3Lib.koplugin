@@ -25,7 +25,8 @@ end}
 Menu:onOpenSettings()
 assert(owner.title=='Settings')
 local item
-for _,row in ipairs(owner.item_table) do if row.text=='Rescan library' then item=row end end
+for _,row in ipairs(owner.item_table) do if row.text=='Library maintenance…' then row.callback() end end
+for _,row in ipairs(shown[#shown].buttons) do if row[1].text=='Rescan library' then item=row[1] end end
 assert(item and item.callback,'Settings must expose the rescan action')
 item.callback()
 local dialog=shown[#shown]

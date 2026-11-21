@@ -1,6 +1,8 @@
 package.path='./?.lua;'..package.path
 local copy=require('ao3lib.core.table').deepCopy
 local jobs,notifications={},{}
+local configured_delay,scheduled_delays=7,{}
+package.loaded["ao3lib.core.config"]={readSetting=function(_,key,default) if key=="update_check_delay_seconds" then return configured_delay end;return default end}
 local connected,pending_connection=true,nil
 local persisted,check_count,download_count=nil,0,0
 local fs,local_works={},{}
@@ -9,7 +11,7 @@ package.loaded.gettext=function(s) return s end
 package.loaded.logger={warn=function() end}
 package.loaded.util={tableDeepCopy=copy}
 package.loaded['ffi/util']={}
-package.loaded['ui/uimanager']={scheduleIn=function(_,delay,callback) jobs[#jobs+1]=callback end,
+package.loaded['ui/uimanager']={scheduleIn=function(_,delay,callback) jobs[#jobs+1]=callback;scheduled_delays[#scheduled_delays+1]=delay end,
     show=function(_,widget) notifications[#notifications+1]=widget end,setDirty=function() end}
 package.loaded['ui/widget/notification']={new=function(_,args) return args end}
 package.loaded['ui/network/manager']={isConnected=function() return connected end,
@@ -44,9 +46,12 @@ local updates=0
 local unsubscribe=S.subscribe(function() updates=updates+1 end)
 assert(S.check(session.entries))
 tick();assert(check_count==1 and S.busy() and #S.pending()==2)
+assert(scheduled_delays[#scheduled_delays]==7,'Background checks must use the configured delay')
+configured_delay=11
 unsubscribe();local updates_at_close=updates
 fail_id='b'
 drain()
+assert(scheduled_delays[4]==11,'Changed delay applies to the next gap')
 assert(check_count==3 and download_count==0 and not S.busy() and updates==updates_at_close)
 assert(#notifications==1 and notifications[1].timeout==3 and notifications[1].text:find('2 changed works; 1 checks failed',1,true))
 assert(#persisted.pending==0 and persisted.entries[2].status=='unavailable')

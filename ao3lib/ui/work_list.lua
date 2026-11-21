@@ -8,7 +8,16 @@ function M.show(browser,context)
     local Base=require('ui/widget/keyvaluepage')
     local Window=Base:extend{}
     local state
+    function Window:onSwitchWorkView()
+        require('ao3lib.core.config'):saveSetting('formatted_work_view',true)
+        local works=state.works;works.total=state:pageCount()
+        browser:show(context.ui,works,context.fetch,context.update,context.download,
+            context.author,context.plugin,context.title,{index=state.index,replacing=self})
+        UI:close(self)
+    end
     function Window:_populateItems()
+        local switch=require('ao3lib.ui.work_view_switch')
+        switch.restore(self)
         if self.items_per_page~=15 then
             if self.item_height then
                 self.item_height=math.floor(self.item_height*self.items_per_page/15)
@@ -17,7 +26,9 @@ function M.show(browser,context)
             self.items_per_page=15
         end
         self.show_page=state.index;self.pages=state:pageCount()
-        return Base._populateItems(self)
+        switch.reserve(self,function() self:onSwitchWorkView() end)
+        Base._populateItems(self)
+        switch.insert(self)
     end
     function Window:goToPage(page) state:goTo(page) end
     function Window:nextPage() state:next() end
@@ -38,13 +49,7 @@ function M.show(browser,context)
         window=Window:new{title=context.title or _('AO3 works'),kv_pairs=sparse,
             show_page=state.index,title_bar_left_icon='ao3',is_borderless=true,is_popout=false,
             value_overflow_align='center',
-            title_bar_left_icon_tap_callback=function()
-                require('ao3lib.core.config'):saveSetting('formatted_work_view',true)
-                local works=state.works;works.total=state:pageCount()
-                browser:show(context.ui,works,context.fetch,context.update,context.download,
-                    context.author,context.plugin,context.title,{index=state.index, replacing=window})
-                UI:close(window)
-            end}
+        }
         state.window=window;browser.browse_window=window
         require("ao3lib.ui.navigation").bind(context.plugin, window, {
             replace=previous or context.replacing, resume=context.resume,

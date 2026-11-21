@@ -63,3 +63,12 @@ assert(dialog.buttons[2][2].enabled==false, 'Reading state from a different path
 dialog.buttons[2][2].callback()
 assert(shown[#shown]==dialog and not opened)
 print('PASS: shared management-first action order; offline details; current reading state; single-work review; explicit reading; chapter selection/cancel; missing chapter metadata')
+
+local selected
+Actions.show(plugin,original,{details=function(work) selected=work end}).buttons[1][1].callback()
+assert(selected==original and detail==remoteDetails,'Local details callback must replace the duplicate browser action')
+local author
+local profile=require('main'):extend{showUserInfo=function(_,username,pseud) author={username,pseud} end}
+profile:onShowAuthor('Writer');assert(author[1]=='Writer' and author[2]=='Writer')
+profile:onShowAuthor('Pseud (account)');assert(author[1]=='account' and author[2]=='Pseud')
+print('PASS: rendered detail routing; shared author/pseud navigation')

@@ -19,7 +19,7 @@ local function paragraphs(value)
     return '<p>'..html..'</p>'
 end
 
-function M.html(work,rows)
+function M.html(work,rows,options)
     if work.is_deleted or work.is_unavailable then
         return '<h2>'..escape(work.is_unavailable and _('Unavailable work') or _('Deleted work'))..'</h2>',{}
     end
@@ -54,7 +54,7 @@ function M.html(work,rows)
     local completion=data.ao3_completion[1]
     local status=work.iswip or (completion=='complete' and _('Complete')
         or completion=='in_progress' and _('Work in progress') or _('Unknown work status'))
-    out[#out+1]='<p class="work-facts"><b>'..escape(work.words or work.wordcount or '?')..'</b> '..escape(_('words'))
+    out[#out+1]='<p class="work-facts"><b>'..escape(require('ao3lib.core.format').integer(work.words or work.wordcount or '?'))..'</b> '..escape(_('words'))
         ..' &#183; <b>'..escape(work.chapters or '?/?')..'</b> '..escape(_('chapters'))
         ..' &#183; '..escape(work.language or _('Unknown language'))..'</p>'
     local advisory={'<span class="status">'..escape(status)..'</span>'}
@@ -63,7 +63,23 @@ function M.html(work,rows)
         if value~='' and value~='N/A' then advisory[#advisory+1]=escape(value) end
     end
     if #advisory>0 then out[#out+1]='<p class="advisory">'..table.concat(advisory,' &#183; ')..'</p>' end
-    out[#out+1]='<div class="summary">'..paragraphs(work.summary)..'</div>'
+    local summary=text(work.summary)
+    if options and options.summary_html then
+        -- EPUB descriptions contain HTML; online summaries are already plain
+        -- text. Match the online paragraph layout without executing markup.
+        summary=summary:gsub('<!%-%-.-%-%->',''):gsub('<[bB][rR]%s*/?>','\n')
+            :gsub('</[pP]%s*>','\n\n'):gsub('<[^>]*>',''):match('^%s*(.-)%s*$')
+    end
+    local summary_body=paragraphs(summary)
+    if options and options.summary_html then
+        -- Preserve encoded characters after stripping tags and escaping text.
+        summary_body=summary_body:gsub('&amp;([#%w]+);',function(entity)
+            if ({amp=true,lt=true,gt=true,quot=true,apos=true,nbsp=true})[entity]
+                or entity:match('^#%d+$') or entity:match('^#[xX]%x+$') then return '&'..entity..';' end
+            return '&amp;'..entity..';'
+        end)
+    end
+    out[#out+1]='<div class="summary">'..summary_body..'</div>'
     local function tags(field,label,class)
         local value=work[field]
         local values={}
@@ -73,10 +89,11 @@ function M.html(work,rows)
         end
         local chips={}
         for __,item in ipairs(values) do
+            item=tostring(item):gsub('%s+',' '):match('^%s*(.-)%s*$')
             if item~='' and item~='N/A' then chips[#chips+1]='<span class="chip">'..escape(item)..'</span>' end
         end
         if #chips>0 then
-            out[#out+1]='<div class="tag-group '..class..'"><p><span class="tag-heading">'..escape(label)..'</span> '..table.concat(chips,' &#160; ')..'</p></div>'
+            out[#out+1]='<div class="tag-group '..class..'"><p><span class="tag-heading">'..escape(label)..'</span> '..table.concat(chips,' ')..'</p></div>'
         end
     end
     tags('relationships',_('Relationships'),'relationships')
@@ -84,11 +101,16 @@ function M.html(work,rows)
     tags('tags',_('Additional tags'),'additional')
     local stats={}
     for __,field in ipairs({{'hits',_('Hits')},{'kudos',_('Kudos')},{'bookmarks',_('Bookmarks')},{'comments',_('Comments')}}) do
-        stats[#stats+1]='<b>'..escape(work[field[1]] or '0')..'</b> '..escape(field[2])
+        local value=work[field[1]]
+        if value~=nil and tostring(value)~='' then
+            stats[#stats+1]='<b>'..escape(require('ao3lib.core.format').integer(value))..'</b> '..escape(field[2])
+        end
     end
     local date=work.date or work.updated or work.published
-    out[#out+1]='<div class="footnote"><p>'..table.concat(stats,' &#183; ')..'</p>'
-        ..(date and '<p class="date">'..escape(date)..'</p>' or '')..'</div>'
+    if #stats>0 or date then
+        out[#out+1]='<div class="footnote">'..(#stats>0 and '<p>'..table.concat(stats,' &#183; ')..'</p>' or '')
+            ..(date and '<p class="date">'..escape(date)..'</p>' or '')..'</div>'
+    end
     return table.concat(out,'\n'),actions
 end
 
@@ -119,7 +141,7 @@ table.badges img { width: 1.7em; height: 1.7em; }
 .summary p { margin: .4em 0; }
 .tag-group { margin: .3em 0; }
 .tag-group p { font-size: .85em; line-height: 1.4; }
-.chip { background-color: #fff; border-bottom: 1px solid #777; padding: .03em .15em; }
+.chip { background-color: #fff; border-bottom: 1px solid #777; padding: .03em .15em; margin-right: .25em; }
 .relationships .chip { font-style: normal; }
 .footnote { border-top: 1px solid #777; margin-top: 1.1em; padding-top: .4em; font-size: .72em; color: #111; }
 .footnote b { color: #000; }
@@ -147,7 +169,7 @@ function M.new(context)
         local work=self.works[self.index]
         local rows=work and context.rows(work) or {}
         local html,actions
-        if work then html,actions=M.html(work,rows) else html,actions='<p>'..escape(_('No works found.'))..'</p>',{} end
+        if work then html,actions=M.html(work,rows,context) else html,actions='<p>'..escape(_('No works found.'))..'</p>',{} end
         context.present(self,html,actions,rows)
     end
     function self:goTo(index,allow_unknown_next)
@@ -237,6 +259,7 @@ function M.show(browser,context)
             self.key_events.PreviousWork={{Device.input.group.PgBack}}
         end
         local function list()
+            if context.list then context.list(self,state);return end
             require('ao3lib.core.config'):saveSetting('formatted_work_view',false)
             local works=state.works;works.total=state:pageCount()
             browser:show(context.ui,works,context.fetch,context.update,context.download,
@@ -244,8 +267,11 @@ function M.show(browser,context)
             UI:close(self)
         end
         local title=TitleBar:new{width=width,title=context.title or _('AO3 works'),
-            left_icon='ao3',left_icon_tap_callback=list,close_callback=function() self:onClose() end}
+            left_icon='ao3',left_icon_tap_callback=function() require('ao3lib.ui.navigation').menu(self) end,close_callback=function() self:onClose() end}
         self.titlebar=title
+        local view_options=Button:new{text=context.list and _('View options…') or _('List view'),
+            width=width-2*padding,bordersize=0,show_parent=self,callback=list}
+        self.view_options_button=view_options
         -- Match KeyValuePage's borderless first/previous/page/next/last bar.
         -- The full result count includes works not downloaded into the UI
         -- cache yet; a jump fetches only its AO3 result batch.
@@ -273,7 +299,7 @@ function M.show(browser,context)
         local controls=Horizontal:new{first,Span:new{width=gap},previous,Span:new{width=gap},page,
             Span:new{width=gap},following,Span:new{width=gap},last}
         local scroll=Scroll:new{width=width-2*padding,
-            height=math.max(1,height-title:getHeight()-controls:getSize().h-2*padding),
+            height=math.max(1,height-title:getHeight()-view_options:getSize().h-controls:getSize().h-2*padding),
             html_body=self.html,css=M.css,html_resource_directory=require('ao3lib.ui.icons').file:match('^(.*[/\\])'),
             default_font_size=Screen:scaleBySize(M.baseTextSize()),dialog=self,
             html_link_tapped_callback=function(link)
@@ -288,11 +314,12 @@ function M.show(browser,context)
         end
         self[1]=Frame:new{padding=0,margin=0,bordersize=0,background=require('ffi/blitbuffer').COLOR_WHITE,
             dimen=Geom:new{w=width,h=height},Vertical:new{title,
+                Center:new{dimen=Geom:new{w=width,h=view_options:getSize().h},view_options},
                 Frame:new{padding=padding,margin=0,bordersize=0,scroll},
                 Center:new{dimen=Geom:new{w=width,h=controls:getSize().h},controls}}}
-        self.layout={self.page_buttons}
+        self.layout={{view_options},self.page_buttons}
     end
-    context.rows=function(work) return browser:generateTable({}, {work},context.update,context.download) end
+    context.rows=context.rows or function(work) return browser:generateTable({}, {work},context.update,context.download) end
     context.network=require('ao3lib.ao3.network').run
     context.present=function(_,html,actions,rows)
         local previous=state.window
@@ -300,6 +327,7 @@ function M.show(browser,context)
         state.window=window;browser.browse_window=window
         require("ao3lib.ui.navigation").bind(context.plugin, window, {
             replace=previous or context.replacing, resume=context.resume,
+            back=context.on_back,
         })
         context.replacing=nil
         UI:show(window)

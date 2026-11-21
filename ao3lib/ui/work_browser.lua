@@ -213,7 +213,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         )
         table.insert(kv_pairs, { "     " .. "Summary:", v.summary })
         table.insert(kv_pairs, { "     " .. "Language:", v.language })
-        table.insert(kv_pairs, { "     " .. "Words:", v.words or v.wordcount })
+        table.insert(kv_pairs, { "     " .. "Words:", require("ao3lib.core.format").integer(v.words or v.wordcount) })
         table.insert(kv_pairs, { "     " .. (v.iswip or _("Unknown")) .. ", Chapters:", v.chapters })
 
         -- Combine comments, kudos, bookmarks, and hits into one line
@@ -359,7 +359,10 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     })
     -- Override _populateItems to check if it's the last page and load more results
     BrowseWindow._populateItems = function(selfself)
+        local switch=require('ao3lib.ui.work_view_switch')
+        switch.restore(selfself)
         fitWorkPage(selfself)
+        switch.reserve(selfself,switchView)
         if fetchNextPage and selfself.show_page == selfself.pages then
             Network.run(function()
                 -- The user may have left this window while connecting.
@@ -378,6 +381,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
 
         -- Call the original _populateItems function
         KeyValuePage._populateItems(selfself)
+        switch.insert(selfself)
     end
 
     BrowseWindow.addNewFanfics = function(selfself, newFics)
@@ -394,7 +398,6 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         self.browse_window = BrowseWindow:new({
             title = selfself.title,
             title_bar_left_icon = require("ao3lib.ui.icons").name,
-            title_bar_left_icon_tap_callback = switchView,
             title_bar_fm_style = true,
             is_popout = false,
             is_borderless = true,
@@ -419,7 +422,6 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         self.browse_window = BrowseWindow:new({
             title = selfself.title,
             title_bar_left_icon = require("ao3lib.ui.icons").name,
-            title_bar_left_icon_tap_callback = switchView,
             title_bar_fm_style = true,
             is_popout = false,
             is_borderless = true,
@@ -450,7 +452,6 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     self.browse_window = BrowseWindow:new({
         title = title or T("(%1) Tap fanfic title to download", total_fic_count or "ERROR"),
         title_bar_left_icon = require("ao3lib.ui.icons").name,
-        title_bar_left_icon_tap_callback = switchView,
         title_bar_fm_style = true,
         is_popout = false,
         is_borderless = true,

@@ -9,6 +9,7 @@ An unofficial plugin for browsing, downloading, and reading works from Archive o
 - Discover downloaded AO3 EPUBs in the configured download folder and KOReader home folder, and browse them offline by author or fandom.
 - Download into `Author/Title` folders, or organize existing downloads while preserving reading progress and associated book data.
 - Review available updates before replacing downloaded EPUBs, with reading progress preserved.
+- Optionally convert HTML downloads to EPUB when native downloads are unavailable, and replace conversions with native EPUBs later.
 - Access AO3 metadata and filters from Bookshelf book details, with AO3 symbol placeholders for books without covers.
 
 AO3 works are identified from metadata inside their EPUBs, including books downloaded outside this plugin. Local reading and library browsing remain available when AO3 is offline.

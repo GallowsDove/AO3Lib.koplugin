@@ -5,6 +5,7 @@ local util = require("util")
 local M = {}
 local cache, settings, flush_scheduled, cache_dirty
 local MAX_TEXT = 4 * 1024 * 1024
+local METADATA_VERSION = 4
 
 local function attr(tag, name)
     name = name:gsub("%-", "%%-")
@@ -72,6 +73,25 @@ local function values(html)
     return out
 end
 
+local function seriesMemberships(html)
+    local out,seen,previous={}, {},1
+    for start,attrs,label,finish in html:gmatch("()<a(%s[^>]-)>(.-)</a%s*>()") do
+        local href=text(attr(attrs,"href"))
+        local path=href:match('^https?://archiveofourown%.org(/.*)$')
+            or href:match('^https?://www%.archiveofourown%.org(/.*)$')
+            or (href:sub(1,1)=='/' and href)
+        local id,tail=(path or ''):match('^/series/(%d+)(.*)$')
+        local title=text(label)
+        if id and not id:match('^0+$') and (tail=='' or tail:match('^[/#?]')) and title~='' and not seen[id] then
+            local prefix=text(html:sub(previous,start-1))
+            out[#out+1]={id=tonumber(id),title=title,position=prefix:match('Part%s+([%d%.]+)%s+of%s*$')}
+            seen[id]=true
+        end
+        previous=finish
+    end
+    return out
+end
+
 local function metadata(id, preface, opf)
     local function dc(name)
         return text(opf:match("<dc:" .. name .. "[^>]*>(.-)</dc:" .. name .. "%s*>"))
@@ -79,8 +99,26 @@ local function metadata(id, preface, opf)
     local work = {
         id = id, title = dc("title"), author = dc("creator"), summary = dc("description"),
         language = dc("language"), fandoms = {}, warnings = {}, relationships = {},
-        characters = {}, tags = {}, chapter_data = {}, chapters = "?/?",
+        characters = {}, tags = {}, series = {}, chapter_data = {}, chapters = "?/?",
     }
+    -- Private provenance only. Bookshelf maps an explicit allowlist of fields.
+    for tag in opf:gmatch("<meta(%s[^>]-)>") do
+        if attr(tag, "name")=="ao3lib:html-conversion" and attr(tag, "content")=="1" then
+            work._ao3_html_conversion=true
+        end
+    end
+    -- Recognize files made by the initial fallback before markers existed.
+    -- Require its distinctive package, source, custom stats and content path.
+    if not work._ao3_html_conversion then
+        local uid=opf:match('<dc:identifier%s+id="work%-id"%s*>(.-)</dc:identifier%s*>')
+        local source=dc("source")
+        if uid=="https://archiveofourown.org/works/"..id and source==uid
+                and opf:find('unique-identifier="work-id"',1,true)
+                and opf:find('name="ao3:chapters"',1,true)
+                and (opf:find('href="work.xhtml"',1,true) or opf:find('href="work_split_000.xhtml"',1,true)) then
+            work._ao3_html_conversion=true
+        end
+    end
     local creators = {}
     for creator in opf:gmatch("<dc:creator[^>]*>(.-)</dc:creator%s*>") do creators[#creators + 1] = text(creator) end
     work.author = table.concat(creators, ", ")
@@ -91,6 +129,7 @@ local function metadata(id, preface, opf)
     for label, content in preface:gmatch("<dt[^>]*>(.-)</dt%s*>%s*<dd[^>]*>(.-)</dd%s*>") do
         label = text(label):lower():gsub(":$", "")
         if fields[label] then work[fields[label]] = values(content)
+        elseif label == "series" then work.series = seriesMemberships(content)
         elseif label == "rating" then work.rating = text(content)
         elseif label == "category" or label == "categories" then
             work.categories = {}
@@ -226,6 +265,8 @@ function M.invalidate(path, defer)
 end
 -- Return indexed works without checking the filesystem. Callers validate in a
 -- worker so temporarily inaccessible storage does not erase the index.
+-- Include older positive entries as seeds: the worker re-inspects their EPUBs
+-- when cached() rejects the old metadata version, without a directory rescan.
 function M.indexWorks(roots)
     local out,normalized={},{}
     for _,root in ipairs(roots or {}) do
@@ -235,8 +276,7 @@ function M.indexWorks(roots)
         end
     end
     for path,entry in pairs(getCache()) do
-        if type(path)=="string" and type(entry)=="table" and type(entry.work)=="table" and entry.work.id
-                and entry.metadata_version==2 then
+        if type(path)=="string" and type(entry)=="table" and type(entry.work)=="table" and entry.work.id then
             for _,root in ipairs(normalized) do
                 if (root=="/" and path:sub(1,1)=="/") or path:sub(1,#root+1)==root.."/" then
                     local work=util.tableDeepCopy(entry.work);work.path=path
@@ -251,7 +291,7 @@ end
 
 local function current(path, entry)
     local stat=lfs.attributes(path)
-    return stat and stat.mode=="file" and entry and (not entry.work or entry.metadata_version==2)
+    return stat and stat.mode=="file" and entry and (not entry.work or entry.metadata_version==METADATA_VERSION)
         and entry.size==stat.size and entry.mtime==stat.modification and entry.change==stat.change
 end
 -- Used in a background worker to seed library shelves before a directory walk
@@ -265,7 +305,7 @@ function M.cachedPaths(roots)
         end
     end
     for path,entry in pairs(getCache()) do
-        if type(path)=="string" and type(entry)=="table" and entry.work and entry.metadata_version==2 then
+        if type(path)=="string" and type(entry)=="table" and entry.work and entry.metadata_version==METADATA_VERSION then
             for _,root in ipairs(normalized) do
                 if (root=="/" and path:sub(1,1)=="/")
                         or path:sub(1,#root+1)==root.."/" then
@@ -305,7 +345,7 @@ function M.inspect(path)
     local work,ok=scan(path)
     if not ok then return end
     local entry={path=path,size=stat.size,mtime=stat.modification,change=stat.change,
-        metadata_version=2,work=work or false}
+        metadata_version=METADATA_VERSION,work=work or false}
     if current(path,entry) then return entry end
 end
 function M.accept(entry)
@@ -321,11 +361,11 @@ function M.read(path)
     if not stat or stat.mode ~= "file" then return end
     local entries = getCache()
     local entry = entries[path]
-    if not entry or (entry.work and entry.metadata_version ~= 2)
+    if not entry or (entry.work and entry.metadata_version ~= METADATA_VERSION)
             or entry.size ~= stat.size or entry.mtime ~= stat.modification or entry.change ~= stat.change then
         local work, ok = scan(path)
         if not ok then return end -- Do not persist a transient archive failure.
-        entry = { size = stat.size, mtime = stat.modification, change = stat.change, work = work or false, metadata_version=2 }
+        entry = { size = stat.size, mtime = stat.modification, change = stat.change, work = work or false, metadata_version=METADATA_VERSION }
         remember(path,entry)
     end
     return result(path,entry)

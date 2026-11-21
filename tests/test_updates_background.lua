@@ -26,9 +26,16 @@ local entry=session.entries[1]
 session:run('check',{entry})
 H.tick();H.tick()
 assert(H.forks==1 and session.busy)
+assert(#H.stack==1 and H.stack[1]==owner,"Review checks must not show request popups")
 session:stop();H.drain()
 assert(entry.status=='unchecked' and session.done==0)
-session:run('check',{entry});H.drain()
+session:run('check',{entry})
+H.tick();H.tick()
+owner.item_table={} -- A review refresh must not cancel its own network request.
+H.UI:close(owner) -- Checks continue silently after leaving review.
+H.drain()
+assert(#H.stack==0,"Detached checks must not show request popups")
+H.UI:show(owner)
 assert(entry.status=='update' and session.done==1)
 local commits=0
 Client.downloadEpub=function(_,_,_,_,before_commit)
@@ -38,6 +45,7 @@ Client.downloadEpub=function(_,_,_,_,before_commit)
 end
 session:run('update',{entry})
 H.tick();H.tick()
+assert(#H.stack==1 and H.stack[1]==owner,"Review downloads must not show request popups")
 session.closed=true
 H.drain()
 assert(commits==0 and entry.status=='update','Closing the review must discard an in-flight update before commit')

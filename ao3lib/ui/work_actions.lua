@@ -35,7 +35,9 @@ function M.delete(work, options)
     return dialog
 end
 
-local function open(plugin, work, chapter)
+function M.open(plugin, work, chapter)
+    local saved=History.get and History.get(work.id)
+    if saved and saved.path==work.path then work=saved end
     work.last_accessed = os.date("%Y-%m-%d %H:%M:%S")
     History.update(work)
     plugin:onOpenFanficReader(work.path, work, chapter)
@@ -46,7 +48,7 @@ function M.chapters(plugin, work)
     for index, chapter in ipairs(work.chapter_data or {}) do
         items[#items + 1] = {
             text=(chapter.read and "✓ " or "") .. (chapter.name or T(_("Chapter %1"), index)),
-            callback=function() open(plugin, work, index) end,
+            callback=function() M.open(plugin, work, index) end,
         }
     end
     if #items == 0 then return end
@@ -74,19 +76,18 @@ function M.show(plugin, work, options)
             callback()
         end
     end
-    dialog = ButtonDialog:new{
-        title=T(_("Options for '%1'"), work.title),
-        buttons={
+    local buttons={
             {
                 {text=_("Work details"), callback=action(function()
-                    plugin:onShowFanficBrowser({options.details or work, total=1}, nil, _("AO3 work details"))
+                    if type(options.details)=='function' then options.details(work)
+                    else plugin:onShowFanficBrowser({options.details or work, total=1}, nil, _("AO3 work details")) end
                 end)},
                 {text=_("Check for updates"), callback=action(function()
                     require("ao3lib.ui.update_review").showWork(plugin, work)
                 end)},
             },
             {
-                {text=_("Open for reading"), callback=action(function() open(plugin, work) end)},
+                {text=_("Open for reading"), callback=action(function() M.open(plugin, work) end)},
                 {text=_("Select chapter"), enabled=#(work.chapter_data or {}) > 0,
                     callback=action(function() M.chapters(plugin, work) end)},
             },
@@ -94,8 +95,9 @@ function M.show(plugin, work, options)
                 {text=_("Delete local copy"), callback=action(function() M.delete(work, options) end)},
                 {text=_("Cancel"), callback=function() UI:close(dialog) end},
             },
-        },
     }
+    if options.hide_details then table.remove(buttons[1],1) end
+    dialog=ButtonDialog:new{title=T(_("Options for '%1'"),work.title),buttons=buttons}
     UI:show(dialog)
     return dialog
 end

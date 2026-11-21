@@ -114,7 +114,7 @@ local function startNext()
             end
             checkpoint();notify()
             if #queue>0 and not session.pause_reason then
-                schedule(3+math.random()*2,function()
+                schedule(require("ao3lib.updates.pacing").delay(operation),function()
                     running=false;session.busy=false;startNext()
                 end)
             else

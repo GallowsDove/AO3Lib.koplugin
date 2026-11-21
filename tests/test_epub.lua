@@ -81,6 +81,9 @@ local function preface(id)
       <dt>Rating:</dt><dd><a href='/tags/rating'>Explicit</a></dd>
       <dt>Archive Warnings:</dt><dd><a href='/tags/warning'>No Archive Warnings Apply</a></dd>
       <dt>Additional Tags:</dt><dd><a href='/tags/fluff'>Fluff, with a comma</a></dd>
+      <dt>Series:</dt><dd><span class="position">Part 2 of <a href="https://archiveofourown.org/series/3884635">The Harem's Kingdom</a></span>,
+      <span class="position">Part 1.5 of <a href="/series/42">Other &amp; Series</a></span>
+      <a href="https://evil.example/series/99">Wrong host</a><a href="/series/42">Duplicate</a></dd>
       <dt>Stats:</dt><dd>Published: 2026-01-01 Updated: 2026-01-02 Words: 1,234 Chapters: 2/3</dd>
       <dt>Characters:</dt><dd><a href='/tags/person'>Person</a></dd></dl></div></div>]]
 end
@@ -112,6 +115,8 @@ assert(w.categories[1]=='F/M' and w.categories[2]=='F/F' and w.category=='F/M, F
 assert(w.rating=='Explicit' and w.warnings[1]=='No Archive Warnings Apply' and w.tags[1]=='Fluff, with a comma')
 assert(w.fandoms[1] == 'Example & Fandom' and w.characters[1] == 'Person')
 assert(w.chapters == '2/3' and w.iswip == 'Work in Progress' and w.wordcount == '1,234')
+assert(#w.series==2 and w.series[1].id==3884635 and w.series[1].position=='2')
+assert(w.series[1].title=="The Harem's Kingdom" and w.series[2].title=='Other & Series' and w.series[2].position=='1.5')
 assert(w.published == '2026-01-01' and w.updated == '2026-01-02')
 assert(opens == 1 and archivesClosed == 1)
 w.title = 'Mutated'; w.fandoms[1] = 'Mutated'
@@ -145,10 +150,13 @@ end
 fs['/home/renamed.epub'].modification=10
 -- Previously cached EPUBs acquire separate category values without modifying
 -- the book, while the negative cache and current-schema entries stay warm.
-persistent.preface_v1['/home/renamed.epub'].metadata_version=nil
+persistent.preface_v1['/home/renamed.epub'].metadata_version=3
+persistent.preface_v1['/home/renamed.epub'].work.series=nil
+assert(Epub.indexWorks({'/home'})['123'],'Older cached works must remain available to seed a background refresh')
+assert(not Epub.cached('/home/renamed.epub'),'Old metadata must be refreshed even if the EPUB fingerprint is unchanged')
 persistent.preface_v1['/home/renamed.epub'].work.categories=nil
 local refreshed=Epub.read('/home/renamed.epub')
-assert(opens==before+1 and refreshed.categories[2]=='F/F')
+assert(opens==before+1 and refreshed.categories[2]=='F/F' and refreshed.series[1].id==3884635)
 fixture('/home/corrupt.epub', '777')
 archives['/home/corrupt.epub']['Text/front matter.xhtml'] = 'EXTRACTION ERROR'
 before = archivesClosed
@@ -236,7 +244,7 @@ assert(title == 'Downloaded Works' and menu[1].text == 'By fandom' and menu[2].t
 menu[1].callback()
 assert(title == 'Downloaded Works by Fandom' and menu[1].text == '(1) Unknown Fandom')
 menu[1].callback()
-assert(#menu == 1 and menu[1].id == '222' and menu[1].text:find('?/?', 1, true))
+assert(#menu == 2 and menu[1].id == '222' and menu[1].text:find('?/?', 1, true))
 print('PASS: imported works with incomplete/localized metadata remain visible in Downloaded works')
 
 -- Author browsing uses the same offline files and work actions as fandoms.
@@ -278,17 +286,24 @@ modes[2].callback()
 assert(title == 'Downloaded Works by Author' and #menu == 3)
 assert(menu[1].text == '(2) Anonymous' and menu[2].text == '(1) coauthor' and menu[3].text == '(2) Writer')
 menu[2].callback()
-assert(title == 'Works by coauthor' and #menu == 1 and menu[1].id == shared.id)
+assert(title == 'Works by coauthor' and #menu == 2 and menu[1].id == shared.id)
+local old_review=package.loaded['ao3lib.ui.update_review']
+local opened_scope
+package.loaded['ao3lib.ui.update_review']={show=function(_,scope) opened_scope=scope end}
+assert(menu[2].text=='Review updates for this author')
+menu[2].callback()
+assert(opened_scope.kind=='author' and opened_scope.value=='coauthor')
+package.loaded['ao3lib.ui.update_review']=old_review
 parent:onReturn()
 menu[3].callback()
-assert(title == 'Works by Writer' and #menu == 2 and menu[1].id == '2' and menu[2].id == '1')
+assert(title == 'Works by Writer' and #menu == 3 and menu[1].id == '2' and menu[2].id == '1')
 menu[1].callback()
 shown.buttons[2][1].callback()
 assert(opened == latest)
 menu[2].callback()
 shown.buttons[3][1].callback() -- Delete local copy opens confirmation
 shown.buttons[1][1].callback()
-assert(deleted == '1' and works['1'] == nil and #menu == 1 and menu[1].id == '2')
+assert(deleted == '1' and works['1'] == nil and #menu == 2 and menu[1].id == '2')
 parent:onReturn()
 assert(title == 'Downloaded Works by Author' and #menu == 2 and menu[2].text == '(1) Writer')
 parent:onReturn()
@@ -311,7 +326,7 @@ table.sort=function(...) sorts=sorts+1;return real_sort(...) end
 menu[1].callback()
 assert(#menu==30 and sorts==1,'Only the group names should be sorted while opening the fandom list')
 menu[1].callback()
-assert(#menu==2 and sorts==2,'Sort works only in the selected group')
+assert(#menu==3 and sorts==2,'Sort works only in the selected group')
 table.sort=real_sort
 
 -- A warm read-only rescan uses cached metadata without rewriting the cache.

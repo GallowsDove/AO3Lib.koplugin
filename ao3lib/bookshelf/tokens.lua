@@ -28,7 +28,7 @@ function M.install()
     end
     add("ao3_id", _("AO3 work ID"), function(data) return data.id end)
     add("ao3_words", _("AO3 word count in the downloaded EPUB"), function(data)
-        return data.wordcount and tostring(data.wordcount) or ""
+        return require("ao3lib.core.format").integer(data.wordcount)
     end)
     add("ao3_chapters", _("AO3 downloaded/total chapters (for example, 12/20 or 12/?)"), function(data)
         return data.chapters ~= "?/?" and data.chapters or ""

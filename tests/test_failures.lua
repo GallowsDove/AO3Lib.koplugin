@@ -192,3 +192,35 @@ os.remove(destination)
 assert(#queue==0 and resets==#calls)
 assert(warnings>0)
 print('PASS: 503/500/429/404; maintenance HTML; malformed profiles/search/JSON; parser/TLS failures; timeout cleanup; bounded redirects; POST safety; atomic EPUB updates')
+
+-- Optional HTML fallback: disabled by default, native preferred, atomic commit.
+local source={id='123',epub_link='https://archiveofourown.org/downloads/123.epub',html_link='https://archiveofourown.org/downloads/123.html'}
+local converted=0
+stub('ao3lib.library.html_epub',{convert=function(html,path,id)
+    assert(html=='HTML DOWNLOAD' and id=='123');converted=converted+1
+    local f=assert(realOpen(path,'wb'));f:write('CONVERTED EPUB');f:close()
+end})
+enqueue(response(200,'invalid EPUB'))
+fails(Client:downloadEpub(source,destination,true))
+assert(converted==0 and #queue==0)
+settings.html_download_fallback=true
+enqueue(response(200,'PK\003\004VALID EPUB'))
+assert(Client:downloadEpub(source,destination,true).success and converted==0)
+enqueue(response(200,'invalid EPUB'),response(200,'HTML DOWNLOAD'))
+assert(Client:downloadEpub(source,destination,true).success and converted==1)
+assert(content()=='CONVERTED EPUB')
+writeOld()
+enqueue(response(200,'invalid EPUB'),response(200,'HTML DOWNLOAD'))
+fails(Client:downloadEpub(source,destination,true,function() return false,'Source changed' end),'Source changed')
+assert(content()=='EXISTING BOOK')
+enqueue(response(200,'invalid EPUB'),response(200,'HTML DOWNLOAD'))
+local staged=destination..'.part'
+assert(Client:downloadEpub(source,destination,true,nil,staged).staged==staged)
+assert(content()=='EXISTING BOOK')
+os.remove(staged)
+source.epub_link=nil
+enqueue(response(200,'HTML DOWNLOAD'))
+assert(Client:downloadEpub(source,destination,true).success)
+os.remove(destination)
+assert(#queue==0)
+print('PASS: HTML fallback opt-in, EPUB preference, missing EPUB link, staged commits and changed-source protection')

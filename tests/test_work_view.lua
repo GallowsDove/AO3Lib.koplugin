@@ -141,7 +141,7 @@ assert(innerScrolls==1)
 old.window.page_buttons[4].callback()
 assert(old.index==2 and not old.closed and visible[old.window])
 assert(old.window~=nil and old.window==Browser.browse_window)
-assert(#old.window.page_buttons==5 and #old.window.layout==1)
+assert(#old.window.page_buttons==5 and #old.window.layout==2)
 assert(old.window.page_buttons[1].icon=='chevron.first' and old.window.page_buttons[2].icon=='chevron.left')
 assert(old.window.page_buttons[3].text=='Page 2 of 2' and old.window.page_buttons[3].text_font_face=='pgfont')
 assert(old.window.page_buttons[4].icon=='chevron.right' and old.window.page_buttons[5].icon=='chevron.last')
@@ -153,10 +153,10 @@ old.window.page_buttons[3].hold_input.callback('999');assert(old.index==1)
 old.window.page_buttons[3].hold_input.callback('1.5');assert(old.index==1)
 old.window.page_buttons[3].hold_input.callback('2');assert(old.index==2)
 local new=old.window
-old.window.titlebar.left_icon_tap_callback() -- Information list; preserve the current work.
+old.window.view_options_button.callback() -- Information list; preserve the current work.
 assert(not formatted and old.closed and not visible[new])
 assert(Browser.browse_window.show_page==2 and #Browser.browse_window.kv_pairs==30)
-Browser.browse_window.title_bar_left_icon_tap_callback()
+Browser.browse_window.switch_work_view()
 assert(formatted and Browser.browse_window~=new and visible[Browser.browse_window])
 -- Page repainting and switching views must replace one navigation frame.
 assert(#plugin._ao3_navigation==1)
@@ -191,8 +191,9 @@ Menu.menuWidget={GoDownInMenu=function(_,_,items) settings=items end,
     switchItemTable=function(_,_,items) settings=items end,updateItems=function() end}
 package.loaded['ui/widget/spinwidget']={new=function(_,args) spin=args;return args end}
 Menu:onOpenSettings()
+for _,item in ipairs(settings) do if item.text=='Reading and display' then item.callback();break end end
 for _,item in ipairs(settings) do
-    if item.text=='Formatted view text size: 18' then item.callback() end
+    if item.text=='Formatted view text size' then item.callback() end
 end
 assert(spin and spin.value==18 and spin.default_value==18 and spin.value_min==12 and spin.value_max==32)
 spin.callback{value=22}
@@ -217,5 +218,5 @@ assert(not html:find('<b>Fandom:',1,true) and not html:find('<b>Rating:',1,true)
 print('PASS: physical page keys/repeats navigate works through native dispatcher; touch scrolling preserved; formatted HTML; escaping; local AO3 square; live author/series actions; lazy paging; Wi-Fi cancellation; failures/retry; close safety; layout; persisted view switching and work position')
 
 assert(not html:find('class="metrics"',1,true))
-assert(html:find('<b>12345</b> words &#183; <b>2/?</b> chapters &#183; English',1,true))
-assert(html:find('<div class="footnote"><p><b>0</b> Hits &#183; <b>0</b> Kudos',1,true))
+assert(html:find('<b>12,345</b> words &#183; <b>2/?</b> chapters &#183; English',1,true))
+assert(not html:find(' Hits',1,true),'Missing online counters must not default to zero')
