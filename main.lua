@@ -169,7 +169,7 @@ function Fanfic:onShowAuthor(author)
 end
 
 function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
-    logger.dbg("AO3Lib.koplugin: Showing fanfic browser")
+    logger.dbg("AO3Lib.koplugin: Showing work browser")
     FanficBrowser:show(
         self.ui,
         ficResults,
@@ -287,7 +287,7 @@ function Fanfic:UpdateFanfic(fanfic)
     if not ok and require("ao3lib.ao3.background").isCancelled(result) then error(result,0) end
     UIManager:show(InfoMessage:new{
         text = ok and result.success
-            and T(_("Fanfic '%1' has been updated successfully."), fanfic.title)
+            and T(_("Work '%1' has been updated successfully."), fanfic.title)
             or T(_("Could not update work: %1"), tostring(ok and result.error or result)),
     })
 end

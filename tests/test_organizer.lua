@@ -230,7 +230,7 @@ local failPlan=assert(Organizer.plan({fail},'/books',opts))
 local backup=Organizer.backup
 Organizer.backup=function() error('out of space') end
 local failed,err=Organizer.execute(failPlan)
-assert(not failed and err:find('no books were moved',1,true) and disk[fail.path])
+assert(not failed and err:find('no works were moved',1,true) and disk[fail.path])
 Organizer.backup=backup
 -- A failed physical move must not rewrite AO3 history.
 local moveFailure=work('10','Writer','Physical failure')

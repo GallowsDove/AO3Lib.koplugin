@@ -13,7 +13,7 @@ local HorizontalGroup = require("ui/widget/horizontalgroup")
 local _ = require("gettext")
 
 local FanficBookmarkDialog = InputDialog:extend{
-    title = "Bookmark Fanfic",
+    title = "Bookmark work",
     allow_newline = true,
     results = {},
     padding = 10,

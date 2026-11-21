@@ -18,10 +18,10 @@ local function eligible(reader,ui)
     if not reader:isActiveReader(ui) then message('Open an AO3 EPUB first.');return false end
     if not ui.rolling or not ui.doc_settings then message('Formatting cleanup requires the EPUB reader.');return false end
     if G_reader_settings:readSetting('document_metadata_folder')=='hash' then
-        message('Formatting cleanup is unavailable with hash-based book metadata storage. Changing EPUB contents would change its metadata location.');return false
+        message('Formatting cleanup is unavailable with hash-based work metadata storage. Changing EPUB contents would change its metadata location.');return false
     end
     if annotated(ui) then
-        message('This book has highlights, notes or bookmarks. Formatting changes would invalidate their positions, so cleanup and revert are blocked. Keep an annotated copy before removing them.');return false
+        message('This work has highlights, notes or bookmarks. Formatting changes would invalidate their positions, so cleanup and revert are blocked. Keep an annotated copy before removing them.');return false
     end
     return true
 end
@@ -156,7 +156,7 @@ function M.clean(reader,ui)
         if plan.changed==0 then Cleanup.discard(plan);message('No formatting cleanup is needed.');return end
         local dialog,accepted
         dialog=Confirm:new{
-            text=string.format('Clean up formatting in this book?\n\nOnly the currently open EPUB will be changed (%d internal chapter/content files).\n\n%d repeated line-break runs and %d empty paragraphs will be cleaned up. Deliberate formatting and possible scene gaps are preserved.\n\nAn original EPUB backup will be kept. Reading position is restored approximately within the current section.',plan.changed,plan.breaks,plan.blanks),
+            text=string.format('Clean up formatting in this work?\n\nOnly the currently open EPUB will be changed (%d internal chapter/content files).\n\n%d repeated line-break runs and %d empty paragraphs will be cleaned up. Deliberate formatting and possible scene gaps are preserved.\n\nAn original EPUB backup will be kept. Reading position is restored approximately within the current section.',plan.changed,plan.breaks,plan.blanks),
             ok_text='Clean up',ok_callback=function()
                 accepted=true
                 UI:nextTick(function() M.apply(reader,ui,plan) end)
@@ -178,9 +178,9 @@ end
 function M.revert(reader,ui)
     if M.busy or not eligible(reader,ui) then return end
     local plan,err=Cleanup.findBackup(ui.document.file,reader.current_fanfic.id)
-    if not plan then message(err or 'No matching original EPUB backup was found. Revert is unavailable if the book has been updated or edited since cleanup.');return end
+    if not plan then message(err or 'No matching original EPUB backup was found. Revert is unavailable if the work has been updated or edited since cleanup.');return end
     UI:show(Confirm:new{
-        text='Restore this book’s original formatting?\n\nCurrent reading settings and statistics are kept. Reading position is restored approximately within the current section.',
+        text='Restore this work’s original formatting?\n\nCurrent reading settings and statistics are kept. Reading position is restored approximately within the current section.',
         ok_text='Revert',ok_callback=function() UI:nextTick(function() M.apply(reader,ui,plan) end) end,
     })
 end

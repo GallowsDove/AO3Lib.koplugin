@@ -78,7 +78,7 @@ function M.prepare(path,id,yield_fn)
         local expected={mimetype=sha256('application/epub+zip')}
         for i,e in ipairs(entries) do
             if e.mode=='file' and e.path~='mimetype' then
-                progress('Cleaning book',i,#entries,e.path)
+                progress('Cleaning work',i,#entries,e.path)
                 local bytes=extract(reader,e.path)
                 if e.path:lower():match('%.xhtml$') or e.path:lower():match('%.html$') then
                     local cleaned,stats=XML.clean(bytes,classes,function(phase)
@@ -163,7 +163,7 @@ function M.commit(plan)
         end
         assert(hash(plan.stage)==plan.after,'Replacement EPUB verification failed')
         assert(hash(plan.path)==plan.before,'The EPUB changed before replacement')
-        assert(os.rename(plan.stage,plan.path),'Cannot replace EPUB; the original book is unchanged')
+        assert(os.rename(plan.stage,plan.path),'Cannot replace EPUB; the original work is unchanged')
     end)
     if not ok then return nil,tostring(err) end
     return true

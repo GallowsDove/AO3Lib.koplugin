@@ -71,8 +71,8 @@ function FanficReader:workManagementButtons(close)
                                 self.current_fanfic.markedForLater = not self.current_fanfic.markedForLater
                                 self:saveAccountState({"markedForLater"})
                                 UIManager:show(InfoMessage:new({
-                                    text = self.current_fanfic.markedForLater and "Fanfic Marked for Later" or
-                                        "Fanfic Marked as Read",
+                                    text = self.current_fanfic.markedForLater and "Work marked for later" or
+                                        "Work marked as read",
                                 }))
                             else
                                 UIManager:show(InfoMessage:new({
@@ -100,8 +100,8 @@ function FanficReader:workManagementButtons(close)
                                     self:saveAccountState({"subscriptionID"})
 
                                     UIManager:show(InfoMessage:new({
-                                        text = self.current_fanfic.subscriptionID and "Subscribed to Fanfic" or
-                                        "Unsubscribed from Fanfic",
+                                        text = self.current_fanfic.subscriptionID and "Subscribed to work" or
+                                        "Unsubscribed from work",
                                     }))
                                 else
                                     UIManager:show(InfoMessage:new({
@@ -115,7 +115,7 @@ function FanficReader:workManagementButtons(close)
                     },
                     {
                         {
-                            text = self.current_fanfic.bookmarkID and "Edit Bookmark" or "Bookmark Work",
+                            text = self.current_fanfic.bookmarkID and "Edit Bookmark" or "Bookmark work",
                             callback = Network.wrap(function()
 
                                 local request_result = AO3LibClient:getUsersWorkBookmark(self.current_fanfic.id)

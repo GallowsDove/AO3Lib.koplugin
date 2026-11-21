@@ -29,13 +29,13 @@ function M.show(fanfic)
                 {text=_("Cancel"), callback=function() UIManager:close(preview) end},
                 {text=_("Organize"), enabled=#plan.moves > 0, callback=function()
                     UIManager:close(preview)
-                    local working=InfoMessage:new{text=_("Backing up reading state and organizing books…")}
+                    local working=InfoMessage:new{text=_("Backing up reading state and organizing works…")}
                     UIManager:show(working)
                     UIManager:scheduleIn(0.1, function()
                         local ok, summary, execute_err=pcall(Organizer.execute, plan, function(done,total)
                             if done % 20 == 0 or done == total then
                                 UIManager:close(working)
-                                working=InfoMessage:new{text=string.format(_("Organizing books: %d / %d"),done,total)}
+                                working=InfoMessage:new{text=string.format(_("Organizing works: %d / %d"),done,total)}
                                 UIManager:show(working)
                                 UIManager:forceRePaint()
                             end

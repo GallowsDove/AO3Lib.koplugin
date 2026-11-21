@@ -18,7 +18,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
         local downloaded_fanfics = local_works or {}
         if next(downloaded_fanfics) == nil then
             UIManager:show(InfoMessage:new({
-                text = "No fanfics downloaded yet.",
+                text = "No works downloaded yet.",
             }))
             return
         end
@@ -153,7 +153,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                             require("ao3lib.ui.update_review").show(Fanfic,{kind=browse_by_author and "author" or "fandom",value=group_name})
                         end}
                     -- Use GoDownInMenu to navigate into the submenu
-                    parentMenu:GoDownInMenu(T(browse_by_author and _("Works by %1") or _("Fanfics in '%1'"), group_name), submenu_items)
+                    parentMenu:GoDownInMenu(T(browse_by_author and _("Works by %1") or _("Works in '%1'"), group_name), submenu_items)
                 end,
                 hold_callback = function()
                     -- Show a notification with the full group name

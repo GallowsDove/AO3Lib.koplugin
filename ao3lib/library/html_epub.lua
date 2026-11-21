@@ -117,7 +117,7 @@ function M.build(html, expected_id, fetch, base)
                 local url=src
                 if not url:match('^https?://') then url=require('socket.url').absolute(base,url) end
                 local bytes=fetch(url)
-                total=total+#bytes; assert(total<=64*1024*1024,'Embedded images exceed book size limit')
+                total=total+#bytes; assert(total<=64*1024*1024,'Embedded images exceed work size limit')
                 local ext,media
                 if bytes:sub(1,8)=='\137PNG\13\10\26\10' then ext,media='png','image/png'
                 elseif bytes:sub(1,3)=='\255\216\255' then ext,media='jpg','image/jpeg'

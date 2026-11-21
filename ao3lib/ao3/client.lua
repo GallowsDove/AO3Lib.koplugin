@@ -471,7 +471,7 @@ local function downloadNative(self, download_link, filepath, allow_replace, befo
         local checked, allowed, reason = pcall(before_commit)
         if not checked or not allowed then
             os.remove(partial)
-            return {success=false, error=checked and (reason or "The book changed during download.") or tostring(allowed)}
+            return {success=false, error=checked and (reason or "The work changed during download.") or tostring(allowed)}
         end
     end
     local renamed, rename_err = os.rename(partial, filepath)
@@ -531,7 +531,7 @@ function AO3LibClient:downloadEpub(source, filepath, allow_replace, before_commi
         local checked, value, why=pcall(before_commit)
         allowed=checked and value; reason=checked and why or tostring(value)
     end
-    if not allowed then os.remove(partial); return {success=false,error=reason or "The book changed during download."} end
+    if not allowed then os.remove(partial); return {success=false,error=reason or "The work changed during download."} end
     local renamed, why=os.rename(partial,filepath)
     if not renamed then os.remove(partial); return {success=false,error="Could not save EPUB: "..tostring(why)} end
     return {success=true,filepath=filepath}
@@ -2927,7 +2927,7 @@ for name, operation in pairs(AO3LibClient) do
                     local checked,ok,why=pcall(args[5])
                     allowed=checked and ok;reason=checked and why or tostring(ok)
                 end
-                if not allowed then os.remove(staged);return {success=false,error=reason or "The book changed during download."} end
+                if not allowed then os.remove(staged);return {success=false,error=reason or "The work changed during download."} end
                 local renamed,why=os.rename(staged,args[3])
                 if not renamed then return {success=false,error="Could not save EPUB: "..tostring(why)} end
                 result={success=true,filepath=args[3]}

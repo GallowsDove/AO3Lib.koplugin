@@ -27,7 +27,7 @@ local function menu()
     for _,row in ipairs(dialog.buttons) do
         for _,button in ipairs(row) do labels[button.text]=true end
     end
-    assert(labels['Give kudos to work ♥'] and labels['Read comments'] and labels['Comment on work'] and labels['Bookmark Work'])
+    assert(labels['Give kudos to work ♥'] and labels['Read comments'] and labels['Comment on work'] and labels['Bookmark work'])
     assert(not labels['Delete local copy'] and not labels['Open for reading'] and not labels['Check for updates'])
     return dialog
 end

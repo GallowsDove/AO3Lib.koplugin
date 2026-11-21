@@ -82,7 +82,7 @@ end
 -- The ID is only appended when another file or a planned destination occupies
 -- the plain title. A numeric suffix also handles stale/colliding ID paths.
 function M.destination(work, root, options, reserved)
-    if type(root) ~= 'string' or root == '' then return nil, 'Set the fanfic folder first' end
+    if type(root) ~= 'string' or root == '' then return nil, 'Set the work folder first' end
     local base = M.basePath(work, root, options)
     reserved = reserved or {}
     local function available(path)

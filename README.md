@@ -1,18 +1,18 @@
 # AO3Lib for KOReader
 
-An unofficial plugin for browsing, downloading, and reading works from Archive of Our Own. This fork of [IntrovertedMage's original plugin](https://github.com/IntrovertedMage/AO3Downloader.koplugin) focuses on managing a local fanfiction library and integrating with Bookshelf.
+An unofficial plugin for browsing, downloading, and reading works from Archive of Our Own. This fork of [IntrovertedMage's original plugin](https://github.com/IntrovertedMage/AO3Downloader.koplugin) focuses on managing a local AO3 library and integrating with Bookshelf.
 
 ## Features
 
 - Search AO3 by tags or detailed filters, download by work ID, and browse authors, series, collections, and bookmarks.
-- Use an AO3 account for bookmarks, kudos, comments, and other account actions.
+- Bookmark works, give kudos, manage subscriptions, and read, write, and reply to comments.
 - Discover downloaded AO3 EPUBs in the configured download folder and KOReader home folder, and browse them offline by author or fandom.
-- Download into `Author/Title` folders, or organize existing downloads while preserving reading progress and associated book data.
+- Organize existing downloads while preserving reading progress and associated work data.
 - Review available updates before replacing downloaded EPUBs, with reading progress preserved.
 - Optionally convert HTML downloads to EPUB when native downloads are unavailable, and replace conversions with native EPUBs later.
-- Access AO3 metadata and filters from Bookshelf book details, with AO3 symbol placeholders for books without covers.
+- Access AO3 metadata and filters from Bookshelf work details, with AO3 symbol placeholders for works without covers.
 
-AO3 works are identified from metadata inside their EPUBs, including books downloaded outside this plugin. Local reading and library browsing remain available when AO3 is offline.
+AO3 works are identified from metadata inside their EPUBs, including works downloaded outside this plugin. Local reading and library browsing remain available when AO3 is offline.
 
 ## Install
 

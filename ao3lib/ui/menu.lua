@@ -94,7 +94,7 @@ function FanficMenu:show(fanfic)
                 end,
             },
             {
-                text = "\u{2193} View downloaded fanfics",
+                text = "\u{2193} View downloaded works",
                 callback = function()
                     self:onViewDownloadedFanfics()
                 end,

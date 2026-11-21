@@ -108,7 +108,7 @@ local function isOpen(path)
     return parked and Park.parkedFile and Park.parkedFile()==path
 end
 local function sourceUnchanged(entry)
-    if isOpen(entry.work.path) then return nil, _("Close this book before updating it.") end
+    if isOpen(entry.work.path) then return nil, _("Close this work before updating it.") end
     if not same(entry.fingerprint, fingerprint(entry.work.path)) then
         return nil, _("The EPUB changed since it was checked. Check this work again before updating.")
     end
@@ -123,7 +123,7 @@ function M.apply(entry)
     if not unchanged then return failure(err) end
     if entry.native_only then
         local local_work=Epub.read(entry.work.path)
-        if not local_work or not local_work._ao3_html_conversion then return failure(_("This book is no longer an HTML conversion.")) end
+        if not local_work or not local_work._ao3_html_conversion then return failure(_("This work is no longer an HTML conversion.")) end
         if not entry.remote.epub_link then return failure(_("Native EPUB download is not available yet.")) end
     end
     local remote, old = entry.remote, History.get(entry.work.id) or util.tableDeepCopy(entry.work)

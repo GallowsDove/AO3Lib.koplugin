@@ -444,7 +444,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
 
     -- Create the KeyValuePage
     self.browse_window = BrowseWindow:new({
-        title = title or T("(%1) Tap fanfic title to download", total_fic_count or "ERROR"),
+        title = title or T("(%1) Tap work title to download", total_fic_count or "ERROR"),
         title_bar_left_icon = require("ao3lib.ui.icons").name,
         title_bar_fm_style = true,
         is_popout = false,

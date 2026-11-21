@@ -28,7 +28,7 @@ local function writeHistory(destination, temporary)
     if not content then return nil, encode_err end
     local file, err = io.open(temporary, "wb")
     if not file then
-        logger.err("Failed to save fanfic history:", err)
+        logger.err("Failed to save work history:", err)
         return nil, err
     end
 
@@ -37,7 +37,7 @@ local function writeHistory(destination, temporary)
     if not wrote or not closed then os.remove(temporary); return nil, write_err or close_err end
     local renamed, rename_err = os.rename(temporary, destination)
     if not renamed then os.remove(temporary); return nil, rename_err end
-    logger.dbg("Fanfic history saved successfully.")
+    logger.dbg("Work history saved successfully.")
     return true
 end
 
@@ -134,7 +134,7 @@ function DownloadedFanfics.load()
     if loaded_stamp == stamp then return end
     local file, err = io.open(history_file_path, "r")
     if not file then
-        logger.dbg("No fanfic history file found. Starting fresh.")
+        logger.dbg("No work history file found. Starting fresh.")
         loaded_stamp = stamp
         return
     end
@@ -144,7 +144,7 @@ function DownloadedFanfics.load()
 
     local history, _, err = json.decode(content)
     if not history then
-        logger.err("Failed to load fanfic history:", err)
+        logger.err("Failed to load work history:", err)
         return
     end
 
@@ -157,7 +157,7 @@ function DownloadedFanfics.load()
     downloaded_fanfics = history
     loaded_stamp = stamp
     revision = revision + 1
-    logger.dbg("Fanfic history loaded successfully.")
+    logger.dbg("Work history loaded successfully.")
 end
 
 -- Get all downloaded fanfics

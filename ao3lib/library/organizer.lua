@@ -37,7 +37,7 @@ end
 function M.fileOps()
     local ok, ops = pcall(require, "lib/bookshelf_file_ops")
     if not ok or type(ops) ~= 'table' or type(ops.moveBook) ~= 'function' or type(ops.inUsePaths) ~= 'function' then
-        return nil, "Enable Bookshelf and restart KOReader to organize books while preserving reading state."
+        return nil, "Enable Bookshelf and restart KOReader to organize works while preserving reading state."
     end
     return ops
 end
@@ -45,7 +45,7 @@ end
 function M.plan(works, root, options)
     local ops, err = M.fileOps()
     if not ops then return nil, err end
-    if type(root) ~= 'string' or root == '' then return nil, 'Set the fanfic folder first.' end
+    if type(root) ~= 'string' or root == '' then return nil, 'Set the work folder first.' end
     root = Layout.root(root)
     local paths, reserved = {}, {}
     for _, work in pairs(works) do paths[#paths+1] = work end
@@ -79,7 +79,7 @@ function M.describe(plan)
         plan.options.author_folders and 'Layout: Author/Title.epub (first listed author; account name when available).'
             or 'Layout: flat, using the filename template.',
         'AO3 IDs are added only to resolve filename or sidecar collisions.',
-        'Reading-state backups and a move journal are created before any book moves.',
+        'Reading-state backups and a move journal are created before any work moves.',
         '', tostring(#plan.moves) .. ' to move; ' .. tostring(#plan.skipped) .. ' skipped.', '',
     }
     for _, move in ipairs(plan.moves) do
@@ -159,9 +159,9 @@ end
 function M.execute(plan, progress)
     local ops, err = M.fileOps()
     if not ops then return nil, err end
-    if #plan.moves == 0 then return nil, 'There are no books to move.' end
+    if #plan.moves == 0 then return nil, 'There are no works to move.' end
     local ok, path = pcall(M.backup, plan)
-    if not ok then return nil, 'Backup failed; no books were moved: ' .. tostring(path) end
+    if not ok then return nil, 'Backup failed; no works were moved: ' .. tostring(path) end
     local summary = {moved=0, failed=0, skipped=0, journal=path, errors={}}
     plan.status = 'running'
     for index, move in ipairs(plan.moves) do
@@ -190,7 +190,7 @@ function M.execute(plan, progress)
                 if not DocSettings:hasSidecarFile(move.to) then
                     if ops.moveBook(move.to, move.from) then
                         moved = false
-                        error('Reading state could not be relocated; book returned to its original path')
+                        error('Reading state could not be relocated; work returned to its original path')
                     end
                     History.relocate(move.id, move.from, move.to, true)
                     error('Reading state needs recovery from the backup')
