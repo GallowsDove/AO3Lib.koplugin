@@ -36,6 +36,7 @@ function M.build(html, expected_id, fetch, base)
     assert(root and preface and chapters,'Incomplete AO3 HTML download')
     local subjects, dates, custom={'<dc:subject>Fanworks</dc:subject>'}, {}, {}
     local subject_groups={}
+    local series={}
     walk(preface,function(n)
         if n.tag=='h1' and not title then title=trim(plain(n)) end
         if n.tag=='a' and n.attrs.rel=='author' then authors[#authors+1]=trim(plain(n)) end
@@ -69,6 +70,9 @@ function M.build(html, expected_id, fetch, base)
                             if k=='Published' then dates[#dates+1]='<dc:date>'..v..'T00:00:00+00:00</dc:date>' end
                             custom[#custom+1]='<meta name="ao3:'..k:lower()..'" content="'..v..'"/>'
                         end
+                    elseif label=='Series' then
+                        series=require('ao3lib.library.epub').seriesFromHTML(XML.serialize(c))
+                        custom[#custom+1]='<meta name="ao3:series" content="'..value:gsub('"','&quot;')..'"/>'
                     elseif label~='Language' then
                         subject_groups[label]=subject_groups[label] or {}
                         walk(c,function(a) if a.tag=='a' then subject_groups[label][#subject_groups[label]+1]=trim(plain(a)) end end)
@@ -91,6 +95,15 @@ function M.build(html, expected_id, fetch, base)
     for _,label in ipairs({'Rating','Fandom','Fandoms','Relationship','Relationships','Character','Characters','Additional Tags','Category','Categories','Archive Warning','Archive Warnings'}) do
         for _,value in ipairs(subject_groups[label] or {}) do
             if not seen[value] then subjects[#subjects+1]='<dc:subject>'..value..'</dc:subject>';seen[value]=true end
+        end
+    end
+    -- EPUB 2 readers (including KOReader/Bookshelf) recognize Calibre's
+    -- embedded series fields. They support one primary series; every AO3
+    -- membership remains in the original preface for the plugin's links.
+    if series[1] then
+        custom[#custom+1]='<meta name="calibre:series" content="'..escape(series[1].title)..'"/>'
+        if tonumber(series[1].position) then
+            custom[#custom+1]='<meta name="calibre:series_index" content="'..escape(series[1].position)..'"/>'
         end
     end
     local files, manifest={}, {}

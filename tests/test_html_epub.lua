@@ -14,6 +14,17 @@ local calls=0
 local files=Converter.build(html,'123',function(url)
     assert(url=='https://example.test/image.png');calls=calls+1;return '\137PNG\13\10\26\10data'
 end)
+assert(not files['content.opf']:find('calibre:series',1,true),'Works without a series must not acquire one')
+local series_html=html:gsub('<dt>Stats:</dt>', [[<dt>Series:</dt><dd>Part 2.5 of <a href="/series/42">A &amp; &quot;B&quot;</a>,
+Part 3 of <a href="/series/99">Second series</a></dd><dt>Stats:</dt>]])
+local series_files=Converter.build(series_html,'123',function() return '\137PNG\13\10\26\10data' end)
+assert(series_files['content.opf']:find('<meta name="calibre:series" content="A &amp; &quot;B&quot;"/>',1,true))
+assert(series_files['content.opf']:find('<meta name="calibre:series_index" content="2.5"/>',1,true))
+local membership_count=0
+for _,bytes in pairs(series_files) do
+    if bytes:find('href="/series/99"',1,true) then membership_count=membership_count+1 end
+end
+assert(membership_count>0,'Additional memberships must remain in the preface')
 assert(calls==1)
 assert(files['content.opf']:find('<dc:title>Title &amp; more</dc:title>',1,true))
 assert(files['content.opf']:find('<dc:creator opf:file-as="two" opf:role="aut">Two</dc:creator>',1,true))

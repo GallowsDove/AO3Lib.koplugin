@@ -73,7 +73,7 @@ local function values(html)
     return out
 end
 
-local function seriesMemberships(html)
+function M.seriesFromHTML(html)
     local out,seen,previous={}, {},1
     for start,attrs,label,finish in html:gmatch("()<a(%s[^>]-)>(.-)</a%s*>()") do
         local href=text(attr(attrs,"href"))
@@ -129,7 +129,7 @@ local function metadata(id, preface, opf)
     for label, content in preface:gmatch("<dt[^>]*>(.-)</dt%s*>%s*<dd[^>]*>(.-)</dd%s*>") do
         label = text(label):lower():gsub(":$", "")
         if fields[label] then work[fields[label]] = values(content)
-        elseif label == "series" then work.series = seriesMemberships(content)
+        elseif label == "series" then work.series = M.seriesFromHTML(content)
         elseif label == "rating" then work.rating = text(content)
         elseif label == "category" or label == "categories" then
             work.categories = {}
