@@ -16,6 +16,10 @@ AO3 works are identified from metadata inside their EPUBs, including books downl
 
 ## Install
 
+The preferred method is to install **AO3Lib** through [Storefront](https://github.com/ultimatejimmy/storefront.koplugin) directly in KOReader.
+
+For manual installation:
+
 1. Download [the latest release](https://github.com/GallowsDove/AO3Lib.koplugin/releases/latest/download/AO3Lib.koplugin.zip).
 2. Extract the ZIP into KOReader's `plugins` directory. It contains the `AO3Lib.koplugin` folder.
 3. Restart KOReader, then open **AO3Lib** from the file manager's Search menu.
@@ -28,7 +32,7 @@ Typical plugin locations:
 | Kobo | `/mnt/onboard/.adds/koreader/plugins/` |
 | Android | `<koreader-dir>/plugins/` |
 
-To update, replace the plugin folder and restart KOReader. Bookshelf integration is optional and requires a compatible version of [Bookshelf](https://github.com/AndyHazz/bookshelf.koplugin).
+For manual updates, replace the plugin folder and restart KOReader. Bookshelf integration is optional and requires a compatible version of [Bookshelf](https://github.com/AndyHazz/bookshelf.koplugin).
 
 ## Credits
 
