@@ -46,9 +46,7 @@ function Fanfic:init()
     if not integrated then logger.warn("AO3 Bookshelf integration:", integration_err) end
     -- FileManager builds file_chooser after loading plugins. Register against
     -- its API now, rather than waiting for a widget that does not exist yet.
-    if type(self.ui.addFileDialogButtons) == "function" then
-        self:registerWorkDetailsAction()
-    end
+    self:registerWorkDetailsAction()
 end
 
 function Fanfic:onSuspend()
@@ -74,23 +72,44 @@ function Fanfic:onFlushSettings()
 end
 
 function Fanfic:registerWorkDetailsAction()
-    self.ui:addFileDialogButtons("ao3_work_details", function(file, is_file)
+    local function build(file,is_file)
         if not is_file then return end
-        local epub = require("ao3lib.library.epub").read(file)
+        local ok,epub=pcall(function() return require("ao3lib.library.epub").read(file) end)
+        if not ok then logger.warn("AO3 work action could not inspect EPUB:",file,epub);return end
         if not epub then return end
-        local work = DownloadedFanfics.rememberLocal(epub)
         return {{
-            text = _("Open AO3 work"),
-            callback = function()
-                -- Bookshelf also hosts this hook, with its book popup underneath.
+            text=_("Open AO3 work"),
+            callback=function()
                 if self.ui.file_dialog then UIManager:close(self.ui.file_dialog) end
-                -- The EPUB supplies details even without download history.
-                self:onShowFanficBrowser({ work, total = 1 }, nil,
-                    _("AO3 work details"))
+                -- Building a Bookshelf menu is read-only. Register the local
+                -- work only after the user actually chooses to open it.
+                local work=DownloadedFanfics.rememberLocal(epub)
+                self:onShowFanficBrowser({work,total=1},nil,_("AO3 work details"))
             end,
         }}
-    end)
+    end
+    local targets,seen={},{}
+    local function add(target)
+        if type(target)=='table' and type(target.addFileDialogButtons)=='function' and not seen[target] then
+            seen[target]=true;targets[#targets+1]=target
+        end
+    end
+    -- Bookshelf reads the active FileManager registry, or the class registry
+    -- when entered without a FileManager. Cover both reader-first startup and
+    -- hosts with their own per-instance button list.
+    local ok,FileManager=pcall(require,"apps/filemanager/filemanager")
+    if ok then add(FileManager);add(FileManager.instance) end
+    add(self.ui)
+    for _,target in ipairs(targets) do
+        target:addFileDialogButtons("ao3_work_details",build)
+        local rows=target.file_dialog_added_buttons
+        local index=rows and rows.index and rows.index.ao3_work_details
+        -- KOReader deduplicates IDs. Refresh the closure when plugins are
+        -- re-created, so callbacks do not retain a closed reader/FileManager.
+        if index then rows[index]=build end
+    end
 end
+
 
 function Fanfic:addToMainMenu(menu_items)
     if self.ui.file_chooser then
