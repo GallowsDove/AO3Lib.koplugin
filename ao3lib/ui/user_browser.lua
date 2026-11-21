@@ -121,6 +121,9 @@ function AO3UserBrowser:generateMenuTable()
     }
 
     table.insert(kv_pairs, bookmark_user_item)
+    table.insert(kv_pairs, {_("Manage author subscription"), "", callback=Network.wrap(function()
+        require("ao3lib.ui.subscriptions").manage(self.Fanfic,"User",self.userData.username,user_display_name)
+    end)})
 
     local pseuds_item = {
         "Other Pseuds:",
@@ -281,13 +284,7 @@ function AO3UserBrowser:openUserSeriesList()
                 series.title,
                 "",
                 callback = Network.wrap(function()
-                    local success, seriesWorks, fetchNextPage = self.Fanfic:getWorksFromSeries(series.id)
-                    if success == false then
-                        return
-                    end
-
-                    seriesWorks.total = series.work_count or 0
-                    self.Fanfic:onShowFanficBrowser(seriesWorks, fetchNextPage)
+                    require("ao3lib.ui.subscriptions").series(self.Fanfic,series.id,series.title,series.work_count)
                 end),
                 separator = true,
             })

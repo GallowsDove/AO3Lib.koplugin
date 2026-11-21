@@ -36,6 +36,13 @@ assert(window.title=='Downloaded Works' and #window.item_table==0 and window.lib
 local pending=jobs[#jobs]
 snapshot={['1']=a,['2']=b,['3']=c};pending.done(snapshot)
 assert(window.library_model.total==3 and #window.item_table==3)
+local AccountActions=require('ao3lib.ui.work_account_actions')
+local originalAccountShow=AccountActions.show
+local heldWork
+AccountActions.show=function(work) heldWork=work end
+window.item_table[1].hold_callback()
+assert(heldWork==window.item_table[1].work)
+AccountActions.show=originalAccountShow
 for _,row in ipairs(window.item_table) do assert(row.work,'Only work rows belong in the list') end
 assert(window.item_table[1].text:find('12,345 words',1,true))
 assert(window.item_table[1].text:find('First  —  by Writer · Read',1,true),
@@ -139,6 +146,7 @@ local series_opened
 plugin.getWorksFromSeries=function(_,id) assert(id=='42');return true,{{id='member',title='Member'}} end
 plugin.onShowFanficBrowser=function(_,works,_,title) series_opened={works=works,title=title} end
 series_rows[3].callback()
+actions.buttons[1][1].callback()
 assert(series_opened.title=='Series title' and series_opened.works[1].id=='member')
 Network.run=run
 local html,links=WorkView.html(series_work,series_rows,{summary_html=true})

@@ -56,6 +56,7 @@ function M.back(window)
     if not frame then return true end
     if frame.options.back and frame.options.back() then
         M.update(window)
+        UI:setDirty(nil, "ui")
         return true
     end
     M.release(window)
@@ -126,7 +127,12 @@ function M.bind(owner, window, options)
     local closed = window.onCloseWidget
     window.onCloseWidget = function(self, ...)
         M.release(self)
-        if closed then return closed(self, ...) end
+        local result
+        if closed then result=closed(self, ...) end
+        -- KeyValuePage closes without invalidating the exposed parent. Mark
+        -- the screen dirty after removal so e-ink devices repaint on Back.
+        UI:setDirty(nil, "ui")
+        return result
     end
     M.update(window)
     return window

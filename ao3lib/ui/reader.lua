@@ -45,6 +45,200 @@ function FanficReader:isActiveReader(ui)
         and self.current_fanfic and ui.document.file == self.current_fanfic.path
 end
 
+function FanficReader:saveAccountState(fields)
+    if not self.account_only then
+        DownloadedFanfics.update(self.current_fanfic, false)
+        return
+    end
+    local stored=DownloadedFanfics.checkIfStored(self.current_fanfic.id)
+    if stored then
+        for _,key in ipairs(fields) do
+            stored[key]=self.current_fanfic[key]
+        end
+        DownloadedFanfics.update(stored, false)
+    end
+end
+
+function FanficReader:workManagementButtons(close)
+    return {
+                {
+                    {
+                        text = self.current_fanfic.markedForLater and "Mark as read" or "Mark for later",
+                        callback = Network.wrap(function()
+
+                            local request_result = AO3LibClient:markForLaterWork(self.current_fanfic.id,
+                                self.current_fanfic.markedForLater)
+
+                            if request_result.success then
+                                self.current_fanfic.markedForLater = not self.current_fanfic.markedForLater
+                                self:saveAccountState({"markedForLater"})
+                                UIManager:show(InfoMessage:new({
+                                    text = self.current_fanfic.markedForLater and "Fanfic Marked for Later" or
+                                        "Fanfic Marked as Read",
+                                }))
+                            else
+                                UIManager:show(InfoMessage:new({
+                                    text = "Error: " .. request_result.error,
+                                }))
+                            end
+
+                            close()
+                        end),
+                    }
+                    },
+                    {
+                        {
+                            text = self.current_fanfic.subscriptionID and "Unsubscribe from work" or "Subscribe to work",
+                            callback = Network.wrap(function()
+
+                                local request_result = AO3LibClient:setWorkSubscription(self.current_fanfic.id,
+                                    self.current_fanfic.subscriptionID)
+                                if request_result.success then
+                                    if request_result.subscription_id then
+                                        self.current_fanfic.subscriptionID = request_result.subscription_id
+                                    else
+                                        self.current_fanfic.subscriptionID = false
+                                    end
+                                    self:saveAccountState({"subscriptionID"})
+
+                                    UIManager:show(InfoMessage:new({
+                                        text = self.current_fanfic.subscriptionID and "Subscribed to Fanfic" or
+                                        "Unsubscribed from Fanfic",
+                                    }))
+                                else
+                                    UIManager:show(InfoMessage:new({
+                                        text = "Error: " .. request_result.error .. (self.current_fanfic.subscriptionID or ""),
+                                    }))
+                                end
+
+                                close()
+                            end),
+                        }
+                    },
+                    {
+                        {
+                            text = self.current_fanfic.bookmarkID and "Edit Bookmark" or "Bookmark Work",
+                            callback = Network.wrap(function()
+
+                                local request_result = AO3LibClient:getUsersWorkBookmark(self.current_fanfic.id)
+                                if  request_result.success then
+                                    self.current_fanfic.bookmarkContent = request_result.bookmark_data
+
+                                    if request_result.bookmark_id then
+                                        self.current_fanfic.bookmarkID = request_result.bookmark_id
+                                    else
+                                        self.current_fanfic.bookmarkID = false
+                                    end
+                                    self:saveAccountState({"bookmarkID","bookmarkContent"})
+
+                                else
+                                    local info_message = InfoMessage:new({
+                                        text = "Error: " .. request_result.error,
+                                    })
+                                    info_message[1].ignore = "height"
+                                    UIManager:show(info_message)
+                                    return
+                                end
+
+
+                                local fanficBookmark_dialog =  FanficBookmarkDialog:new({
+                                    current_fanfic = self.current_fanfic,
+                                    bookmark_notes_original = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.notes or nil,
+                                    bookmark_tags_original = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.tags or nil,
+                                    bookmark_collections_original = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.collections or nil,
+                                    bookmark_private = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.private or false,
+                                    bookmark_rec = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.rec or false,
+                                    save_dialog_callback = function(bookmark_data)
+
+                                        local request_result = AO3LibClient:updateBookmark(
+                                            self.current_fanfic.id,
+                                            self.current_fanfic.bookmarkID,
+                                            bookmark_data.notes,
+                                            bookmark_data.tags,
+                                            bookmark_data.collections,
+                                            bookmark_data.private,
+                                            bookmark_data.rec
+                                        )
+
+                                        if request_result.success then
+                                            local originalBMID = self.current_fanfic.bookmarkID
+
+                                            self.current_fanfic.bookmarkContent = bookmark_data
+
+                                            if request_result.bookmark_id then
+                                                self.current_fanfic.bookmarkID = request_result.bookmark_id
+                                            else
+                                                self.current_fanfic.bookmarkID = false
+                                            end
+                                            self:saveAccountState({"bookmarkID","bookmarkContent"})
+
+                                            UIManager:show(InfoMessage:new({
+                                                text = originalBMID and "Updated Bookmark" or "Created Bookmark",
+                                            }))
+                                            return true
+                                        else
+                                            logger.dbg("Error saving bookmark: " .. request_result.error)
+                                            UIManager:show(InfoMessage:new({
+                                                text = "Error: " .. request_result.error,
+                                            }))
+                                            return false
+                                        end
+
+                                    end,
+                                    delete_dialog_callback = function()
+
+                                        local request_result = AO3LibClient:deleteBookmark(self.current_fanfic.bookmarkID)
+
+                                        if request_result.success then
+                                            self.current_fanfic.bookmarkID = false
+                                            self.current_fanfic.bookmarkContent = {}
+                                            self:saveAccountState({"bookmarkID","bookmarkContent"})
+
+                                            UIManager:show(InfoMessage:new({
+                                                text = "Deleted Bookmark",
+                                            }))
+                                            return true
+                                        else
+                                            logger.dbg("Error deleting bookmark: " .. request_result.error)
+                                            UIManager:show(InfoMessage:new({
+                                                text = "Error: " .. request_result.error,
+                                            }))
+                                            return false
+                                        end
+
+                                    end,
+
+                                    search_collections_callback = function(collection_name)
+
+
+                                        local request_result = AO3LibClient:searchForCollections(collection_name)
+
+                                        if request_result.success then
+                                            return request_result.collections
+                                        else
+                                            logger.dbg("Error searching collections: " .. request_result.error)
+                                            UIManager:show(InfoMessage:new({
+                                                text = "Error: " .. request_result.error,
+                                            }))
+                                            return nil
+                                        end
+                                    end
+
+                                })
+                                fanficBookmark_dialog.close_widget_callback = function()
+                                    UIManager:close(fanficBookmark_dialog)
+                                end
+                                UIManager:show(fanficBookmark_dialog)
+                                fanficBookmark_dialog:onShowKeyboard()
+
+                                close()
+
+                            end)
+                        }
+                    }
+                }
+end
+
 function FanficReader:addToMainMenu(menu_items)
     if not self.current_fanfic then return end
     menu_items.AO3_formatting = {
@@ -109,193 +303,15 @@ function FanficReader:addToMainMenu(menu_items)
     end
 
     menu_items.AO3_manage_work = {
-        text = "Manage work",
-        sorting_hint = "main",
-        keep_menu_open = false,
+        text = "Manage work", sorting_hint = "main", keep_menu_open = false,
         callback = function()
             local dialog
-            dialog = ButtonDialog:new({
-                title = T("Options for '%1'", self.current_fanfic.title),
-                buttons = {
-                {
-                    {
-                        text = self.current_fanfic.markedForLater and "Mark as read" or "Mark for later",
-                        callback = Network.wrap(function()
-
-                            local request_result = AO3LibClient:markForLaterWork(self.current_fanfic.id,
-                                self.current_fanfic.markedForLater)
-
-                            if request_result.success then
-                                self.current_fanfic.markedForLater = not self.current_fanfic.markedForLater
-                                DownloadedFanfics.update(self.current_fanfic, false)
-                                UIManager:show(InfoMessage:new({
-                                    text = self.current_fanfic.markedForLater and "Fanfic Marked for Later" or
-                                        "Fanfic Marked as Read",
-                                }))
-                            else
-                                UIManager:show(InfoMessage:new({
-                                    text = "Error: " .. request_result.error,
-                                }))
-                            end
-
-                            UIManager:close(dialog)
-                        end),
-                    }
-                    },
-                    {
-                        {
-                            text = self.current_fanfic.subscriptionID and "Unsubscribe from work" or "Subscribe to work",
-                            callback = Network.wrap(function()
-
-                                local request_result = AO3LibClient:setWorkSubscription(self.current_fanfic.id,
-                                    self.current_fanfic.subscriptionID)
-                                if request_result.success then
-                                    if request_result.subscription_id then
-                                        self.current_fanfic.subscriptionID = request_result.subscription_id
-                                    else
-                                        self.current_fanfic.subscriptionID = false
-                                    end
-                                    DownloadedFanfics.update(self.current_fanfic, false)
-
-                                    UIManager:show(InfoMessage:new({
-                                        text = self.current_fanfic.subscriptionID and "Subscribed to Fanfic" or
-                                        "Unsubscribed from Fanfic",
-                                    }))
-                                else
-                                    UIManager:show(InfoMessage:new({
-                                        text = "Error: " .. request_result.error .. (self.current_fanfic.subscriptionID or ""),
-                                    }))
-                                end
-
-                                UIManager:close(dialog)
-                            end),
-                        }
-                    },
-                    {
-                        {
-                            text = self.current_fanfic.bookmarkID and "Edit Bookmark" or "Bookmark Work",
-                            callback = Network.wrap(function()
-
-                                local request_result = AO3LibClient:getUsersWorkBookmark(self.current_fanfic.id)
-                                if  request_result.success then
-                                    self.current_fanfic.bookmarkContent = request_result.bookmark_data
-
-                                    if request_result.bookmark_id then
-                                        self.current_fanfic.bookmarkID = request_result.bookmark_id
-                                    else
-                                        self.current_fanfic.bookmarkID = false
-                                    end
-                                    DownloadedFanfics.update(self.current_fanfic, false)
-
-                                else
-                                    local info_message = InfoMessage:new({
-                                        text = "Error: " .. request_result.error,
-                                    })
-                                    info_message[1].ignore = "height"
-                                    UIManager:show(info_message)
-                                    return
-                                end
-
-
-                                local fanficBookmark_dialog =  FanficBookmarkDialog:new({
-                                    current_fanfic = self.current_fanfic,
-                                    bookmark_notes_original = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.notes or nil,
-                                    bookmark_tags_original = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.tags or nil,
-                                    bookmark_collections_original = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.collections or nil,
-                                    bookmark_private = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.private or false,
-                                    bookmark_rec = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.rec or false,
-                                    save_dialog_callback = function(bookmark_data)
-
-                                        local request_result = AO3LibClient:updateBookmark(
-                                            self.current_fanfic.id,
-                                            self.current_fanfic.bookmarkID,
-                                            bookmark_data.notes,
-                                            bookmark_data.tags,
-                                            bookmark_data.collections,
-                                            bookmark_data.private,
-                                            bookmark_data.rec
-                                        )
-
-                                        if request_result.success then
-                                            local originalBMID = self.current_fanfic.bookmarkID
-
-                                            self.current_fanfic.bookmarkContent = bookmark_data
-
-                                            if request_result.bookmark_id then
-                                                self.current_fanfic.bookmarkID = request_result.bookmark_id
-                                            else
-                                                self.current_fanfic.bookmarkID = false
-                                            end
-                                            DownloadedFanfics.update(self.current_fanfic, false)
-
-                                            UIManager:show(InfoMessage:new({
-                                                text = originalBMID and "Updated Bookmark" or "Created Bookmark",
-                                            }))
-                                            return true
-                                        else
-                                            logger.dbg("Error saving bookmark: " .. request_result.error)
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
-                                            return false
-                                        end
-
-                                    end,
-                                    delete_dialog_callback = function()
-
-                                        local request_result = AO3LibClient:deleteBookmark(self.current_fanfic.bookmarkID)
-
-                                        if request_result.success then
-                                            self.current_fanfic.bookmarkID = false
-                                            self.current_fanfic.bookmarkContent = {}
-                                            DownloadedFanfics.update(self.current_fanfic, false)
-
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Deleted Bookmark",
-                                            }))
-                                            return true
-                                        else
-                                            logger.dbg("Error deleting bookmark: " .. request_result.error)
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
-                                            return false
-                                        end
-
-                                    end,
-
-                                    search_collections_callback = function(collection_name)
-
-
-                                        local request_result = AO3LibClient:searchForCollections(collection_name)
-
-                                        if request_result.success then
-                                            return request_result.collections
-                                        else
-                                            logger.dbg("Error searching collections: " .. request_result.error)
-                                            UIManager:show(InfoMessage:new({
-                                                text = "Error: " .. request_result.error,
-                                            }))
-                                            return nil
-                                        end
-                                    end
-
-                                })
-                                fanficBookmark_dialog.close_widget_callback = function()
-                                    UIManager:close(fanficBookmark_dialog)
-                                end
-                                UIManager:show(fanficBookmark_dialog)
-                                fanficBookmark_dialog:onShowKeyboard()
-
-                                UIManager:close(dialog)
-
-                            end)
-                        }
-                    }
-                },
-            })
+            dialog=ButtonDialog:new{
+                title=T("Options for '%1'",self.current_fanfic.title),
+                buttons=self:workManagementButtons(function() UIManager:close(dialog) end),
+            }
             UIManager:show(dialog)
-        end
+        end,
     }
     menu_items.AO3Lib_kudos_work = {
         text = "Give kudos to work ♥",

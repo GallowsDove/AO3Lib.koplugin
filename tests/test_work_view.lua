@@ -16,7 +16,12 @@ assert(html:find('category-slash.png',1,true) and html:find('rating-explicit.png
     and html:find('warning-no.png',1,true) and html:find('complete-no.png',1,true))
 assert(html:find('#2 Series',1,true) and html:find('First tag</span>',1,true) and html:find('Second tag</span>',1,true))
 assert(html:find('Work in progress',1,true)<html:find('Additional tags',1,true))
+local series_dialog
+local UI=require('ui/uimanager');local original_show=UI.show
+UI.show=function(self,w) series_dialog=w;return original_show(self,w) end
 assert(#actions==3);actions[2]();actions[3]()
+series_dialog.buttons[1][1].callback()
+UI.show=original_show
 assert(authors==1 and series==1)
 -- Paging is lazy; closed or superseded views cannot consume a network result.
 local pending,fetches,presented=nil,0,{}

@@ -61,11 +61,14 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         title_item = {
             title,
             "",
+            hold_callback = function()
+                require("ao3lib.ui.work_account_actions").show(v)
+            end,
             callback = function()
                 local downloadedFanfic = isDownloaded(v.id)
                 if downloadedFanfic then
                     require("ao3lib.ui.work_actions").show(self.Fanfic, downloadedFanfic, {
-                        details=v,
+                        hide_details=true, -- The browser already displays this work's details.
                         refresh=function()
                             if self.browse_window and not self.browse_window._ao3_closed then
                                 self.browse_window:reload()
@@ -158,10 +161,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         end
         if #memberships>0 then
             local function openSeries(series)
-                local success,works,fetchNextPage=self.Fanfic:getWorksFromSeries(series.id)
-                if success and works then
-                    self.Fanfic:onShowFanficBrowser(works,fetchNextPage,series.title)
-                end
+                require("ao3lib.ui.subscriptions").series(self.Fanfic,series.id,series.title)
             end
             local row={"     " .. _("Series:"),table.concat(labels,"; ")}
             if #memberships==1 then

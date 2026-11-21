@@ -1434,8 +1434,13 @@ function AO3LibClient:markForLaterWork(work_id, later_or_read)
     }
 end
 
-function AO3LibClient:setWorkSubscription(work_id, subscription_id)
-    logger.dbg("AO3Lib.koplugin: Setting subscription. Work ID: " .. tostring(work_id))
+function AO3LibClient:setSubscription(kind, target_id, subscription_id)
+    if kind~="Work" and kind~="Series" and kind~="User" then
+        return {success=false,error="Invalid subscription type."}
+    end
+    if (not subscription_id and not tostring(target_id):match("^%d+$")) or (subscription_id and not tostring(subscription_id):match("^%d+$")) then
+        return {success=false,error="Invalid subscription ID."}
+    end
 
     local login_status = self:GetSessionStatus()
     if not login_status.success then
@@ -1471,17 +1476,10 @@ function AO3LibClient:setWorkSubscription(work_id, subscription_id)
 
         form = encodeHelper:generateParametersStringForm({
             ["authenticity_token"] = authenticity_token,
-            ["subscription[subscribable_id]"] = tostring(work_id),
-            ["subscription[subscribable_type]"] = "Work",
+            ["subscription[subscribable_id]"] = tostring(target_id),
+            ["subscription[subscribable_type]"] = kind,
         })
     else
-        if not subscription_id then
-            return {
-                success = false,
-                error = T("Subscription ID required to unsubscribe."),
-            }
-        end
-
         url = T("%1/users/%2/subscriptions/%3",
             getAO3URL(),
             login_status.username,
@@ -1491,8 +1489,6 @@ function AO3LibClient:setWorkSubscription(work_id, subscription_id)
         form = encodeHelper:generateParametersStringForm({
             ["authenticity_token"] = authenticity_token,
             ["_method"] = "delete",
-            ["subscription[subscribable_id]"] = tostring(work_id),
-            ["subscription[subscribable_type]"] = "Work",
         })
     end
 
@@ -1532,16 +1528,61 @@ function AO3LibClient:setWorkSubscription(work_id, subscription_id)
             error = "AO3 returned an invalid subscription response. Please check the subscription before trying again.",
         }
     end
-    if result.success and (result.status == 302 or result.status == 200) then
-        return {
-            success = true
-        }
+    if subscription_id and result.success and result.status == 200 then
+        local decoded = require("dkjson").decode(response_text)
+        if type(decoded)=="table" and type(decoded.item_success_message)=="string" then
+            return {success=true}
+        end
+        return {success=false,error="AO3 returned an unexpected unsubscribe response. Please refresh subscriptions before trying again."}
     end
 
     return {
         success = false,
         error = result.error or T("Failed to update subscription. Status: %1", result.status or "unknown error"),
     }
+end
+
+-- Preserve the existing reader integration.
+function AO3LibClient:setWorkSubscription(work_id, subscription_id)
+    return self:setSubscription("Work", work_id, subscription_id)
+end
+
+function AO3LibClient:getSubscriptionTarget(kind, value)
+    local parser=require("ao3lib.ao3.subscriptions")
+    local path=parser.target(kind,value)
+    if not path then return {success=false,error="Invalid subscription target."} end
+    local status=self:GetSessionStatus()
+    if not status.success then return status end
+    if not status.logged_in then return {success=false,auth_required=true,error="Please sign in to manage subscriptions."} end
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..path,method="GET",sink=ltn12.sink.table(body)}
+    if not result.success then return result end
+    local target=parser.form(htmlparser.parse(table.concat(body)),kind)
+    if not target then return {success=false,error="AO3 did not return a subscription form. This account or item may not support subscriptions."} end
+    target.success=true
+    return target
+end
+
+function AO3LibClient:getSubscriptions(page_no, kind)
+    local filters={Work="works",Series="series",User="users"}
+    if kind and not filters[kind] then return {success=false,error="Invalid subscription filter."} end
+    local status=self:GetSessionStatus()
+    if not status.success then return status end
+    if not status.logged_in then return {success=false,auth_required=true,error="Please sign in to view subscriptions."} end
+    local page=math.max(1,math.floor(tonumber(page_no) or 1))
+    local url=getAO3URL().."/users/"..encodeHelper:urlEncode(status.username).."/subscriptions?page="..page
+    if kind then url=url.."&type="..filters[kind] end
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=url,method="GET",sink=ltn12.sink.table(body)}
+    if not result.success then return result end
+    return require("ao3lib.ao3.subscriptions").list(htmlparser.parse(table.concat(body)),
+        function(value) return encodeHelper:parseFromHTML(value) end,page)
+        or {success=false,error="AO3 returned an unexpected subscriptions page. Please try again later."}
+end
+
+-- Subscription lists include deleted items, which can still be unsubscribed.
+function AO3LibClient:deleteSubscription(subscription_id)
+    return self:setSubscription("Work", nil, subscription_id)
 end
 
 function AO3LibClient:getUsersWorkBookmark(work_id)
@@ -2864,6 +2905,7 @@ for name, selector in pairs(page_parsers) do
 end
 
 local payloads = {
+    getSubscriptions = "subscriptions",
     getUserData = "user_data", getWorkMetadata = "work_metadata", searchByParameters = "works",
     searchByTag = "result_works", searchForTags = "result_tags", getWorksFromSeries = "works",
     getWorksFromCollection = "works", getWorksFromUserPage = "works", getWorksFromAccountHistory = "works",

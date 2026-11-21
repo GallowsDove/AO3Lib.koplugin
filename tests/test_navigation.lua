@@ -7,7 +7,10 @@ package.loaded["ao3lib.ui.user_browser"] = nil -- test_network replaces show wit
 local Profile = require('ao3lib.ui.user_browser')
 local Browser = require('ao3lib.ui.work_browser')
 local visible, closed = {}, {}
-UI.setDirty = function() end
+local repaints={}
+UI.setDirty = function(_,widget,mode)
+    repaints[#repaints+1]={widget=widget,mode=mode}
+end
 UI.show = function(_, window) visible[window] = true end
 UI.close = function(_, window)
     visible[window] = nil
@@ -105,6 +108,24 @@ first.AO3UserWindow:onClose()
 assert(first.AO3UserWindow.title == 'First' and first.AO3UserWindow.show_page == 3)
 Nav.closeAll(owner)
 assert(#owner._ao3_navigation == 0 and next(owner.menu_stack) == nil)
+-- Profile closure must invalidate the exposed screen after the child has
+-- been removed, even when the native KeyValuePage close does not repaint.
+for _,back in ipairs({'onClose','onCloseWithKey','onHome'}) do
+    local parent=screen();Nav.bind(owner,parent);UI:show(parent)
+    local author={onClose=function(self) UI:close(self) end}
+    Nav.bind(owner,author);UI:show(author)
+    local dirty=UI.setDirty
+    local repainted=false
+    UI.setDirty=function(_,widget,mode)
+        assert(not visible[author], 'Display invalidation happened before the author screen closed')
+        assert(visible[parent] and widget==nil and mode=='ui')
+        repainted=true
+    end
+    author[back](author)
+    assert(repainted and #owner._ao3_navigation==1)
+    UI.setDirty=dirty
+    Nav.closeAll(owner)
+end
 print('PASS: root X; nested header/physical Back; menu/profile page restoration; view replacement; direct Bookshelf entry; independent author sessions; RTL arrows; complete teardown')
 
 -- Use KOReader's real visibility dispatch: Menu:updatePageInfo calls both of

@@ -2,6 +2,25 @@
 -- Bookshelf need not be installed, and remote markup is never executed.
 local _=require('gettext')
 local M={}
+-- HtmlBoxWidget exposes link hit-testing but has no held-link callback.
+-- Bind only this widget instance, using its current page and coordinates.
+function M.bindTitleHold(scroll,callback)
+    local box=scroll.htmlbox_widget
+    if not box then return end
+    box.ges_events=require('ao3lib.core.table').shallowCopy(box.ges_events)
+    box.ges_events.HoldAO3Title={require('ui/gesturerange'):new{
+        ges='hold',range=function() return box.dimen end,
+    }}
+    box.onHoldAO3Title=function(self,_,ges)
+        local pos=self:getPosFromAbsPos(ges.pos)
+        local link=pos and self:getLinkByPosition(pos)
+        if link and link.uri=='ao3-action:1' then
+            return callback() or false
+        end
+        return false
+    end
+end
+
 function M.baseTextSize()
     local size=tonumber(require('ao3lib.core.config'):readSetting('work_view_font_size',18)) or 18
     if size~=size then size=18 end
@@ -299,6 +318,11 @@ function M.show(browser,context)
                 local id=tonumber((link.uri or ''):match('^ao3%-action:(%d+)$'))
                 if id and self.actions[id] then self.actions[id]() end
             end}
+        M.bindTitleHold(scroll,function()
+            local title=self.rows and self.rows[1]
+            if title and title.hold_callback then title.hold_callback();return true end
+            return false
+        end)
         -- Page keys belong to work navigation. Remove only the scroller's
         -- physical-key bindings; its touch/swipe scrolling remains intact.
         if scroll.key_events then

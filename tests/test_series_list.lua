@@ -20,7 +20,13 @@ for _,row in ipairs(window.kv_pairs) do
     if row[1]=='Stats:' then stats=stats+1;assert(row[2]=='3 works · 84,250 words') end
 end
 assert(stats==1)
-window.kv_pairs[2].callback();assert(opened==1)
+local dialog
+local UI=require('ui/uimanager')
+local show=UI.show
+UI.show=function(self,w) dialog=w;return show(self,w) end
+window.kv_pairs[2].callback()
+assert(dialog.buttons[2][1].text=='Manage subscription')
+dialog.buttons[1][1].callback();assert(opened==1)
 -- Reduce row height while keeping the original text size and total space.
 window.item_height=80;window.items_per_page=10;window.items_font_size=22
 window:_populateItems()

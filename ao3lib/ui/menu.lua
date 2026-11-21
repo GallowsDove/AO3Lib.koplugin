@@ -270,7 +270,10 @@ function FanficMenu:onSearchFanficMenu()
     {text=_("Search work by ID"),callback=function() self:onShowFanficSearch() end},
     {text=_("Search for users"),callback=function() self:onSelectUserSearch() end},
     {text=_("Browse Account History"),callback=function() self:onSelectAccountHistory(false) end},
-    {text=_("Browse Account Marked for Later"),callback=function() self:onSelectAccountHistory(true) end}})
+    {text=_("Browse Account Marked for Later"),callback=function() self:onSelectAccountHistory(true) end},
+    {text=_("Browse Account Subscriptions"),callback=Network.wrap(function()
+        require("ao3lib.ui.subscriptions").show(self.fanfic)
+    end)}})
 end
 
 function FanficMenu:onShowFanficSearch()
