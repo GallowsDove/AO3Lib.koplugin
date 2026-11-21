@@ -7,9 +7,7 @@ local Event = require("ui/event")
 local DownloadedFanfics = require("ao3lib.library.history")
 local AO3LibClient = require("ao3lib.ao3.client")
 local InfoMessage = require("ui/widget/infomessage")
-local InputDialog = require("ui/widget/inputdialog")
 local ButtonDialog = require("ui/widget/buttondialog")
-local MultiInputDialog = require("ui/widget/multiinputdialog")
 local FanficBookmarkDialog = require("ao3lib.ui.bookmark_dialog")
 local logger = require("logger")
 
@@ -252,55 +250,20 @@ function FanficReader:addToMainMenu(menu_items)
             end},
         },
     }
-    local function showCommentDialog(chapter_index)
-        local chapter = self.current_fanfic.chapter_data and self.current_fanfic.chapter_data[chapter_index]
-        local chapter_id = chapter and chapter.id or nil
-        self.input_dialog = InputDialog:new({
-            title = "Type out your comment:",
-            input = "",
-            input_type = "text",
-            allow_newline = true,
-            buttons = {
-                {
-                    {
-                        text = "Cancel",
-                        id = "close",
-                        callback = function()
-                            UIManager:close(self.input_dialog)
-                        end,
-                    },
-                    {
-                        text = "Comment",
-                        is_enter_default = true,
-                        callback = Network.wrap(function()
-
-                            if self.input_dialog:getInputText() == "" then
-                                return
-                            end
-                            local request_result = AO3LibClient:commentOnWork(
-                                self.input_dialog:getInputText(),
-                                self.current_fanfic.id,
-                                chapter_id
-                            )
-                            if request_result.success then
-                                UIManager:show(InfoMessage:new({
-                                    text = "Successfuly commented on work",
-                                }))
-                                UIManager:close(self.input_dialog)
-                                return
-                            end
-
-                            UIManager:show(InfoMessage:new({
-                                text = "Error: " .. request_result.error,
-                            }))
-                        end),
-                    },
-                },
-            },
-        })
-        UIManager:show(self.input_dialog)
-        self.input_dialog:onShowKeyboard()
+    local function commentOwner()
+        self.comments_owner=self.plugin_owner or self.comments_owner or {ui=self._reader_ui,menu_stack={}}
+        return self.comments_owner
     end
+    local function showCommentDialog(chapter_index)
+        local chapter=self.current_fanfic.chapter_data and self.current_fanfic.chapter_data[chapter_index]
+        self.input_dialog=require("ao3lib.ui.comments").compose(commentOwner(),self.current_fanfic,{
+            chapter_id=chapter and chapter.id,chapter_name=chapter and chapter.name,
+        })
+    end
+    menu_items.AO3Lib_read_comments={
+        text="Read comments",sorting_hint="main",keep_menu_open=false,
+        callback=Network.wrap(function() require("ao3lib.ui.comments").show(commentOwner(),self.current_fanfic) end),
+    }
 
     menu_items.AO3_manage_work = {
         text = "Manage work", sorting_hint = "main", keep_menu_open = false,

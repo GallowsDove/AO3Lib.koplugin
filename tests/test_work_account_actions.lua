@@ -27,7 +27,7 @@ local function menu()
     for _,row in ipairs(dialog.buttons) do
         for _,button in ipairs(row) do labels[button.text]=true end
     end
-    assert(labels['Give kudos to work ♥'] and labels['Comment on work'] and labels['Bookmark Work'])
+    assert(labels['Give kudos to work ♥'] and labels['Read comments'] and labels['Comment on work'] and labels['Bookmark Work'])
     assert(not labels['Delete local copy'] and not labels['Open for reading'] and not labels['Check for updates'])
     return dialog
 end
@@ -63,3 +63,15 @@ rows=Browser:generateTable({}, {work},function() end,function() end)
 rows[1].hold_callback()
 assert(shown.buttons[1][1].text=='Mark as read')
 print('PASS: account-only title menu; subscribe/unsubscribe with live IDs; stale state and outages; remote-only actions; preserving downloaded state; unchanged short tap')
+
+local Comments=require('ao3lib.ui.comments')
+local showComments=Comments.show
+local commentOwner,commentWork
+Comments.show=function(owner,work) commentOwner,commentWork=owner,work end
+local owner={menu_stack={}}
+local account=Actions.show(work,owner)
+for _,row in ipairs(account.buttons) do
+    if row[1].text=='Read comments' then row[1].callback() end
+end
+assert(commentOwner==owner and commentWork==work)
+Comments.show=showComments

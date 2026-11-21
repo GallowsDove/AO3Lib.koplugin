@@ -31,6 +31,7 @@ function Fanfic:init()
     require("ao3lib.library.delete_hooks").install()
     DownloadedFanfics.load() -- Reader activation needs saved chapter progress.
     if self.ui.name == "ReaderUI" then
+        FanficReader.plugin_owner=self
         FanficReader:initializeFromReaderUI(self.ui)
     else
         self.ui.menu:registerToMainMenu(self)

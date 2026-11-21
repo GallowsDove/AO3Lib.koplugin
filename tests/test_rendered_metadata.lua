@@ -12,7 +12,7 @@ assert(section(rendered,'summary')==section(browsing,'summary'),'Stored HTML and
 assert(not rendered:find('&lt;p&gt;',1,true) and rendered:find('First &amp; second.',1,true))
 assert(section(rendered,'tag%-group additional')==section(browsing,'tag%-group additional'),
     'Whitespace in EPUB tag metadata must not change chip spacing')
-assert(not section(rendered,'tag%-group additional'):find('&#160;',1,true) and not rendered:find(' Hits',1,true))
+assert(section(rendered,'tag%-group additional'):find('One tag</span>&#160;&#183; <span class="chip">Another tag',1,true) and not rendered:find(' Hits',1,true))
 assert(not rendered:find('class="footnote"',1,true),'Unknown counters must not create a footer')
 local_work.hits=0;local_work.kudos='12345';local_work.updated='2026-11-21'
 rendered=View.html(local_work,rows(local_work),{summary_html=true})

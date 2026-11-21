@@ -197,7 +197,7 @@ function M.show(plugin)
             else status=_('Unread') end
             if work.wordcount or work.words then status=status..' · '..Format.integer(work.words or work.wordcount)..' '.._('words') end
             rows[#rows+1]={text=(work.title or work.path)..'  —  '.._('by ')..(work.author or _('Anonymous'))..' · '..status,id=work.id,work=work,
-                hold_callback=function() require('ao3lib.ui.work_account_actions').show(work) end,
+                hold_callback=function() require('ao3lib.ui.work_account_actions').show(work,plugin) end,
                 callback=function()
                     require('ao3lib.ui.work_actions').show(plugin,work,workOptions(work))
                 end}

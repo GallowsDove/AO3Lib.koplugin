@@ -1248,125 +1248,94 @@ function AO3LibClient:kudosWork(work_id)
     }
 end
 
-function AO3LibClient:commentOnWork(comment_content, work_id, chapter_id)
-    logger.dbg("AO3Lib.koplugin: Posting comment on work. Work ID: " .. tostring(work_id) .. ", chapter ID: " .. tostring(chapter_id))
-
-    if not comment_content or comment_content == "" then
-        return {
-            success = false,
-            error = T("Comment content cannot be empty."),
-        }
+function AO3LibClient:getHiddenTags(work_id, kind)
+    if not tostring(work_id):match("^%d+$") or (kind~="warnings" and kind~="freeforms") then
+        return {success=false,error="Invalid tag request."}
     end
-
-    if comment_content:len() > 10000 then
-        return {
-            success = false,
-            error = T("Comment content exceeds maximum length of 10,000 characters."),
-        }
-    end
-
-    local login_status = self:GetSessionStatus()
-    if not login_status.success then
-        return {
-            success = false,
-            error = T("Failed to check login status: %1", login_status.error or "unknown error"),
-        }
-    end
-
-    if not login_status.logged_in then
-        return {
-            success = false,
-            auth_required = true,
-            error = T("User must be logged in to comment on works."),
-        }
-    end
-
-    local comment_url = getAO3URL()
-        .. ((chapter_id and ("/chapters/" .. chapter_id)) or ("/works/" .. work_id))
-        .. "/comments"
-
-    local response_body = {}
-
-    local request = {
-        url = comment_url,
-        method = "GET",
-        sink = ltn12.sink.table(response_body),
-        cookies = { ["view_adult"] = "true"}
+    local body={}
+    local headers=HTTPQueryHandler:get_default_headers()
+    headers.Accept="text/javascript"
+    -- Rails protects JavaScript GET responses from non-XHR requests too.
+    headers["X-Requested-With"]="XMLHttpRequest"
+    local result=HTTPQueryHandler:performHTTPRequest{
+        url=getAO3URL().."/tags/show_hidden.js?creation_type=Work&creation_id="..work_id.."&tag_type="..kind,
+        method="GET",headers=headers,sink=ltn12.sink.table(body),
     }
+    if not result.success then return result end
+    local fragment=require("ao3lib.ao3.hidden_tags").fragment(table.concat(body),tostring(work_id),kind)
+    if not fragment then return {success=false,error="AO3 did not return the hidden tags. Please try again later."} end
+    local links=htmlparser.parse(fragment):select("li."..kind.." a.tag")
+    local tags={}
+    for _,link in ipairs(links) do tags[#tags+1]=encodeHelper:parseFromHTML(link:getcontent()) end
+    if #tags==0 and fragment:find("%S") then return {success=false,error="AO3 returned unexpected tag data. Please try again later."} end
+    return {success=true,tags=tags}
+end
 
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = request_result.error or T("Failed to fetch comment comment form. Status: %1", request_result.status or "unknown error"),
-        }
+function AO3LibClient:getComments(work_id, chapter_id, page_no, thread_id)
+    local Parser=require("ao3lib.ao3.comments")
+    local path=Parser.path(work_id,chapter_id)
+    if thread_id then
+        if not tostring(thread_id):match("^%d+$") then return {success=false,error="Invalid comment ID."} end
+        path="/comments/"..thread_id
     end
-
-
-    local body = table.concat(response_body)
-    local html_root = htmlparser.parse(body)
-
-    local form = html_root:select("#comment_for_" .. (chapter_id or work_id))[1]
-    local token_field = form and form:select("[name='authenticity_token']")[1]
-    local pseud_field = form and form:select("[name='comment[pseud_id]']")[1]
-    local authenticity_token = token_field and token_field.attributes and token_field.attributes.value
-    local pseud_id = pseud_field and pseud_field.attributes and pseud_field.attributes.value
-
-    if not authenticity_token or not pseud_id then
-        return {
-            success = false,
-            error = T("Failed to retrieve necessary tokens for commenting from comment form."),
-        }
+    if not path then return {success=false,error="Invalid work or chapter ID."} end
+    local page=math.max(1,math.floor(tonumber(page_no) or 1))
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..path.."?show_comments=true&page="..page,
+        method="GET",sink=ltn12.sink.table(body),cookies={view_adult="true"}}
+    if not result.success then return result end
+    local root=htmlparser.parse(table.concat(body))
+    local parsed=Parser.list(root,function(value) return encodeHelper:parseFromHTML(value) end,page,thread_id)
+    if parsed then return parsed end
+    -- Header login forms also appear on public pages. Only an explicit login
+    -- form in the main content establishes that this request needs a session.
+    if root:select("body.logged-out")[1] then
+        for _,form in ipairs(root:select("#main form")) do
+            if form.attributes and form.attributes.action=="/users/login" then
+                return {success=false,auth_required=true,error="Please sign in to read these comments."}
+            end
+        end
     end
+    return {success=false,error="AO3 returned an unexpected comments page. Please try again later."}
+end
 
-    local headers = HTTPQueryHandler:get_default_headers()
-    headers["Content-Type"] = "application/x-www-form-urlencoded"
-    headers["Referer"] = comment_url
-
-    local custom_cookies = {
-        ["user_credentials"] = "1",
-        ["view_adult"] = "true",
-    }
-
-    local form_data  = encodeHelper:generateParametersStringForm({
-        ["authenticity_token"] = authenticity_token,
-        ["comment[pseud_id]"] = pseud_id,
-        ["comment[comment_content]"] = comment_content,
-        ["controller_name"] = "comments",
-        ["commit"] = "Comment",
+function AO3LibClient:commentOnWork(content, work_id, chapter_id, parent_id)
+    local Parser=require("ao3lib.ao3.comments")
+    local path=Parser.path(work_id,chapter_id,parent_id)
+    if not path then return {success=false,error="Invalid comment target."} end
+    if type(content)~="string" or not content:find("%S") then return {success=false,error="Comment content cannot be empty."} end
+    if #content:gsub("[\128-\191]", "")>10000 then return {success=false,error="Comment exceeds 10,000 characters."} end
+    local status=self:GetSessionStatus()
+    if not status.success then return status end
+    if not status.logged_in then return {success=false,auth_required=true,error="Please sign in to comment."} end
+    local body={}
+    -- Using the dedicated new form makes accepted posts redirect to /comments/ID,
+    -- including moderated posts. A redirect to login is never treated as success.
+    local form_url=getAO3URL()..path.."/new"
+    local fetched=HTTPQueryHandler:performHTTPRequest{url=form_url,method="GET",sink=ltn12.sink.table(body),cookies={view_adult="true"}}
+    if not fetched.success then return fetched end
+    local root=htmlparser.parse(table.concat(body))
+    local form=Parser.form(root,parent_id or chapter_id or work_id,path)
+    if not form then return {success=false,error="AO3 did not provide a comment form. Commenting may be disabled or unavailable."} end
+    local data=encodeHelper:generateParametersStringForm({
+        authenticity_token=form.token,["comment[pseud_id]"]=form.pseud_id,
+        ["comment[comment_content]"]=content,controller_name="comments",commit="Comment",
     })
-
-    headers["Content-Length"] = tostring(#form_data)
-
-    local request = {
-        url = comment_url,
-        method = "POST",
-        headers = headers,
-        sink = ltn12.sink.table(response_body),
-        source = ltn12.source.string(form_data),
-        cookies = custom_cookies,
-    }
-
-    local request_result = HTTPQueryHandler:performHTTPRequest(request)
-
-    if not request_result.success then
-        return {
-            success = false,
-            error = request_result.error or T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
-        }
+    local headers=HTTPQueryHandler:get_default_headers()
+    headers["Content-Type"]="application/x-www-form-urlencoded"
+    headers["Content-Length"]=tostring(#data)
+    headers.Referer=form_url
+    body={}
+    local posted=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..path,method="POST",headers=headers,
+        source=ltn12.source.string(data),sink=ltn12.sink.table(body),cookies={view_adult="true"}}
+    local location=posted.response_headers and posted.response_headers.location
+    local absolute=location and require("socket.url").absolute(getAO3URL(),location)
+    local id=absolute and absolute:match("^"..getAO3URL():gsub("(%W)","%%%1").."/comments/(%d+)$")
+    if posted.success and (posted.status==302 or posted.status==303) and id then return {success=true,comment_id=id} end
+    if not posted.success then
+        return {success=false,submission_uncertain=true,error=(posted.error or "Could not confirm the comment.").." Check comments before trying again; it may already have been posted."}
     end
-
-    if request_result.response == 1 then
-        return {
-            success = true,
-        }
-    end
-
-    return {
-        success = false;
-        error = request_result.error or T("Failed to post comment. Status: %1", request_result.status or "unknown error"),
-    }
+    return {success=false,error="AO3 did not confirm the comment. Your text has been kept. Check comments before trying again."}
 end
 
 function AO3LibClient:markForLaterWork(work_id, later_or_read)
@@ -1903,6 +1872,45 @@ function AO3WebParser:parseUserBookmarks(root)
 
 end
 
+-- Logged-in preferences can replace warning tags with a reveal control.
+-- Respect that control before considering any symbol tooltip fallback.
+function AO3WebParser:parseTagLinks(links)
+    local values,hidden={},false
+    for _,link in ipairs(links) do
+        if require("ao3lib.ao3.hidden_tags").isReveal(link) then hidden=true
+        else
+            local value=encodeHelper:parseFromHTML(link:getcontent())
+            if value~="" then values[#values+1]=value end
+        end
+    end
+    if hidden then return {},true end
+    return values,false
+end
+
+function AO3WebParser:parseArchiveWarnings(root, links)
+    local _,hidden=self:parseTagLinks(links)
+    if hidden then return {},true end
+    local out,seen={},{}
+    local function add(value)
+        value=encodeHelper:parseFromHTML(value):gsub("%s+"," "):match("^%s*(.-)%s*$")
+        if value~="" and not seen[value] then out[#out+1]=value;seen[value]=true end
+    end
+    for _,link in ipairs(links) do
+        local href=link.attributes and link.attributes.href or ""
+        local label=encodeHelper:parseFromHTML(link:getcontent())
+        if not href:find("/tags/show_hidden",1,true) and label~="Show warnings" then add(label) end
+    end
+    if #out==0 then
+        for _,symbol in ipairs(root:select(".required-tags .warnings")) do
+            local title=symbol.attributes and symbol.attributes.title
+            if title and title~="" then
+                for warning in title:gmatch("[^,]+") do add(warning) end
+            end
+        end
+    end
+    return out,false
+end
+
 function AO3WebParser:parseUserSeriesPage(root)
     local series_list = {}
     local elements = root:select("li.series")
@@ -1932,16 +1940,7 @@ function AO3WebParser:parseUserSeriesPage(root)
                 end
             end
 
-            local warningElements = element:select(".warnings > strong > a")
-
-            local warnings = {}
-
-            for _, warningElement in pairs(warningElements) do
-                local content = warningElement:getcontent()
-                if content then
-                    table.insert(warnings, encodeHelper:parseToCodepoints(content))
-                end
-            end
+            local warnings = self:parseArchiveWarnings(element, element:select(".warnings > strong > a"))
 
             local relationshipsElements = element:select(".relationships > a")
             local relationships = {}
@@ -2139,7 +2138,6 @@ function AO3WebParser:parseWorkElement(element)
     local tagsElement = element:select(".tags > .freeforms")
     local relationshipsElement = element:select(".tags > .relationships")
     local charactersElement = element:select(".tags > .characters")
-    local warningsElement = element:select(".tags > .warnings")
     local fandomsElement = element:select(".fandoms")[1]
     local dateElement = element:select(".datetime")[1]
     local languageElement = element:select("dd.language")[1]
@@ -2159,18 +2157,11 @@ function AO3WebParser:parseWorkElement(element)
         local id = tonumber(href:match("/works/(%d+)")) -- Extract the numeric ID and convert to number
         local isRestricted = restrictedElement and true or false -- Set to true if restrictedElement exists, otherwise false
 
-        -- Extract and clean tags
-        local tags = {}
-        if tagsElement then
-            for __, tagset in ipairs(tagsElement) do
-                for _, tag in ipairs(tagset:select("a")) do
-                    local content = encodeHelper:parseToCodepoints(tag:getcontent())
-                    if content then
-                        table.insert(tags, content)
-                    end
-                end
-            end
+        local tag_links={}
+        for _,tagset in ipairs(tagsElement or {}) do
+            for _,tag in ipairs(tagset:select("a")) do tag_links[#tag_links+1]=tag end
         end
+        local tags,tags_hidden=self:parseTagLinks(tag_links)
 
         -- Extract and clean relationships
         local relationships = {}
@@ -2198,18 +2189,7 @@ function AO3WebParser:parseWorkElement(element)
             end
         end
 
-        -- Extract and clean warnings
-        local warnings = {}
-        if warningsElement then
-            for __, warningset in ipairs(warningsElement) do
-                for _, warning in ipairs(warningset:select("strong > a")) do
-                    local content = encodeHelper:parseToCodepoints(warning:getcontent())
-                    if content then
-                        table.insert(warnings, content)
-                    end
-                end
-            end
-        end
+        local warnings,warnings_hidden = self:parseArchiveWarnings(element, element:select(".tags > .warnings strong > a"))
 
         -- Extract and clean fandoms
         local fandoms = {}
@@ -2275,6 +2255,8 @@ function AO3WebParser:parseWorkElement(element)
             series = self:parseWorkSeries(element),
             summary = summary,
             tags = tags,
+            tags_hidden = tags_hidden,
+            warnings_hidden = warnings_hidden,
             relationships = relationships or {},
             characters = characters or {},
             warnings = warnings or {},
@@ -2332,7 +2314,6 @@ function AO3WebParser:parseWorkPage(root)
     local tagsElement = root:select(".freeform > ul")[1]
     local relationshipsElement = root:select(".relationship > ul")[1]
     local charactersElement = root:select(".character > ul")[1]
-    local warningsElement = root:select(".warning > ul")[1]
     local epubElement = root:select(".download > .expandable > li > a")
     local ratingElement = root:select(".rating > ul > li > a")[1]
     local categoryElement = root:select(".category > ul > li > a")[1]
@@ -2404,15 +2385,7 @@ function AO3WebParser:parseWorkPage(root)
         end
     end
 
-    local tags = {}
-    if tagsElement then
-        for _, tag in ipairs(tagsElement:select("li > a")) do
-            local content = encodeHelper:parseToCodepoints(tag:getcontent())
-            if content then
-                table.insert(tags, content)
-            end
-        end
-    end
+    local tags,tags_hidden=self:parseTagLinks(tagsElement and tagsElement:select("a") or {})
 
     local relationships = {}
     if relationshipsElement then
@@ -2434,15 +2407,7 @@ function AO3WebParser:parseWorkPage(root)
         end
     end
 
-    local warnings = {}
-    if warningsElement then
-        for _, warning in ipairs(warningsElement:select("li > a")) do
-            local content = encodeHelper:parseToCodepoints(warning:getcontent())
-            if content then
-                table.insert(warnings, content)
-            end
-        end
-    end
+    local warnings,warnings_hidden = self:parseArchiveWarnings(root, root:select(".warning > ul a"))
 
     -- Extract additional metadata values
     local fandoms = {}
@@ -2519,6 +2484,8 @@ function AO3WebParser:parseWorkPage(root)
         relationships = relationships or {},
         characters = characters or {},
         warnings = warnings or {},
+        warnings_hidden = warnings_hidden,
+        tags_hidden = tags_hidden,
         fandoms = fandoms or {},
         published = publishedDate,
         updated = updatedDate,
@@ -2905,6 +2872,8 @@ for name, selector in pairs(page_parsers) do
 end
 
 local payloads = {
+    getHiddenTags = "tags",
+    getComments = "comments",
     getSubscriptions = "subscriptions",
     getUserData = "user_data", getWorkMetadata = "work_metadata", searchByParameters = "works",
     searchByTag = "result_works", searchForTags = "result_tags", getWorksFromSeries = "works",

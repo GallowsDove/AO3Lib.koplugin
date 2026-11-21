@@ -48,10 +48,12 @@ function M.html(work,rows,options)
         actions[#actions+1]=callback
         return '<a href="ao3-action:'..#actions..'">'..escape(label)..'</a>'
     end
-    local author,series
+    local author,series,warning_row,tag_row
     for __,row in ipairs(rows) do
         local label=row[1]:match('^%s*(.-):$')
         if label=='Author' then author=row end
+        if label=='Warnings' then warning_row=row end
+        if label=='Other Tags' then tag_row=row end
         if label==_('Series:'):sub(1,-2) then series=row end
     end
     local data=require('ao3lib.bookshelf.metadata').fromWork(work)
@@ -79,7 +81,9 @@ function M.html(work,rows,options)
     local advisory={'<span class="status">'..escape(status)..'</span>'}
     for __,field in ipairs({'rating','category','warnings'}) do
         local value=text(work[field])
-        if value~='' and value~='N/A' then advisory[#advisory+1]=escape(value) end
+        if field=='warnings' and work.warnings_hidden then
+            advisory[#advisory+1]=link(_('Show warnings'),warning_row and warning_row.callback)
+        elseif value~='' and value~='N/A' then advisory[#advisory+1]=escape(value) end
     end
     if #advisory>0 then out[#out+1]='<p class="advisory">'..table.concat(advisory,' &#183; ')..'</p>' end
     local summary=text(work.summary)
@@ -100,6 +104,11 @@ function M.html(work,rows,options)
     end
     out[#out+1]='<div class="summary">'..summary_body..'</div>'
     local function tags(field,label,class)
+        if field=='tags' and work.tags_hidden then
+            out[#out+1]='<div class="tag-group '..class..'"><p><span class="tag-heading">'..escape(label)..'</span> '
+                ..link(_('Show additional tags'),tag_row and tag_row.callback)..'</p></div>'
+            return
+        end
         local value=work[field]
         local values={}
         if type(value)=='table' then values=value
@@ -112,7 +121,7 @@ function M.html(work,rows,options)
             if item~='' and item~='N/A' then chips[#chips+1]='<span class="chip">'..escape(item)..'</span>' end
         end
         if #chips>0 then
-            out[#out+1]='<div class="tag-group '..class..'"><p><span class="tag-heading">'..escape(label)..'</span> '..table.concat(chips,' ')..'</p></div>'
+            out[#out+1]='<div class="tag-group '..class..'"><p><span class="tag-heading">'..escape(label)..'</span> '..table.concat(chips,'&#160;&#183; ')..'</p></div>'
         end
     end
     tags('relationships',_('Relationships'),'relationships')
@@ -150,7 +159,7 @@ table.badges { border-spacing: .1em; width: 3.6em; }
 table.badges td { width: 1.7em; height: 1.7em; }
 table.badges img { width: 1.7em; height: 1.7em; }
 .author { font-size: .95em; font-style: normal; margin: 0; }
-.author a, .series a { text-decoration: underline; }
+.author a, .series a, .advisory a, .tag-group a { text-decoration: underline; }
 .fandom { font-size: .82em; color: #111; margin: .2em 0 0; }
 .series { font-size: .9em; font-style: normal; margin: .25em 0; }
 .work-facts { font-size: .85em; margin: .35em 0 .2em; }
@@ -160,7 +169,7 @@ table.badges img { width: 1.7em; height: 1.7em; }
 .summary p { margin: .4em 0; }
 .tag-group { margin: .3em 0; }
 .tag-group p { font-size: .85em; line-height: 1.4; }
-.chip { background-color: #fff; border-bottom: 1px solid #777; padding: .03em .15em; margin-right: .25em; }
+.chip { background-color: #fff; border-bottom: 1px solid #777; padding: .03em .15em; }
 .relationships .chip { font-style: normal; }
 .footnote { border-top: 1px solid #777; margin-top: 1.1em; padding-top: .4em; font-size: .72em; color: #111; }
 .footnote b { color: #000; }

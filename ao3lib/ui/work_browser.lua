@@ -62,7 +62,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             title,
             "",
             hold_callback = function()
-                require("ao3lib.ui.work_account_actions").show(v)
+                require("ao3lib.ui.work_account_actions").show(v,self.Fanfic)
             end,
             callback = function()
                 local downloadedFanfic = isDownloaded(v.id)
@@ -192,10 +192,23 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             { "     " .. "Fandom:", #v.fandoms > 0 and table.concat(v.fandoms, ", ") or "No fandoms available" }
         )
         table.insert(kv_pairs, { "     " .. "Date:", v.date or v.updated or v.published })
-        table.insert(
-            kv_pairs,
-            { "     " .. "Warnings:", #v.warnings > 0 and table.concat(v.warnings, ", ") or "No warnings available" }
-        )
+        local function tagRow(label,field,kind,empty)
+            local hidden=v[field.."_hidden"]
+            local row={"     "..label,hidden and (kind=="warnings" and _("Show warnings") or _("Show additional tags"))
+                or (#v[field]>0 and table.concat(v[field],", ") or empty)}
+            if hidden then
+                row.callback=Network.wrap(function()
+                    local window=self.browse_window
+                    local result=require("ao3lib.ao3.client"):getHiddenTags(v.id,kind)
+                    if not result.success then UIManager:show(InfoMessage:new{text=result.error});return end
+                    v[field]=result.tags;v[field.."_hidden"]=false
+                    if window and not window._ao3_closed and self.browse_window==window then window:reload() end
+                end)
+            end
+            return row
+        end
+        table.insert(kv_pairs,tagRow("Warnings:","warnings","warnings","No warnings available"))
+
         table.insert(kv_pairs, {
             "     " .. "Relationships:",
             "("
@@ -207,10 +220,8 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             "     " .. "Characters:",
             #v.characters > 0 and table.concat(v.characters, ", ") or "No characters available",
         })
-        table.insert(
-            kv_pairs,
-            { "     " .. "Other Tags:", #v.tags > 0 and table.concat(v.tags, ", ") or "No tags available" }
-        )
+        table.insert(kv_pairs,tagRow("Other Tags:","tags","freeforms","No tags available"))
+
         table.insert(kv_pairs, { "     " .. "Summary:", v.summary })
         table.insert(kv_pairs, { "     " .. "Language:", v.language })
         table.insert(kv_pairs, { "     " .. "Words:", require("ao3lib.core.format").integer(v.words or v.wordcount) })

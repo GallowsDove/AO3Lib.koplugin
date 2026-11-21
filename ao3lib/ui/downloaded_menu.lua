@@ -123,7 +123,7 @@ function DownloadedFanficsMenu:show(ui, parentMenu, updateFanficCallback, Fanfic
                         table.insert(submenu_items, {
                             text = T("%1 (%2) %3 by %4",prefix, fanfic.chapters, fanfic.title, fanfic.author ~= "" and fanfic.author or "anonymous"),
                             id = fanfic.id,
-                            hold_callback = function() require("ao3lib.ui.work_account_actions").show(fanfic) end,
+                            hold_callback = function() require("ao3lib.ui.work_account_actions").show(fanfic,Fanfic) end,
                             callback = function()
                                 require("ao3lib.ui.work_actions").show(Fanfic, fanfic, {
                                     deleted=function()

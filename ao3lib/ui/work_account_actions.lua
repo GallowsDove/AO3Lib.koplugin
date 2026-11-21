@@ -5,12 +5,12 @@ local Info=require('ui/widget/infomessage')
 local Network=require('ao3lib.ao3.network')
 local _=require('gettext')
 local M={}
-function M.buttons(work,close)
+function M.buttons(work,close,owner)
     local Reader=require('ao3lib.ui.reader')
     local current=require('ao3lib.core.table').deepCopy(work)
     -- Browsing comments target the work. Reader menus still offer chapters.
     current.chapter_data=nil
-    local session=setmetatable({current_fanfic=current,account_only=true},{__index=Reader})
+    local session=setmetatable({current_fanfic=current,account_only=true,plugin_owner=owner},{__index=Reader})
     local rows=session:workManagementButtons(close)
     local intended_subscribe=not current.subscriptionID
     -- Never toggle based on a stale subscription ID from a cached work.
@@ -39,15 +39,18 @@ function M.buttons(work,close)
     end
     local menu={}
     session:addToMainMenu(menu)
-    for __,key in ipairs({'AO3Lib_kudos_work','AO3Lib_comment_work'}) do
+    menu.AO3Lib_read_comments.callback=Network.wrap(function()
+        require("ao3lib.ui.comments").show(owner,work)
+    end)
+    for __,key in ipairs({'AO3Lib_kudos_work','AO3Lib_read_comments','AO3Lib_comment_work'}) do
         local item=menu[key]
         rows[#rows+1]={{text=item.text,callback=function() close();item.callback() end}}
     end
     return rows
 end
-function M.show(work)
+function M.show(work,owner)
     local dialog
-    local rows=M.buttons(work,function() UI:close(dialog) end)
+    local rows=M.buttons(work,function() UI:close(dialog) end,owner)
     rows[#rows+1]={{text=_("Cancel"),callback=function() UI:close(dialog) end}}
     dialog=Buttons:new{title=work.title,buttons=rows}
     UI:show(dialog)
