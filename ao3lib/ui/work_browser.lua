@@ -324,19 +324,6 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             plugin=Fanfic,title=title,index=view_options.index,
             replacing=view_options.replacing,resume=resume})
     end
-    local function switchView()
-        local previous=self.browse_window
-        Config:saveSetting("formatted_work_view",true)
-        ficResults.total=total_fic_count
-        self:show(ui,ficResults,fetchNextPage,updateFanficCallback,downloadFanficCallback,
-            showAuthorInfoCallback,Fanfic,title,{index=previous and previous.show_page or 1,replacing=previous})
-        if previous then
-            previous._ao3_closed=true
-            Fanfic.menu_stack[previous]=nil
-            UIManager:close(previous)
-        end
-    end
-
     local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
     ficResults.total = nil
     local fanfics_loaded = ficResults
@@ -359,10 +346,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     })
     -- Override _populateItems to check if it's the last page and load more results
     BrowseWindow._populateItems = function(selfself)
-        local switch=require('ao3lib.ui.work_view_switch')
-        switch.restore(selfself)
         fitWorkPage(selfself)
-        switch.reserve(selfself,switchView)
         if fetchNextPage and selfself.show_page == selfself.pages then
             Network.run(function()
                 -- The user may have left this window while connecting.
@@ -381,7 +365,6 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
 
         -- Call the original _populateItems function
         KeyValuePage._populateItems(selfself)
-        switch.insert(selfself)
     end
 
     BrowseWindow.addNewFanfics = function(selfself, newFics)

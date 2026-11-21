@@ -141,7 +141,7 @@ assert(innerScrolls==1)
 old.window.page_buttons[4].callback()
 assert(old.index==2 and not old.closed and visible[old.window])
 assert(old.window~=nil and old.window==Browser.browse_window)
-assert(#old.window.page_buttons==5 and #old.window.layout==2)
+assert(#old.window.page_buttons==5 and #old.window.layout==1)
 assert(old.window.page_buttons[1].icon=='chevron.first' and old.window.page_buttons[2].icon=='chevron.left')
 assert(old.window.page_buttons[3].text=='Page 2 of 2' and old.window.page_buttons[3].text_font_face=='pgfont')
 assert(old.window.page_buttons[4].icon=='chevron.right' and old.window.page_buttons[5].icon=='chevron.last')
@@ -152,12 +152,8 @@ old.window.page_buttons[3].hold_input.callback('1');assert(old.index==1)
 old.window.page_buttons[3].hold_input.callback('999');assert(old.index==1)
 old.window.page_buttons[3].hold_input.callback('1.5');assert(old.index==1)
 old.window.page_buttons[3].hold_input.callback('2');assert(old.index==2)
-local new=old.window
-old.window.view_options_button.callback() -- Information list; preserve the current work.
-assert(not formatted and old.closed and not visible[new])
-assert(Browser.browse_window.show_page==2 and #Browser.browse_window.kv_pairs==30)
-Browser.browse_window.switch_work_view()
-assert(formatted and Browser.browse_window~=new and visible[Browser.browse_window])
+assert(not old.window.view_options_button and not old.window.switch_work_view,
+    'Browsing view selection belongs only in Settings')
 -- Page repainting and switching views must replace one navigation frame.
 assert(#plugin._ao3_navigation==1)
 local parentWindow=Browser.browse_window
@@ -215,7 +211,7 @@ Browser.browse_window:onClose()
 assert(not next(plugin.menu_stack))
 assert(html:find('class="work-facts"',1,true) and html:find('class="chip"',1,true))
 assert(not html:find('<b>Fandom:',1,true) and not html:find('<b>Rating:',1,true))
-print('PASS: physical page keys/repeats navigate works through native dispatcher; touch scrolling preserved; formatted HTML; escaping; local AO3 square; live author/series actions; lazy paging; Wi-Fi cancellation; failures/retry; close safety; layout; persisted view switching and work position')
+print('PASS: physical page keys/repeats navigate works through native dispatcher; touch scrolling preserved; formatted HTML; escaping; local AO3 square; live author/series actions; lazy paging; Wi-Fi cancellation; failures/retry; close safety; layout; settings-only view selection and work position')
 
 assert(not html:find('class="metrics"',1,true))
 assert(html:find('<b>12,345</b> words &#183; <b>2/?</b> chapters &#183; English',1,true))

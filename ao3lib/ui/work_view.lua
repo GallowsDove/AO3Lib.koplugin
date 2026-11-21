@@ -258,20 +258,13 @@ function M.show(browser,context)
             self.key_events.NextWork={{Device.input.group.PgFwd}}
             self.key_events.PreviousWork={{Device.input.group.PgBack}}
         end
-        local function list()
-            if context.list then context.list(self,state);return end
-            require('ao3lib.core.config'):saveSetting('formatted_work_view',false)
-            local works=state.works;works.total=state:pageCount()
-            browser:show(context.ui,works,context.fetch,context.update,context.download,
-                context.author,context.plugin,context.title,{index=state.index, replacing=self})
-            UI:close(self)
-        end
         local title=TitleBar:new{width=width,title=context.title or _('AO3 works'),
             left_icon='ao3',left_icon_tap_callback=function() require('ao3lib.ui.navigation').menu(self) end,close_callback=function() self:onClose() end}
         self.titlebar=title
-        local view_options=Button:new{text=context.list and _('View options…') or _('List view'),
-            width=width-2*padding,bordersize=0,show_parent=self,callback=list}
+        local view_options=context.list and Button:new{text=_('View options…'),
+            width=width-2*padding,bordersize=0,show_parent=self,callback=function() context.list(self,state) end}
         self.view_options_button=view_options
+        local options_height=view_options and view_options:getSize().h or 0
         -- Match KeyValuePage's borderless first/previous/page/next/last bar.
         -- The full result count includes works not downloaded into the UI
         -- cache yet; a jump fetches only its AO3 result batch.
@@ -299,7 +292,7 @@ function M.show(browser,context)
         local controls=Horizontal:new{first,Span:new{width=gap},previous,Span:new{width=gap},page,
             Span:new{width=gap},following,Span:new{width=gap},last}
         local scroll=Scroll:new{width=width-2*padding,
-            height=math.max(1,height-title:getHeight()-view_options:getSize().h-controls:getSize().h-2*padding),
+            height=math.max(1,height-title:getHeight()-options_height-controls:getSize().h-2*padding),
             html_body=self.html,css=M.css,html_resource_directory=require('ao3lib.ui.icons').file:match('^(.*[/\\])'),
             default_font_size=Screen:scaleBySize(M.baseTextSize()),dialog=self,
             html_link_tapped_callback=function(link)
@@ -312,12 +305,15 @@ function M.show(browser,context)
             scroll.key_events.ScrollDown=nil
             scroll.key_events.ScrollUp=nil
         end
+        local content=Vertical:new{title}
+        if view_options then
+            content[#content+1]=Center:new{dimen=Geom:new{w=width,h=options_height},view_options}
+        end
+        content[#content+1]=Frame:new{padding=padding,margin=0,bordersize=0,scroll}
+        content[#content+1]=Center:new{dimen=Geom:new{w=width,h=controls:getSize().h},controls}
         self[1]=Frame:new{padding=0,margin=0,bordersize=0,background=require('ffi/blitbuffer').COLOR_WHITE,
-            dimen=Geom:new{w=width,h=height},Vertical:new{title,
-                Center:new{dimen=Geom:new{w=width,h=view_options:getSize().h},view_options},
-                Frame:new{padding=padding,margin=0,bordersize=0,scroll},
-                Center:new{dimen=Geom:new{w=width,h=controls:getSize().h},controls}}}
-        self.layout={{view_options},self.page_buttons}
+            dimen=Geom:new{w=width,h=height},content}
+        self.layout=view_options and {{view_options},self.page_buttons} or {self.page_buttons}
     end
     context.rows=context.rows or function(work) return browser:generateTable({}, {work},context.update,context.download) end
     context.network=require('ao3lib.ao3.network').run

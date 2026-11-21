@@ -7,9 +7,9 @@ local visible=true
 UI.isWidgetShown=function() return visible end
 package.loaded['ui/widget/menu'].updateItems=function() end
 package.loaded['ao3lib.ui.update_review_header']={new=function() return {update=function(self,model) self.model=model end} end}
-local view_settings
+local view_settings,rendered_setting
 package.loaded['ao3lib.core.config'].saveSetting=function(_,key,value) if key=='downloaded_view' then view_settings=value end end
-package.loaded['ao3lib.core.config'].readSetting=function(_,key,default) if key=='downloaded_view' then return view_settings end;if key=='fanfic_folder_path' then return '/books' end;return default end
+package.loaded['ao3lib.core.config'].readSetting=function(_,key,default) if key=='downloaded_view' then return view_settings end;if key=='downloaded_rendered_view' and rendered_setting~=nil then return rendered_setting end;if key=='fanfic_folder_path' then return '/books' end;return default end
 package.loaded['apps/filemanager/filemanagerutil'].getHomeFolder=function() return '/home' end
 package.loaded['ao3lib.library.discovery']={scan=function() error('Opening a downloaded library must not start a directory scan') end}
 local snapshot,jobs=nil,{}
@@ -118,8 +118,9 @@ WorkView.show=function(_,context)
 end
 window.item_table[1].callback();actions.buttons[1][1].callback()
 assert(rendered_state and rendered_state.works[rendered_state.index].id=='1','List details should open the selected rendered work')
-option(8,2)
-assert(view_settings.display=='rendered' and #rendered_state.works==1 and rendered_state.works[1].id=='1')
+rendered_setting=true
+window._ao3_navigation.options.resume()
+assert(rendered_context and #rendered_state.works==1 and rendered_state.works[1].id=='1')
 assert(not rendered_context.fetch,'Rendered local works must never fetch AO3 pages')
 assert(rendered_context.summary_html,'EPUB summary markup must use the local summary normalizer')
 local local_rows=rendered_context.rows(rendered_state.works[1])
@@ -153,7 +154,9 @@ end end
 assert(opened.id=='1')
 assert(more_labels['Select chapter'] and more_labels['Check for updates'] and more_labels['Delete local copy'])
 rendered_context.list();assert(actions.title=='Downloaded works · View options')
-option(8,1);assert(view_settings.display=='list')
+rendered_setting=false
+window._ao3_navigation.options.resume()
+assert(not rendered_context.work_controls)
 WorkView.show=nativeShow
 -- Delete and ignore late cache validation that still reports the removed file.
 local WorkActions=require('ao3lib.ui.work_actions')

@@ -42,3 +42,11 @@ scroll.html_link_tapped_callback{uri='ao3-action:1'};assert(selected=='two','Tit
 assert(#context.plugin._ao3_navigation==1,'Changing works must replace the existing rendered page')
 state.window:onClose();assert(state.closed and #context.plugin._ao3_navigation==0)
 print('PASS: title action menu; only View options visible; author link; menu icon; page-specific actions; focus layout and navigation cleanup')
+
+local local_height=scroll.height
+context.list=nil
+local online=require('ao3lib.ui.work_view').show({},context)
+assert(not online.window.view_options_button and #online.window.layout==1)
+assert(scroll.height==local_height+32,'Removing the view selector must reclaim its vertical space')
+online.window:onClose()
+print('PASS: browsing has no view selector and reclaims its height; downloaded filters retain View options')

@@ -137,21 +137,20 @@ function M.show(plugin)
                 selected_scope={kind='library'};filter='all';sort='title';completion='all';length='all'
                 remember();window.page=1;refresh();chooseOptions()
             end),
-            option(_('View: ')..(display=='rendered' and _('Rendered') or _('List')),function()
-                choose({{'list',_('List')},{'rendered',_('Rendered')}},display,function(v)
-                    display=v;rendered_suspended=false
-                    if v=='list' and rendered then
-                        local previous=rendered;rendered=nil
-                        UI:close(previous.window)
-                    end
-                end,_('Downloaded works view'))
-            end),
             option(_('Done'),function() end),
         }}
         UI:show(dialog)
     end
     refresh=function()
         if closed then return end
+        local configured=Config:readSetting('downloaded_rendered_view',display=='rendered') and 'rendered' or 'list'
+        if configured~=display then
+            display=configured;rendered_suspended=false
+            if display=='list' and rendered then
+                local previous=rendered;rendered=nil;previous.closed=true;previous.window._replacing=true
+                UI:close(previous.window)
+            end
+        end
         local scoped,visible,read={},{},0
         for __,work in pairs(works) do
             if Scope.matches(work,selected_scope) then

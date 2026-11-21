@@ -59,3 +59,11 @@ assert(Pacing.seconds(-1)==1 and Pacing.seconds(999)==120 and Pacing.seconds(5.9
 local download_delay=Pacing.delay('update')
 assert(download_delay>=3 and download_delay<=5,'Check delay must not alter download pacing')
 print('PASS: grouped options, maintenance buttons, inline values, no save popups, independent numeric settings, delay persistence/bounds and pacing')
+
+Menu:onOpenSettings();find('Reading and display').callback()
+assert(find('Downloaded works view').mandatory=='List')
+find('Downloaded works view').callback();shown.buttons[1][1].callback()
+assert(values.downloaded_rendered_view==true and find('Downloaded works view').mandatory=='Rendered')
+find('Downloaded works view').callback();shown.buttons[2][1].callback()
+assert(values.downloaded_rendered_view==false and find('Downloaded works view').mandatory=='List')
+print('PASS: downloaded-work rendering is selected explicitly in Settings')
