@@ -74,7 +74,7 @@ assert(mixed[1][1]=='Story' and mixed[16][1]=='Story' and mixed[31][1]=='DELETED
 assert(mixed[15].separator and mixed[30].separator and mixed[45].separator)
 assert(mixed[18][1]=='     Series:' and mixed[18].callback)
 assert(mixed[27][1]=='     Language:' and mixed[27][2]=='English')
-assert(mixed[28][1]=='     Words:' and mixed[28][2]=='1200')
+assert(mixed[28][1]=='     Words:' and mixed[28][2]=='1,200')
 Browser:generateTable(mixed,{work},function() end,function() end)
 assert(#mixed==60 and mixed[46][1]=='Story' and mixed[60].separator)
 local one=Browser:generateTable({}, {work},function() end,function() end)

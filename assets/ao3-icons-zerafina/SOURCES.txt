@@ -4,7 +4,8 @@ License: MIT; included in LICENSE.
 
 Project: https://github.com/ZerafinaCSS/Replace-the-AO3-Icons-2.0
 PNG masks: https://github.com/ZerafinaCSS/zerafinacss.github.io/tree/main/ao3/icons
-Original masks, default CSS colors and Git blob SHAs are bundled in source/.
+Original masks, default CSS colors and Git blob SHAs are in this repository's
+assets/ao3-icons-zerafina/source/ directory.
 
 tools/build_zerafina_icons.py composites those masks with the default CSS
 backgrounds and borders. Empty squares and the colored Multi quadrants follow

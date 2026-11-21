@@ -1,0 +1,84 @@
+name: Check and package
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: AO3Lib.koplugin
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: koreader/koreader
+          ref: 1294bb3d377c51fdd0b7ef250620aee2ca08927c
+          path: koreader
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: AndyHazz/bookshelf.koplugin
+          ref: 7b81a1bf788089da5759c448a49c24352f84f68e
+          path: bookshelf.koplugin
+          persist-credentials: false
+      - name: Install test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y luajit python3-pil default-jre-headless
+          curl --fail --location --retry 3 https://github.com/w3c/epubcheck/releases/download/v5.3.0/epubcheck-5.3.0.zip -o "$RUNNER_TEMP/epubcheck.zip"
+          unzip -q "$RUNNER_TEMP/epubcheck.zip" -d "$RUNNER_TEMP/epubcheck"
+      - name: Run regression tests and EPUBCheck
+        working-directory: AO3Lib.koplugin
+        run: python3 tools/check.py --epubcheck "$RUNNER_TEMP/epubcheck/epubcheck-5.3.0/epubcheck.jar"
+      - name: Build install package
+        working-directory: AO3Lib.koplugin
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            python3 tools/build_release.py --tag "$GITHUB_REF_NAME"
+          else
+            python3 tools/build_release.py
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: install-package
+          path: |
+            AO3Lib.koplugin/dist/AO3Downloader.koplugin.zip
+            AO3Lib.koplugin/dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    needs: check
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build verified release package
+        run: python3 tools/build_release.py --tag "$GITHUB_REF_NAME"
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/release.json" 2>/dev/null; then
+            python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["isDraft"] else "Refusing to change a published release")' "$RUNNER_TEMP/release.json"
+            gh release upload "$RELEASE_TAG" dist/AO3Downloader.koplugin.zip dist/SHA256SUMS --clobber
+          else
+            flags=()
+            if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
+            gh release create "$RELEASE_TAG" dist/AO3Downloader.koplugin.zip dist/SHA256SUMS --draft --verify-tag --generate-notes --title "AO3Lib $RELEASE_TAG" "${flags[@]}"
+          fi

@@ -16,8 +16,8 @@ AO3 works are identified from metadata inside their EPUBs, including books downl
 
 ## Install
 
-1. Download this fork using [Code → Download ZIP](https://github.com/GallowsDove/AO3Lib.koplugin/archive/refs/heads/main.zip), or clone the repository.
-2. Copy the plugin into KOReader's `plugins` directory as `AO3Downloader.koplugin`, including its `assets` folder.
+1. Download [the latest release](https://github.com/GallowsDove/AO3Lib.koplugin/releases/latest/download/AO3Downloader.koplugin.zip).
+2. Extract the ZIP into KOReader's `plugins` directory. It contains the `AO3Downloader.koplugin` folder.
 3. Restart KOReader, then open **AO3Lib** from the file manager's Search menu.
 
 Keep the installed folder named `AO3Downloader.koplugin` for compatibility with existing installations.
