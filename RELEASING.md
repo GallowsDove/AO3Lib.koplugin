@@ -14,7 +14,7 @@ major versions for incompatible changes. Prereleases use `0.2.0-rc.1`.
    ```
 
 4. The tag workflow checks the version, runs the tests, and creates a draft
-   GitHub release with `AO3Downloader.koplugin.zip` and `SHA256SUMS` attached.
+   GitHub release with `AO3Lib.koplugin.zip` and `SHA256SUMS` attached.
    Review the generated notes, test the ZIP on a device, and publish the draft.
    Tags containing a prerelease suffix are marked as prereleases.
 

@@ -5,7 +5,7 @@ local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local Event = require("ui/event")
 local DownloadedFanfics = require("ao3lib.library.history")
-local AO3DownloaderClient = require("ao3lib.ao3.client")
+local AO3LibClient = require("ao3lib.ao3.client")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local ButtonDialog = require("ui/widget/buttondialog")
@@ -83,7 +83,7 @@ function FanficReader:addToMainMenu(menu_items)
                             if self.input_dialog:getInputText() == "" then
                                 return
                             end
-                            local request_result = AO3DownloaderClient:commentOnWork(
+                            local request_result = AO3LibClient:commentOnWork(
                                 self.input_dialog:getInputText(),
                                 self.current_fanfic.id,
                                 chapter_id
@@ -122,7 +122,7 @@ function FanficReader:addToMainMenu(menu_items)
                         text = self.current_fanfic.markedForLater and "Mark as read" or "Mark for later",
                         callback = Network.wrap(function()
 
-                            local request_result = AO3DownloaderClient:markForLaterWork(self.current_fanfic.id,
+                            local request_result = AO3LibClient:markForLaterWork(self.current_fanfic.id,
                                 self.current_fanfic.markedForLater)
 
                             if request_result.success then
@@ -147,7 +147,7 @@ function FanficReader:addToMainMenu(menu_items)
                             text = self.current_fanfic.subscriptionID and "Unsubscribe from work" or "Subscribe to work",
                             callback = Network.wrap(function()
 
-                                local request_result = AO3DownloaderClient:setWorkSubscription(self.current_fanfic.id,
+                                local request_result = AO3LibClient:setWorkSubscription(self.current_fanfic.id,
                                     self.current_fanfic.subscriptionID)
                                 if request_result.success then
                                     if request_result.subscription_id then
@@ -176,7 +176,7 @@ function FanficReader:addToMainMenu(menu_items)
                             text = self.current_fanfic.bookmarkID and "Edit Bookmark" or "Bookmark Work",
                             callback = Network.wrap(function()
 
-                                local request_result = AO3DownloaderClient:getUsersWorkBookmark(self.current_fanfic.id)
+                                local request_result = AO3LibClient:getUsersWorkBookmark(self.current_fanfic.id)
                                 if  request_result.success then
                                     self.current_fanfic.bookmarkContent = request_result.bookmark_data
 
@@ -206,7 +206,7 @@ function FanficReader:addToMainMenu(menu_items)
                                     bookmark_rec = self.current_fanfic.bookmarkContent and self.current_fanfic.bookmarkContent.rec or false,
                                     save_dialog_callback = function(bookmark_data)
 
-                                        local request_result = AO3DownloaderClient:updateBookmark(
+                                        local request_result = AO3LibClient:updateBookmark(
                                             self.current_fanfic.id,
                                             self.current_fanfic.bookmarkID,
                                             bookmark_data.notes,
@@ -243,7 +243,7 @@ function FanficReader:addToMainMenu(menu_items)
                                     end,
                                     delete_dialog_callback = function()
 
-                                        local request_result = AO3DownloaderClient:deleteBookmark(self.current_fanfic.bookmarkID)
+                                        local request_result = AO3LibClient:deleteBookmark(self.current_fanfic.bookmarkID)
 
                                         if request_result.success then
                                             self.current_fanfic.bookmarkID = false
@@ -267,7 +267,7 @@ function FanficReader:addToMainMenu(menu_items)
                                     search_collections_callback = function(collection_name)
 
 
-                                        local request_result = AO3DownloaderClient:searchForCollections(collection_name)
+                                        local request_result = AO3LibClient:searchForCollections(collection_name)
 
                                         if request_result.success then
                                             return request_result.collections
@@ -297,13 +297,13 @@ function FanficReader:addToMainMenu(menu_items)
             UIManager:show(dialog)
         end
     }
-    menu_items.AO3_downloader_kudos_work = {
+    menu_items.AO3Lib_kudos_work = {
         text = "Give kudos to work ♥",
         sorting_hint = "main",
         keep_menu_open = true,
         callback = Network.wrap(function()
 
-            local request_result = AO3DownloaderClient:kudosWork(self.current_fanfic.id)
+            local request_result = AO3LibClient:kudosWork(self.current_fanfic.id)
 
             if request_result.success then
                 UIManager:show(InfoMessage:new({
@@ -318,7 +318,7 @@ function FanficReader:addToMainMenu(menu_items)
         end),
     }
 
-    menu_items.AO3_downloader_comment_work = {
+    menu_items.AO3Lib_comment_work = {
         text = "Comment on work",
         sorting_hint = "main",
         keep_menu_open = true,
@@ -336,9 +336,9 @@ function FanficReader:addToMainMenu(menu_items)
             }
             table.insert(chapter_menu_options, option)
         end
-        menu_items.AO3_downloader_comment_work.sub_item_table = chapter_menu_options
+        menu_items.AO3Lib_comment_work.sub_item_table = chapter_menu_options
     else
-        menu_items.AO3_downloader_comment_work.callback = function()
+        menu_items.AO3Lib_comment_work.callback = function()
             showCommentDialog(nil)
         end
     end

@@ -51,7 +51,7 @@ jobs:
         with:
           name: install-package
           path: |
-            AO3Lib.koplugin/dist/AO3Downloader.koplugin.zip
+            AO3Lib.koplugin/dist/AO3Lib.koplugin.zip
             AO3Lib.koplugin/dist/SHA256SUMS
           if-no-files-found: error
           retention-days: 14
@@ -76,9 +76,9 @@ jobs:
         run: |
           if gh release view "$RELEASE_TAG" --json isDraft > "$RUNNER_TEMP/release.json" 2>/dev/null; then
             python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["isDraft"] else "Refusing to change a published release")' "$RUNNER_TEMP/release.json"
-            gh release upload "$RELEASE_TAG" dist/AO3Downloader.koplugin.zip dist/SHA256SUMS --clobber
+            gh release upload "$RELEASE_TAG" dist/AO3Lib.koplugin.zip dist/SHA256SUMS --clobber
           else
             flags=()
             if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
-            gh release create "$RELEASE_TAG" dist/AO3Downloader.koplugin.zip dist/SHA256SUMS --draft --verify-tag --generate-notes --title "AO3Lib $RELEASE_TAG" "${flags[@]}"
+            gh release create "$RELEASE_TAG" dist/AO3Lib.koplugin.zip dist/SHA256SUMS --draft --verify-tag --generate-notes --title "AO3Lib $RELEASE_TAG" "${flags[@]}"
           fi

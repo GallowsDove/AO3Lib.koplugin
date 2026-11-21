@@ -182,7 +182,7 @@ function M.install()
             end
         end
     end
-    return placeholders.register("ao3-downloader", M.provider)
+    return placeholders.register("ao3lib", M.provider)
 end
 
 return M

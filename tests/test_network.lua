@@ -180,7 +180,7 @@ Reader.current_fanfic = work
 local entries = {}
 Reader:addToMainMenu(entries)
 offline()
-entries.AO3_downloader_comment_work.callback()
+entries.AO3Lib_comment_work.callback()
 local comment = lastShown()
 comment.input = 'Keep this comment'
 comment.buttons[1][2].callback()

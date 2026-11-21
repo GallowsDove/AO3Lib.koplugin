@@ -7,8 +7,8 @@ import re
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
-PLUGIN = 'AO3Downloader.koplugin'
-ASSET = PLUGIN + '.zip'
+PLUGIN = 'AO3Lib.koplugin'
+ASSET = 'AO3Lib.koplugin.zip'
 VERSION = re.compile(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?')
 
 

@@ -1,6 +1,6 @@
 # AO3Lib for KOReader
 
-An unofficial plugin for browsing, downloading, and reading works from Archive of Our Own. This fork of [IntrovertedMage's AO3 Downloader](https://github.com/IntrovertedMage/AO3Downloader.koplugin) focuses on managing a local fanfiction library and integrating with Bookshelf.
+An unofficial plugin for browsing, downloading, and reading works from Archive of Our Own. This fork of [IntrovertedMage's original plugin](https://github.com/IntrovertedMage/AO3Downloader.koplugin) focuses on managing a local fanfiction library and integrating with Bookshelf.
 
 ## Features
 
@@ -16,11 +16,9 @@ AO3 works are identified from metadata inside their EPUBs, including books downl
 
 ## Install
 
-1. Download [the latest release](https://github.com/GallowsDove/AO3Lib.koplugin/releases/latest/download/AO3Downloader.koplugin.zip).
-2. Extract the ZIP into KOReader's `plugins` directory. It contains the `AO3Downloader.koplugin` folder.
+1. Download [the latest release](https://github.com/GallowsDove/AO3Lib.koplugin/releases/latest/download/AO3Lib.koplugin.zip).
+2. Extract the ZIP into KOReader's `plugins` directory. It contains the `AO3Lib.koplugin` folder.
 3. Restart KOReader, then open **AO3Lib** from the file manager's Search menu.
-
-Keep the installed folder named `AO3Downloader.koplugin` for compatibility with existing installations.
 
 Typical plugin locations:
 

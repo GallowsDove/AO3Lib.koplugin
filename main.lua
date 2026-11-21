@@ -15,13 +15,13 @@ local FanficReader = require("ao3lib.ui.reader")
 local Config = require("ao3lib.core.config")
 local Event = require("ui/event")
 local Dispatcher = require("dispatcher")
-local AO3DownloaderClient = require("ao3lib.ao3.client")
+local AO3LibClient = require("ao3lib.ao3.client")
 local util = require("util")
 local Tables = require("ao3lib.core.table")
 local ResultPages = require("ao3lib.ao3.result_pages")
 
 local Fanfic = WidgetContainer:extend{
-    name = "AO3 downloader",
+    name = "AO3Lib",
     is_doc_only = false,
     menu_stack = {}
 }
@@ -113,11 +113,11 @@ end
 
 function Fanfic:addToMainMenu(menu_items)
     if self.ui.file_chooser then
-        menu_items.AO3_downloader = {
+        menu_items.AO3Lib = {
             text = "AO3Lib",
             sorting_hint = "search",
             callback = function()
-                self.ui:handleEvent(Event:new("OpenAO3DownloaderMenu"))
+                self.ui:handleEvent(Event:new("OpenAO3LibMenu"))
             end,
         }
     end
@@ -125,15 +125,15 @@ end
 
 
 function Fanfic:onDispatcherRegisterActions()
-    Dispatcher:registerAction("AO3Downloader_openPluginMenu", {
+    Dispatcher:registerAction("AO3Lib_openPluginMenu", {
         category = "none",
-        event = "OpenAO3DownloaderMenu",
+        event = "OpenAO3LibMenu",
         title = _("AO3Lib: open menu"),
         general = true,
     })
 
 end
-function Fanfic:onOpenAO3DownloaderMenu()
+function Fanfic:onOpenAO3LibMenu()
     if not self.ui.file_chooser then
         self.ui:handleEvent(Event:new("Home"))
     end
@@ -168,7 +168,7 @@ function Fanfic:onShowAuthor(author)
 end
 
 function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
-    logger.dbg("AO3Downloader.koplugin: Showing fanfic browser")
+    logger.dbg("AO3Lib.koplugin: Showing fanfic browser")
     FanficBrowser:show(
         self.ui,
         ficResults,
@@ -189,7 +189,7 @@ function Fanfic:DownloadFanfic(id)
     if existing then self:UpdateFanfic(existing); return end
 
     -- Fetch metadata for the work
-    local request_result  = AO3DownloaderClient:getWorkMetadata(id)
+    local request_result  = AO3LibClient:getWorkMetadata(id)
     if not request_result.success then
         UIManager:show(InfoMessage:new{
             text = _("Error: failed to fetch work metadata: ") .. (request_result.error or "Unknown error")
@@ -214,7 +214,7 @@ function Fanfic:DownloadFanfic(id)
     if not destination then UIManager:show(InfoMessage:new{text=path_err}); return end
     local made, mkdir_err = util.makePath(destination:match("^(.*)/[^/]+$"))
     if not made then UIManager:show(InfoMessage:new{text=tostring(mkdir_err or "Could not create the author folder")}); return end
-    local download_request_result = AO3DownloaderClient:downloadEpub(url, destination, false)
+    local download_request_result = AO3LibClient:downloadEpub(url, destination, false)
     if not download_request_result.success then
         UIManager:show(InfoMessage:new{
             text = T("Error: failed to download and write EPUB: %1", download_request_result.error or "Unknown error")
@@ -294,7 +294,7 @@ end
 function Fanfic:showUserInfo(username, pseud)
     if Network.defer(function() self:showUserInfo(username, pseud) end) then return end
     local AO3UserBrowser = require("ao3lib.ui.user_browser")
-    local request_result = AO3DownloaderClient:getUserData(username, pseud)
+    local request_result = AO3LibClient:getUserData(username, pseud)
     if not request_result.success then
         UIManager:show(InfoMessage:new{
             text = T("Error: Failed to fetch user info: %1", request_result.error or "Unknown error"),
@@ -305,7 +305,7 @@ function Fanfic:showUserInfo(username, pseud)
 end
 
 function Fanfic:getUserData(username, pseud)
-    local user_data_result = AO3DownloaderClient:getUserData(username, pseud)
+    local user_data_result = AO3LibClient:getUserData(username, pseud)
     if not user_data_result.success then
         UIManager:show(InfoMessage:new{
             text = "Error: Failed to fetch user data: " .. (user_data_result.error or "Unknown error"),
@@ -318,7 +318,7 @@ function Fanfic:getUserData(username, pseud)
 end
 
 function Fanfic:getPseudsForUser(username)
-    local pseuds_result = AO3DownloaderClient:getUserPseuds(username)
+    local pseuds_result = AO3LibClient:getUserPseuds(username)
     if not pseuds_result.success then
         UIManager:show(InfoMessage:new{
             text = "Error: Failed to fetch pseuds for user: " .. (pseuds_result.error or "Unknown error"),
@@ -331,7 +331,7 @@ function Fanfic:getPseudsForUser(username)
 end
 
 function Fanfic:searchForTags(query, type)
-    local search_results = AO3DownloaderClient:searchForTags(query, type)
+    local search_results = AO3LibClient:searchForTags(query, type)
     if not search_results.success then
         UIManager:show(InfoMessage:new{
             text = "Error: Tag search request failed. " .. (search_results.error or "Unknown error"),
@@ -342,7 +342,7 @@ function Fanfic:searchForTags(query, type)
 end
 
 function Fanfic:checkLoggedIn()
-    local request_result = AO3DownloaderClient:GetSessionStatus()
+    local request_result = AO3LibClient:GetSessionStatus()
     if not request_result.success then
         UIManager:show(InfoMessage:new{
             text = "Error: Check logged in request failed. " .. (request_result.error or "Unknown error"),
@@ -357,7 +357,7 @@ end
 function Fanfic:loginToAO3(username, password)
 
     -- Attempt to log in using the Downloader module
-    local request_result = AO3DownloaderClient:startLoggedInSession(username, password)
+    local request_result = AO3LibClient:startLoggedInSession(username, password)
 
     if request_result.success then
         UIManager:show(InfoMessage:new{
@@ -375,7 +375,7 @@ end
 function Fanfic:logoutOfAO3()
 
     -- Attempt to log in using the Downloader module
-    local request_result = AO3DownloaderClient:endLoggedInSession()
+    local request_result = AO3LibClient:endLoggedInSession()
 
 
     if request_result.success then
@@ -418,7 +418,7 @@ for name, spec in pairs(result_pages) do
         local function request(page)
             -- Explicit arity preserves optional nil arguments before the page.
             args[spec.arguments + 1] = page
-            return AO3DownloaderClient[spec.method](AO3DownloaderClient,
+            return AO3LibClient[spec.method](AO3LibClient,
                 unpack(args, 1, spec.arguments + 1))
         end
         return ResultPages.open(request, spec, function(err)

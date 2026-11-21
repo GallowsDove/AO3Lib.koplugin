@@ -1,4 +1,4 @@
--- Runtime extension owned by AO3 Downloader. Bookshelf files stay untouched.
+-- Runtime extension owned by AO3Lib. Bookshelf files stay untouched.
 local Metadata = require("ao3lib.bookshelf.metadata")
 local _ = require("gettext")
 local M = {}

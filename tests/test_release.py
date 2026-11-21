@@ -15,12 +15,14 @@ class ReleaseTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory)
             path = release.build(output, 'v' + release.version())
+            self.assertEqual(path.name, 'AO3Lib.koplugin.zip')
             first = path.read_bytes()
             release.build(output, 'v' + release.version())
             self.assertEqual(first, path.read_bytes())
             with zipfile.ZipFile(path) as archive:
                 names = set(archive.namelist())
                 prefix = release.PLUGIN + '/'
+                self.assertEqual(prefix, 'AO3Lib.koplugin/')
                 self.assertTrue(all(name.startswith(prefix) for name in names))
                 self.assertTrue({prefix + '_meta.lua', prefix + 'main.lua',
                                  prefix + 'ao3lib/ui/menu.lua', prefix + 'assets/ao3.svg',

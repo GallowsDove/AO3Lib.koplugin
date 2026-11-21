@@ -12,5 +12,5 @@ KOReader's missing-cover slots: AO3 Plus by gin7uro (7inkgo).
 https://github.com/gin7uro/koreader-ao3-plus
 
 The placeholder integration in fanfic_bookshelf_badges.lua is independently
-implemented using Bookshelf's public placeholder API and AO3 Downloader's
+implemented using Bookshelf's public placeholder API and AO3Lib's
 EPUB metadata reader. No AO3 Plus patch code is included.

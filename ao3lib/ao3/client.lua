@@ -12,7 +12,7 @@ local function getAO3URL()
     return Config:readSetting("AO3_domain")
 end
 
-local AO3DownloaderClient = {}
+local AO3LibClient = {}
 
 local AO3WebParser = {}
 
@@ -91,8 +91,8 @@ function encodeHelper:generateParametersStringForm(params)
     return table.concat(form_parts, "&")
 end
 
-function AO3DownloaderClient:requestAO3Token()
-    logger.dbg("AO3Downloader.koplugin: Requesting AO3 token...")
+function AO3LibClient:requestAO3Token()
+    logger.dbg("AO3Lib.koplugin: Requesting AO3 token...")
     local tokenRequestURL = getAO3URL() .. "/token_dispenser.json"
 
     local response_body = {}
@@ -142,7 +142,7 @@ function AO3DownloaderClient:requestAO3Token()
     end
 end
 
-function AO3DownloaderClient:startLoggedInSession(username, password)
+function AO3LibClient:startLoggedInSession(username, password)
     local homepage_url = getAO3URL()
 
     local response_body = {}
@@ -233,8 +233,8 @@ function AO3DownloaderClient:startLoggedInSession(username, password)
     end
 end
 
-function AO3DownloaderClient:endLoggedInSession()
-    logger.dbg("AO3Downloader.koplugin: Ending logged-in AO3 session...")
+function AO3LibClient:endLoggedInSession()
+    logger.dbg("AO3Lib.koplugin: Ending logged-in AO3 session...")
     local authenticity_token = self:requestAO3Token()
 
     if not authenticity_token.success then
@@ -304,8 +304,8 @@ function AO3DownloaderClient:endLoggedInSession()
     end
 end
 
-function AO3DownloaderClient:GetSessionStatus()
-    logger.dbg("AO3Downloader.koplugin: Checking AO3 session status...")
+function AO3LibClient:GetSessionStatus()
+    logger.dbg("AO3Lib.koplugin: Checking AO3 session status...")
     local homepage_url = getAO3URL()
     local response_body = {}
 
@@ -372,8 +372,8 @@ function AO3DownloaderClient:GetSessionStatus()
     end
 end
 
-function AO3DownloaderClient:getWorkMetadata(work_id)
-    logger.dbg("AO3Downloader.koplugin: Fetching metadata for work ID: " .. tostring(work_id))
+function AO3LibClient:getWorkMetadata(work_id)
+    logger.dbg("AO3Lib.koplugin: Fetching metadata for work ID: " .. tostring(work_id))
     local url = T("%1/works/%2", getAO3URL(), work_id)
 
     local response_body = {}
@@ -481,7 +481,7 @@ local function downloadNative(self, download_link, filepath, allow_replace, befo
 end
 
 -- A metadata table opts into HTML fallback; URL-only callers retain native behavior.
-function AO3DownloaderClient:downloadEpub(source, filepath, allow_replace, before_commit, staging)
+function AO3LibClient:downloadEpub(source, filepath, allow_replace, before_commit, staging)
     if type(source) ~= "table" then
         return downloadNative(self, source, filepath, allow_replace, before_commit, staging)
     end
@@ -535,9 +535,9 @@ function AO3DownloaderClient:downloadEpub(source, filepath, allow_replace, befor
     return {success=true,filepath=filepath}
 end
 
-function AO3DownloaderClient:searchByParameters(parameters, page_no)
+function AO3LibClient:searchByParameters(parameters, page_no)
     local page = page_no or 1 -- Default to the first page if no page is specified
-    logger.dbg("AO3Downloader.koplugin: Executing work search by parameters. Page no: " .. tostring(page_no))
+    logger.dbg("AO3Lib.koplugin: Executing work search by parameters. Page no: " .. tostring(page_no))
     local query = {}
 
     -- Build the query string from the parameters
@@ -590,9 +590,9 @@ function AO3DownloaderClient:searchByParameters(parameters, page_no)
     }
 end
 
-function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
+function AO3LibClient:searchByTag(tag_name, sort_by, page_no)
     local page = page_no or 1
-    logger.dbg("AO3Downloader.koplugin: Executing work search by tag: " .. tostring(tag_name) .. ", page no: " .. tostring(page_no))
+    logger.dbg("AO3Lib.koplugin: Executing work search by tag: " .. tostring(tag_name) .. ", page no: " .. tostring(page_no))
     local sort_column = sort_by or "revised_at"
 
     local encoded_tag_name = tag_name
@@ -632,8 +632,8 @@ function AO3DownloaderClient:searchByTag(tag_name, sort_by, page_no)
     }
 end
 
-function AO3DownloaderClient:searchForTags(search_query, tag_type)
-    logger.dbg("AO3Downloader.koplugin: Executing tag search for query: " .. tostring(search_query) .. ", tag type: " .. tostring(tag_type))
+function AO3LibClient:searchForTags(search_query, tag_type)
+    logger.dbg("AO3Lib.koplugin: Executing tag search for query: " .. tostring(search_query) .. ", tag type: " .. tostring(tag_type))
     if not search_query or search_query == "" then
         return {
             success = false,
@@ -683,8 +683,8 @@ function AO3DownloaderClient:searchForTags(search_query, tag_type)
 
 end
 
-function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
-    logger.dbg("AO3Downloader.koplugin: Fetching works from series ID: " .. tostring(series_id) .. ", page no: " .. tostring(page_no))
+function AO3LibClient:getWorksFromSeries(series_id, page_no)
+    logger.dbg("AO3Lib.koplugin: Fetching works from series ID: " .. tostring(series_id) .. ", page no: " .. tostring(page_no))
     page_no = page_no or 1
     local url = T("%1/series/%2?page=%3", getAO3URL(), series_id, page_no)
 
@@ -716,8 +716,8 @@ function AO3DownloaderClient:getWorksFromSeries(series_id, page_no)
     }
 end
 
-function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
-    logger.dbg("AO3Downloader.koplugin: Fetching works from collection ID: " .. tostring(collection_id) .. ", page no: " .. tostring(page_no))
+function AO3LibClient:getWorksFromCollection(collection_id, page_no)
+    logger.dbg("AO3Lib.koplugin: Fetching works from collection ID: " .. tostring(collection_id) .. ", page no: " .. tostring(page_no))
     page_no = page_no or 1
     local url = T("%1/collections/%2/works?page=%3", getAO3URL(), collection_id, page_no)
 
@@ -749,7 +749,7 @@ function AO3DownloaderClient:getWorksFromCollection(collection_id, page_no)
     }
 end
 
-function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fandom_id, page_no)
+function AO3LibClient:getWorksFromUserPage(username, pseud, catagory, fandom_id, page_no)
     local url
     if catagory == "gifts" then
         url = T("%1/users/%2/gifts", getAO3URL(), username)
@@ -759,7 +759,7 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 
     page_no = page_no or 1
 
-    logger.dbg("AO3Downloader.koplugin: Fetching works from user page. Username: " .. tostring(username) .. ", category: " .. tostring(catagory) .. (fandom_id and (", fandom ID: " .. tostring(fandom_id)) or "") .. ", page no: " .. tostring(page_no))
+    logger.dbg("AO3Lib.koplugin: Fetching works from user page. Username: " .. tostring(username) .. ", category: " .. tostring(catagory) .. (fandom_id and (", fandom ID: " .. tostring(fandom_id)) or "") .. ", page no: " .. tostring(page_no))
     local parameters = {["fandom_id"] = fandom_id, ["page"] = page_no}
 
     local parameter_string = table.concat(
@@ -813,7 +813,7 @@ function AO3DownloaderClient:getWorksFromUserPage(username, pseud, catagory, fan
 
 end
 
-function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_no)
+function AO3LibClient:getWorksFromAccountHistory(marked_for_later, page_no)
 
     local login_status = self:GetSessionStatus()
 
@@ -832,7 +832,7 @@ function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_n
 
     page_no = page_no or 1
 
-    logger.dbg("AO3Downloader.koplugin: Fetching works from account history page. Username: " .. tostring(username) .. ", page no: " .. tostring(page_no))
+    logger.dbg("AO3Lib.koplugin: Fetching works from account history page. Username: " .. tostring(username) .. ", page no: " .. tostring(page_no))
     local parameters = {["show"] = marked_for_later and "to-read" or "",["page"] = page_no}
 
     local parameter_string = table.concat(
@@ -882,9 +882,9 @@ function AO3DownloaderClient:getWorksFromAccountHistory(marked_for_later, page_n
 
 end
 
-function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
+function AO3LibClient:getUserSeries(username, pseud, page_no)
     page_no = page_no or 1
-    logger.dbg("AO3Downloader.koplugin: Fetching series for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
+    logger.dbg("AO3Lib.koplugin: Fetching series for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
     local url = T("%1/users/%2/pseuds/%3/series?page=%4", getAO3URL(), username, pseud, page_no)
 
     local response_body = {}
@@ -915,9 +915,9 @@ function AO3DownloaderClient:getUserSeries(username, pseud, page_no)
     }
 end
 
-function AO3DownloaderClient:getUserCollections(username, page_no)
+function AO3LibClient:getUserCollections(username, page_no)
     page_no = page_no or 1
-    logger.dbg("AO3Downloader.koplugin: Fetching collections for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
+    logger.dbg("AO3Lib.koplugin: Fetching collections for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
     local url = T("%1/users/%2/collections?page=%3", getAO3URL(), username, page_no)
 
     local response_body = {}
@@ -948,7 +948,7 @@ function AO3DownloaderClient:getUserCollections(username, page_no)
     }
 end
 
-function AO3DownloaderClient:getUserData(username, pseud)
+function AO3LibClient:getUserData(username, pseud)
     local url = T("%1/users/%2/pseuds/%3", getAO3URL(),username, pseud)
 
     local response_body = {}
@@ -988,7 +988,7 @@ function AO3DownloaderClient:getUserData(username, pseud)
 
 end
 
-function AO3DownloaderClient:getUserPseuds(username)
+function AO3LibClient:getUserPseuds(username)
     local url = T("%1/users/%2/pseuds", getAO3URL(), username)
 
     local response_body = {}
@@ -1024,7 +1024,7 @@ function AO3DownloaderClient:getUserPseuds(username)
     }
 end
 
-function AO3DownloaderClient:getAccountPseudID(username)
+function AO3LibClient:getAccountPseudID(username)
     local url = T("%1/users/%2/pseuds/%2/edit", getAO3URL(), username)
 
     local response_body = {}
@@ -1067,8 +1067,8 @@ function AO3DownloaderClient:getAccountPseudID(username)
     }
 end
 
-function AO3DownloaderClient:searchForUsers(search_query, page_no)
-    logger.dbg("AO3Downloader.koplugin: Executing user search for query: " .. tostring(search_query) .. ", page no: " .. tostring(page_no))
+function AO3LibClient:searchForUsers(search_query, page_no)
+    logger.dbg("AO3Lib.koplugin: Executing user search for query: " .. tostring(search_query) .. ", page no: " .. tostring(page_no))
     if not search_query or search_query == "" then
         return {
             success = false,
@@ -1115,8 +1115,8 @@ function AO3DownloaderClient:searchForUsers(search_query, page_no)
     }
 end
 
-function AO3DownloaderClient:searchForCollections(search_query)
-    logger.dbg("AO3Downloader.koplugin: Executing collection search for query: " .. tostring(search_query))
+function AO3LibClient:searchForCollections(search_query)
+    logger.dbg("AO3Lib.koplugin: Executing collection search for query: " .. tostring(search_query))
     if (not search_query or search_query == "") then
         return {
             success = false,
@@ -1172,8 +1172,8 @@ function AO3DownloaderClient:searchForCollections(search_query)
 
 end
 
-function AO3DownloaderClient:kudosWork(work_id)
-    logger.dbg("AO3Downloader.koplugin: Sending kudos to work. Work ID: " .. tostring(work_id))
+function AO3LibClient:kudosWork(work_id)
+    logger.dbg("AO3Lib.koplugin: Sending kudos to work. Work ID: " .. tostring(work_id))
     local login_status = self:GetSessionStatus()
     if not login_status.success then
         return {
@@ -1243,8 +1243,8 @@ function AO3DownloaderClient:kudosWork(work_id)
     }
 end
 
-function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
-    logger.dbg("AO3Downloader.koplugin: Posting comment on work. Work ID: " .. tostring(work_id) .. ", chapter ID: " .. tostring(chapter_id))
+function AO3LibClient:commentOnWork(comment_content, work_id, chapter_id)
+    logger.dbg("AO3Lib.koplugin: Posting comment on work. Work ID: " .. tostring(work_id) .. ", chapter ID: " .. tostring(chapter_id))
 
     if not comment_content or comment_content == "" then
         return {
@@ -1363,8 +1363,8 @@ function AO3DownloaderClient:commentOnWork(comment_content, work_id, chapter_id)
     }
 end
 
-function AO3DownloaderClient:markForLaterWork(work_id, later_or_read)
-    logger.dbg("AO3Downloader.koplugin: Marking work. Work ID: " .. tostring(work_id))
+function AO3LibClient:markForLaterWork(work_id, later_or_read)
+    logger.dbg("AO3Lib.koplugin: Marking work. Work ID: " .. tostring(work_id))
     local login_status = self:GetSessionStatus()
     if not login_status.success then
         return {
@@ -1427,8 +1427,8 @@ function AO3DownloaderClient:markForLaterWork(work_id, later_or_read)
     }
 end
 
-function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
-    logger.dbg("AO3Downloader.koplugin: Setting subscription. Work ID: " .. tostring(work_id))
+function AO3LibClient:setWorkSubscription(work_id, subscription_id)
+    logger.dbg("AO3Lib.koplugin: Setting subscription. Work ID: " .. tostring(work_id))
 
     local login_status = self:GetSessionStatus()
     if not login_status.success then
@@ -1536,8 +1536,8 @@ function AO3DownloaderClient:setWorkSubscription(work_id, subscription_id)
     }
 end
 
-function AO3DownloaderClient:getUsersWorkBookmark(work_id)
-    logger.dbg("AO3Downloader.koplugin: Fetching bookmark for work. Work ID: " .. tostring(work_id))
+function AO3LibClient:getUsersWorkBookmark(work_id)
+    logger.dbg("AO3Lib.koplugin: Fetching bookmark for work. Work ID: " .. tostring(work_id))
 
     local login_status = self:GetSessionStatus()
     if not login_status.success then
@@ -1604,7 +1604,7 @@ function AO3DownloaderClient:getUsersWorkBookmark(work_id)
     end
 
     local html_body = table.concat(response_body)
-    logger.dbg("AO3Downloader.koplugin: Bookmark form response body: " .. tostring(html_body))
+    logger.dbg("AO3Lib.koplugin: Bookmark form response body: " .. tostring(html_body))
     -- look foor bookmark_div.html("...") and parse html
 
     local root = htmlparser.parse(html_body)
@@ -1618,8 +1618,8 @@ function AO3DownloaderClient:getUsersWorkBookmark(work_id)
     }
 end
 
-function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec)
-    logger.dbg("AO3Downloader.koplugin: Updating bookmark. Work ID: " .. tostring(work_id))
+function AO3LibClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec)
+    logger.dbg("AO3Lib.koplugin: Updating bookmark. Work ID: " .. tostring(work_id))
 
     local login_status = self:GetSessionStatus()
     if not login_status.success then
@@ -1664,7 +1664,7 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
         url = T("%1/works/%2/bookmarks", getAO3URL(), work_id)
         form_data["commit"] = "Create"
 
-        local pseud_result = AO3DownloaderClient:getAccountPseudID(login_status.username)
+        local pseud_result = AO3LibClient:getAccountPseudID(login_status.username)
 
         if not pseud_result.success then
             return {
@@ -1724,8 +1724,8 @@ function AO3DownloaderClient:updateBookmark(work_id, bookmark_id, notes, tags, c
     }
 end
 
-function AO3DownloaderClient:deleteBookmark(bookmark_id)
-    logger.dbg("AO3Downloader.koplugin: Deleting bookmark. Bookmark ID: " .. tostring(bookmark_id))
+function AO3LibClient:deleteBookmark(bookmark_id)
+    logger.dbg("AO3Lib.koplugin: Deleting bookmark. Bookmark ID: " .. tostring(bookmark_id))
 
     local login_status = self:GetSessionStatus()
     if not login_status.success then
@@ -2550,7 +2550,7 @@ function AO3WebParser:parseUserPage(root)
     if total_series_element then
         local total_series_text = total_series_element:getcontent()
         total_series = total_series_text:match("Series%s*%((%d+)%)")
-        logger.dbg("AO3Downloader.koplugin: Found total series text: " .. tostring(total_series_text) .. ", extracted total series: " .. tostring(total_series))
+        logger.dbg("AO3Lib.koplugin: Found total series text: " .. tostring(total_series_text) .. ", extracted total series: " .. tostring(total_series))
 
         total_series = tonumber(total_series)
     end
@@ -2917,8 +2917,8 @@ local payloads = {
 -- Every public operation has the same failure contract, including malformed
 -- HTML/JSON, changed selectors, and network-library exceptions. Never let an
 -- unexpected server response unwind KOReader's event loop.
-for name, operation in pairs(AO3DownloaderClient) do
-    AO3DownloaderClient[name] = function(...)
+for name, operation in pairs(AO3LibClient) do
+    AO3LibClient[name] = function(...)
         local Background = require("ao3lib.ao3.background")
         if not HTTPQueryHandler.in_worker and Background.available() then
             assert(coroutine.running(), "AO3 request requires a network continuation")
@@ -2975,7 +2975,7 @@ for name, operation in pairs(AO3DownloaderClient) do
         local payload = payloads[name]
         if not ok or type(result) ~= "table"
                 or (result.success and payload and type(result[payload]) ~= "table") then
-            logger.warn("AO3Downloader: operation failed", name, ok and "invalid result" or tostring(result))
+            logger.warn("AO3Lib: operation failed", name, ok and "invalid result" or tostring(result))
             return { success = false, unexpected_response = true, error = "AO3 returned an unexpected response. The site may be unavailable or its page format may have changed. Please try again later." }
         end
         if not result.success and type(result.error) ~= "string" then result.error = "AO3 request failed. Please try again later." end
@@ -2983,4 +2983,4 @@ for name, operation in pairs(AO3DownloaderClient) do
     end
 end
 
-return AO3DownloaderClient
+return AO3LibClient
