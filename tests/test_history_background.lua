@@ -27,6 +27,11 @@ stub('dkjson',{encode=function(data)
     if fail_encode then return nil,'simulated encoding failure' end
     local key='snapshot-'..encodes;encoded[key]=copy(data);return key
 end,decode=function(key) return copy(encoded[key]) end})
+local temp_sequence=0
+stub('ao3lib.core.tempfile',{reserve=function(prefix)
+    temp_sequence=temp_sequence+1
+    local name=prefix..temp_sequence;fs[name]='';return name
+end})
 stub('ao3lib.core.persistent',{path=function(name) return '/history/'..name end})
 stub('libs/libkoreader-lfs',{attributes=function(path)
     if fs[path] then return {size=#fs[path],modification=fs[path]} end

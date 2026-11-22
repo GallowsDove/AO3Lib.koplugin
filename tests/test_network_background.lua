@@ -101,6 +101,25 @@ slow=true;write('KEEP');result=nil
 Network.run(function() result=Client:downloadEpub('https://archiveofourown.org/download/123',destination,true) end)
 H.tick();H.UI:close(H.stack[#H.stack]);H.drain()
 assert(not result and H.read(destination)=='KEEP')
+-- Android: system temp fails, but network IPC and EPUB staging still work.
+local android_root=os.tmpname();os.remove(android_root)
+assert(os.execute('mkdir '..android_root)==0)
+assert(os.execute('mkdir '..android_root..'/cache')==0)
+package.loaded.datastorage={getDataDir=function() return android_root end}
+local existing_lfs=package.loaded['libs/libkoreader-lfs']
+package.loaded['libs/libkoreader-lfs']={attributes=function(path,mode)
+    if path==android_root..'/cache' then return 'directory' end
+    return existing_lfs.attributes(path,mode)
+end,symlinkattributes=existing_lfs.symlinkattributes}
+local original_tmpname=os.tmpname
+os.tmpname=function() error('Android temp unavailable') end
+slow=false;status=200;body='PK\003\004VALID EPUB';write('OLD')
+Network.run(function() result=Client:downloadEpub('https://archiveofourown.org/download/123',destination,true) end)
+H.drain();assert(result.success and H.read(destination)==body)
+os.tmpname=original_tmpname
+package.loaded['libs/libkoreader-lfs']=existing_lfs
+assert(os.execute('rmdir '..android_root..'/cache')==0)
+assert(os.execute('rmdir '..android_root)==0)
 -- Use the actual client wrapper in silent scopes, alongside ordinary AO3
 -- browsing. Old background cookies must never undo newer foreground cookies.
 local Background=require('ao3lib.ao3.background')

@@ -14,9 +14,6 @@ local function decode_file(filename)
     return state
 end
 local function write_atomic(state,filename)
-    local named,temp=pcall(os.tmpname)
-    if not named then return nil,temp end
-    os.remove(temp)
     local encoded=require("string.buffer").encode(state)
     local tmp=filename .. ".tmp"
     local f,err=io.open(tmp,"wb");if not f then return nil,err end
@@ -49,10 +46,8 @@ function M.save(state)
     local home=filename:match('^(.*)/[^/]+$')
     if util.makePath and not util.makePath(home) then M.error="Could not create update-check storage directory";return nil,M.error end
     local filename=path()
-    local named,staging=pcall(os.tmpname)
-    if not named then M.error=tostring(staging);return nil,M.error end
-    os.remove(staging)
-    staging=staging .. ".ao3stage"
+    local staging,err=require('ao3lib.core.tempfile').reserve(filename..'.ao3stage-')
+    if not staging then M.error=tostring(err);return nil,M.error end
     local ok,err=require("ao3lib.ao3.background").run(function()
         local good,why=write_atomic(state,staging)
         if not good then error(why) end

@@ -121,9 +121,12 @@ function M.backup(plan)
     local DataStorage = require('datastorage')
     local base = require('ao3lib.core.paths').getHomeDirectory() .. '/organization'
     assertDir(base)
-    local token = os.tmpname(); os.remove(token)
-    local dir = base .. '/' .. os.date('%Y%m%d-%H%M%S') .. '-' .. token:match('([^/]+)$')
-    assertDir(dir)
+    local token,err = require('ao3lib.core.tempfile').reserve(base .. '/backup-')
+    assert(token,err)
+    local dir = token .. '.d'
+    local made,why=lfs.mkdir(dir)
+    os.remove(token)
+    assert(made,why)
     local sources = {
         DataStorage:getDataDir() .. '/history.lua',
         DataStorage:getDataDir() .. '/settings.reader.lua',

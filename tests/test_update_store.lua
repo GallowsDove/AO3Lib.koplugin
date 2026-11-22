@@ -3,6 +3,9 @@ local H=dofile('tests/support/async.lua')
 local Buffer=require('string.buffer')
 local directory=os.tmpname();os.remove(directory)
 assert(os.execute('mkdir '..directory)==0)
+assert(os.execute('mkdir '..directory..'/cache')==0)
+package.loaded.datastorage={getDataDir=function() return directory end}
+package.loaded['libs/libkoreader-lfs']={attributes=function(path) if path==directory..'/cache' then return 'directory' end end}
 local fail=false
 package.loaded["ao3lib.core.persistent"]={path=function(name) return directory..'/'..name end}
 package.loaded.util={makePath=function(path) assert(path==directory);return not fail end}
@@ -28,10 +31,16 @@ assert(not Store.load() and Store.error)
 assert(Store.flush(state) and Store.load().entries[1].work.id=='2')
 local tmpname=os.tmpname
 os.tmpname=function() error('temporary directory unavailable') end
-Store.save(state);assert(Store.error:find('temporary directory unavailable',1,true))
-assert(not Store.flush(state))
+assert(Store.save(state));H.drain();assert(not Store.error and Store.flush(state),
+    'Staging beside the destination must not depend on os.tmpname')
 os.tmpname=tmpname
+local Temp=require('ao3lib.core.tempfile')
+local reserve=Temp.reserve
+Temp.reserve=function() return nil,'staging unavailable' end
+assert(not Store.save(state) and Store.error:find('staging unavailable',1,true))
+Temp.reserve=reserve
 assert(Store.flush(state))
 os.remove(path)
+assert(os.execute('rmdir '..directory..'/cache')==0)
 assert(os.execute('rmdir '..directory)==0,'Worker left stale staging files')
 print('PASS: real forked persistence; coalesced snapshots; atomic publication; shutdown supersedes stale workers; corrupt/failed saves; recovery; temporary-file cleanup')

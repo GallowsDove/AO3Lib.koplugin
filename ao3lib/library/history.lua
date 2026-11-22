@@ -71,12 +71,10 @@ startBackgroundSave = function()
         logger.warn("AO3 background history save unavailable; progress will be saved when closing the reader")
         return
     end
-    local named, token = pcall(os.tmpname)
-    if not named then logger.warn("AO3 history save could not create a temporary name:", token); return end
-    os.remove(token)
-    local ready = history_file_path .. ".async-" .. token:match("([^/]+)$")
-    local temporary = ready .. ".tmp"
-    os.remove(ready); os.remove(temporary)
+    local reservation, err = require('ao3lib.core.tempfile').reserve(history_file_path .. '.async-')
+    if not reservation then logger.warn('AO3 history save could not create a temporary file:', err); return end
+    local ready = reservation .. '.ready'
+    local temporary = reservation .. '.tmp'
     local snapshot_revision = revision
     local ok, pid = pcall(ffiutil.runInSubProcess, function()
         -- Fork supplies a consistent copy-on-write snapshot of history. The
@@ -86,7 +84,7 @@ startBackgroundSave = function()
         return saved
     end)
     if not ok or not pid then
-        os.remove(ready); os.remove(temporary)
+        os.remove(reservation); os.remove(ready); os.remove(temporary)
         logger.warn("AO3 background history save could not start:", pid)
         return
     end
@@ -100,7 +98,7 @@ startBackgroundSave = function()
             if saved then progress_dirty = false; loaded_stamp = historyStamp()
             else logger.warn("AO3 history save did not complete; will retry on reader close:", err) end
         end
-        os.remove(ready); os.remove(temporary)
+        os.remove(reservation); os.remove(ready); os.remove(temporary)
         if progress_dirty and job.revision ~= revision then scheduleSave() end
     end
     UI:scheduleIn(0.1, collect)

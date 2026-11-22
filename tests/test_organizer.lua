@@ -18,7 +18,7 @@ local function put(path,data)
     assert(mkdir(parent(path)))
     clock=clock+1; disk[path]={mode='file',data=data,size=#data,modification=clock}
 end
-local lfs={currentdir=function() return '/cwd' end}
+local lfs={currentdir=function() return '/cwd' end, mkdir=mkdir}
 function lfs.attributes(path,key)
     local entry=disk[norm(path)]
     if key then return entry and entry[key] end
@@ -34,6 +34,11 @@ function lfs.dir(path)
     local i=0
     return function() i=i+1; return names[i] end, {close=function() end}
 end
+local temp_sequence=0
+stub('ao3lib.core.tempfile',{reserve=function(prefix)
+    temp_sequence=temp_sequence+1
+    local name=prefix..temp_sequence;put(name,'');return name
+end})
 stub('libs/libkoreader-lfs',lfs)
 local real_open, real_rename, real_remove, real_tmpname = io.open, os.rename, os.remove, os.tmpname
 local writes=0

@@ -423,11 +423,11 @@ local function downloadNative(self, download_link, filepath, allow_replace, befo
     if occupied() then return {success=false, error="The destination is already occupied. Please retry the download to choose a new filename."} end
     -- Write beside the destination, then rename only a complete ZIP download.
     -- A 503 page or interrupted update must never truncate an existing book.
-    local token = os.tmpname()
-    os.remove(token)
-    local partial = staging or (filepath .. ".ao3-" .. token:match("([^/]+)$") .. ".part")
+    local partial, temp_err=staging
+    if not partial then partial,temp_err=require('ao3lib.core.tempfile').reserve(filepath..'.ao3-') end
+    if not partial then return {success=false,error='Could not create EPUB download: '..tostring(temp_err)} end
     local file, err = io.open(partial, "wb")
-    if not file then return { success = false, error = "Could not create EPUB download: " .. tostring(err) } end
+    if not file then os.remove(partial);return { success = false, error = "Could not create EPUB download: " .. tostring(err) } end
     local request = {
         url = download_link, stream = true, download_timeout = true,
         headers = { ["Accept"] = "application/epub+zip" },
@@ -491,8 +491,9 @@ function AO3LibClient:downloadEpub(source, filepath, allow_replace, before_commi
     local native = downloadNative(self, source.epub_link, filepath, allow_replace, before_commit, staging)
     if native.success or not Config:readSetting("html_download_fallback", false) or not source.html_link then return native end
     if HTTPQueryHandler.progress then HTTPQueryHandler.progress('Downloading the HTML from AO3…') end
-    local token = os.tmpname(); os.remove(token)
-    local partial = staging or (filepath .. ".ao3-" .. token:match("([^/]+)$") .. ".part")
+    local partial, temp_err=staging
+    if not partial then partial,temp_err=require('ao3lib.core.tempfile').reserve(filepath..'.ao3-') end
+    if not partial then return {success=false,error='Could not create EPUB download: '..tostring(temp_err)} end
     local fetch_failure
     local function fetch(url,is_image)
         assert(type(url)=="string" and url:match("^https?://"), "Invalid HTML or image URL")
@@ -3028,10 +3029,12 @@ for name, operation in pairs(AO3LibClient) do
         if not HTTPQueryHandler.in_worker and Background.available() then
             assert(coroutine.running(), "AO3 request requires a network continuation")
             local args={n=select("#",...),...}
-            local staged
+            local staged,reservation
             if name=="downloadEpub" then
-                local token=os.tmpname();os.remove(token)
-                staged=args[3]..".ao3-"..token:match("([^/]+)$")..".part"
+                local err
+                reservation,err=require('ao3lib.core.tempfile').reserve(args[3]..'.ao3-')
+                if not reservation then return {success=false,error='Could not create EPUB download: '..tostring(err)} end
+                staged=reservation..'.part'
             end
             local cookies=Config:readSetting("cookies",{})
             local packet,err=Background.await(function(progress)
@@ -3047,7 +3050,7 @@ for name, operation in pairs(AO3LibClient) do
                 text=(name:match("^get") or name:match("^search") or name=="GetSessionStatus" or staged)
                     and "Loading from AO3…\n\nTap or press Back to cancel."
                     or "Contacting AO3…\n\nTap or press Back to stop waiting. An account action may already have completed; check before trying again.",
-                cleanup=staged and function() os.remove(staged) end or nil,
+                cleanup=staged and function() os.remove(staged);os.remove(reservation) end or nil,
             })
             if not packet then return {success=false,unexpected_response=true,error=err or "AO3 request failed."} end
             if packet.cookies and not Background.isDetached() then
