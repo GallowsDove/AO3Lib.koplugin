@@ -1291,9 +1291,29 @@ function CustomFilterMenu:selectSortDirection()
 end
 
 -- Execute the search with the crafted filter
-function CustomFilterMenu:executeSearch(submitted)
+function CustomFilterMenu:executeSearch(submitted,conflict_confirmed,disable_blacklist)
     local f=deepcopy(submitted or self.filter or {})
-    if Network.defer(function() self:executeSearch(f) end) then return end
+    if not conflict_confirmed then
+        local conflicts=require('ao3lib.library.blacklist').conflicts(f)
+        if #conflicts>0 then
+            local dialog
+            local function choose(disable)
+                UIManager:close(dialog)
+                self:executeSearch(f,true,disable)
+            end
+            dialog=require('ui/widget/buttondialog'):new{
+                title=_("These included tags are also on your blacklist:")..'\n\n'..table.concat(conflicts,'\n'),
+                buttons={
+                    {{text=_("Disable blacklist for this search"),callback=function() choose(true) end}},
+                    {{text=_("Search with blacklist"),callback=function() choose(false) end}},
+                    {{text=_("Cancel"),callback=function() UIManager:close(dialog) end}},
+                },
+            }
+            UIManager:show(dialog)
+            return
+        end
+    end
+    if Network.defer(function() self:executeSearch(f,conflict_confirmed,disable_blacklist) end) then return end
     Network.schedule(0,function()
         local function join(values) return values and #values>0 and table.concat(values,",") or nil end
         local excluded={}
@@ -1305,6 +1325,7 @@ function CustomFilterMenu:executeSearch(submitted)
         local category_names={ ["116"]="F/F",["22"]="F/M",["21"]="Gen",["23"]="M/M",["2246"]="Multi",["24"]="Other" }
         for _,value in ipairs(f.exclude_warnings or {}) do if warning_names[tostring(value)] then excluded[#excluded+1]=warning_names[tostring(value)] end end
         for _,value in ipairs(f.exclude_categories or {}) do if category_names[tostring(value)] then excluded[#excluded+1]=category_names[tostring(value)] end end
+        if not disable_blacklist then excluded=require('ao3lib.library.blacklist').exclusions(excluded) end
         local parameters={
             ["work_search[complete]"]=f.completion_status,["work_search[crossover]"]=f.crossovers,
             ["work_search[single_chapter]"]=f.single_chapter,["work_search[word_count]"]=f.word_count,
@@ -1323,7 +1344,7 @@ function CustomFilterMenu:executeSearch(submitted)
             UIManager:show(InfoMessage:new{text=_("Failed to fetch results for the custom filter."),timeout=2})
             return
         end
-        self.fanfic:onShowFanficBrowser(results,nextPage)
+        self.fanfic:onShowFanficBrowser(results,nextPage,nil,{blacklist=not disable_blacklist})
     end)
 end
 

@@ -20,7 +20,7 @@ local function find(text)
     error('Missing setting: '..text)
 end
 Menu:onOpenSettings()
-assert(#owner.item_table==5)
+assert(#owner.item_table==6)
 for _,row in ipairs(owner.item_table) do assert(row.mandatory==nil) end
 find('Update checks').callback()
 local delay=find('Delay between checks')
@@ -36,10 +36,13 @@ spin.callback{value=0};assert(saves==before)
 spin.callback{value=121};assert(saves==before)
 spin.callback{value=1.5};assert(saves==before)
 Menu:onOpenSettings();find('Reading and display').callback()
+for _,row in ipairs(owner.item_table) do assert(row.text~='Enable tag blacklist' and row.text~='Manage tag blacklist…') end
 find('Formatted view text size').callback()
 assert(shown.value==22 and shown.value_min==12 and shown.value_max==32,'Numeric settings must use their own values and bounds')
 shown.callback{value=24}
 assert(values.work_view_font_size==24 and values.update_check_delay_seconds==15)
+Menu:onOpenSettings();find('Blacklist').callback()
+assert(find('Enable tag blacklist').mandatory=='On' and find('Manage tag blacklist…'))
 Menu:onOpenSettings();find('Downloads').callback()
 assert(find('Download layout').mandatory=='Author/Title')
 find('HTML download fallback').callback()
@@ -62,7 +65,10 @@ print('PASS: grouped options, maintenance buttons, inline values, no save popups
 
 Menu:onOpenSettings();find('Reading and display').callback()
 assert(find('Downloaded works view').mandatory=='List')
-find('Downloaded works view').callback();shown.buttons[1][1].callback()
+find('Downloaded works view').callback()
+assert(shown.buttons[1][1].no_refresh_checkmark and shown.buttons[2][1].no_refresh_checkmark,
+    'Closing a checked choice must not repaint its button over the settings menu')
+shown.buttons[1][1].callback()
 assert(values.downloaded_rendered_view==true and find('Downloaded works view').mandatory=='Rendered')
 find('Downloaded works view').callback();shown.buttons[2][1].callback()
 assert(values.downloaded_rendered_view==false and find('Downloaded works view').mandatory=='List')

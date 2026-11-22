@@ -29,10 +29,11 @@ function widget:onReturn()
     self.title,self.item_table=previous.title,previous.items
 end
 local opened=0
+local browser_options
 local fanfic={executeSearch=function(_,params)
     requests[#requests+1]=params
     return true, {total=0}
-end,onShowFanficBrowser=function() opened=opened+1 end}
+end,onShowFanficBrowser=function(_,_,_,_,options) opened=opened+1;browser_options=options end}
 Menu.menuWidget,Menu.fanfic=widget,fanfic
 Menu:onSearchFanficMenu()
 assert(widget.item_table[1].text=='Search works')
@@ -78,6 +79,33 @@ assert(params['exclude_work_search[category_ids][]']==nil)
 assert(params['work_search[category_ids][]'][1]=='21')
 assert(params['work_search[word_count]']=='>50000' and params['work_search[date_from]']=='2026-01-01')
 assert(params['work_search[sort_column]']=='revised_at' and params['work_search[sort_direction]']=='desc')
+settings.tag_blacklist={{type='Freeform',name='Global tag'}}
+Filter:executeSearch();table.remove(jobs,1)()
+assert(requests[#requests]['work_search[excluded_tag_names]']:find('Global tag',1,true))
+assert(not Filter.filter.exclude_additional_tags[2],'Global tags must not be added to the saved filter')
+settings.tag_blacklist=nil
+settings.tag_blacklist={{type='Rating',name='Explicit'},{type='Category',name='M/M'},
+    {type='Warning',name='Major Character Death'}}
+Filter:executeSearch();table.remove(jobs,1)()
+local specials=requests[#requests]['work_search[excluded_tag_names]']
+assert(specials:find('Explicit',1,true) and specials:find('M/M',1,true) and specials:find('Major Character Death',1,true))
+settings.tag_blacklist=nil
+settings.tag_blacklist={{type='Freeform',name='Changed after submission'}}
+Filter:executeSearch()
+local warning=shown[#shown]
+assert(warning.title:find('Changed after submission',1,true) and #jobs==0)
+warning.buttons[2][1].callback()
+assert(#jobs==1);table.remove(jobs,1)()
+assert(requests[#requests]['work_search[excluded_tag_names]']:find('Changed after submission',1,true))
+assert(browser_options.blacklist==true)
+Filter:executeSearch()
+warning=shown[#shown]
+warning.buttons[1][1].callback()
+assert(#jobs==1);table.remove(jobs,1)()
+assert(not requests[#requests]['work_search[excluded_tag_names]']:find('Changed after submission',1,true))
+assert(requests[#requests]['work_search[excluded_tag_names]']:find('Excluded tag',1,true))
+assert(browser_options.blacklist==false and settings.tag_blacklist[1].name=='Changed after submission')
+settings.tag_blacklist=nil
 -- Old scopes become editable included tags; editing remains isolated from storage.
 Filter:UpdateFilterCrafter(settings.saved_filters.legacy)
 Filter.filter.additional_tags[1]='Edited'

@@ -186,10 +186,31 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         else
             table.insert(kv_pairs,{"     " .. _("Series:"),_("None")})
         end
-        table.insert(kv_pairs, { "     " .. "Rating:", v.rating })
+        local function tagCallback(items)
+            if #items==0 then return nil end
+            local function open(item) require('ao3lib.ui.tag_actions').show(self.Fanfic,item.kind,item.name) end
+            return function()
+                if #items==1 then open(items[1]);return end
+                local dialog,buttons=nil,{}
+                for __,item in ipairs(items) do
+                    buttons[#buttons+1]={{text=item.name,callback=function() UIManager:close(dialog);open(item) end}}
+                end
+                dialog=ButtonDialog:new{title=_('Select a tag'),buttons=buttons};UIManager:show(dialog)
+            end
+        end
+        local function tagItems(kind,values)
+            local items={}
+            if type(values)=='string' then values={values} end
+            for __,value in ipairs(type(values)=='table' and values or {}) do
+                if type(value)=='string' and value~='' and value~='N/A' then items[#items+1]={kind=kind,name=value} end
+            end
+            return items
+        end
+        table.insert(kv_pairs, { "     " .. "Rating:", v.rating,callback=tagCallback(tagItems('Rating',v.rating)) })
         table.insert(
             kv_pairs,
-            { "     " .. "Fandom:", #v.fandoms > 0 and table.concat(v.fandoms, ", ") or "No fandoms available" }
+            { "     " .. "Fandom:", #v.fandoms > 0 and table.concat(v.fandoms, ", ") or "No fandoms available",
+                callback=tagCallback(tagItems('Fandom',v.fandoms)) }
         )
         table.insert(kv_pairs, { "     " .. "Date:", v.date or v.updated or v.published })
         local function tagRow(label,field,kind,empty)
@@ -202,23 +223,34 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                     local result=require("ao3lib.ao3.client"):getHiddenTags(v.id,kind)
                     if not result.success then UIManager:show(InfoMessage:new{text=result.error});return end
                     v[field]=result.tags;v[field.."_hidden"]=false
+                    if field=='tags' then v.tag_names=result.tags end
                     if window and not window._ao3_closed and self.browse_window==window then window:reload() end
                 end)
+            else
+                row.callback=tagCallback(tagItems(field=='warnings' and 'Warning' or 'Freeform',
+                    field=='tags' and (v.tag_names or v[field]) or v[field]))
             end
             return row
         end
         table.insert(kv_pairs,tagRow("Warnings:","warnings","warnings","No warnings available"))
 
+        local relationship_items=tagItems('Relationship',v.relationships)
+        if type(v.category)=='string' then for category in v.category:gmatch('[^,]+') do
+            category=util.trim(category)
+            if category~='' and category~='N/A' then relationship_items[#relationship_items+1]={kind='Category',name=category} end
+        end end
         table.insert(kv_pairs, {
             "     " .. "Relationships:",
             "("
                 .. (v.category or _("Unknown"))
                 .. ") "
                 .. (#v.relationships > 0 and table.concat(v.relationships, ", ") or "No relationships available"),
+            callback=tagCallback(relationship_items),
         })
         table.insert(kv_pairs, {
             "     " .. "Characters:",
             #v.characters > 0 and table.concat(v.characters, ", ") or "No characters available",
+            callback=tagCallback(tagItems('Character',v.characters)),
         })
         table.insert(kv_pairs,tagRow("Other Tags:","tags","freeforms","No tags available"))
 
@@ -324,18 +356,37 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     local pager=require("ao3lib.ao3.work_paging").get(fetchNextPage)
     if pager then pager:setTotal(total_fic_count) end
     if not Config:readSetting("formatted_work_view",true) and pager and pager.total then
-        return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,
+        return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
             plugin=Fanfic,title=title,index=view_options.index,
             replacing=view_options.replacing,resume=resume})
     end
     if Config:readSetting("formatted_work_view",true) then
-        return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,
+        return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
             plugin=Fanfic,title=title,index=view_options.index,
             replacing=view_options.replacing,resume=resume})
     end
-    local kv_pairs = self:generateTable({}, ficResults, updateFanficCallback, downloadFanficCallback)
+    local revealed={}
+    local function legacyRows(works)
+        local rows={}
+        for _,work in ipairs(works) do
+            local key=work.id or work
+            local match=view_options.blacklist~=false and not revealed[key] and require('ao3lib.library.blacklist').match(work)
+            if match and #match>0 then
+                rows[#rows+1]={_('Hidden work'),_('Blacklisted tags: ')..table.concat(match,', '),callback=function()
+                    revealed[key]=true
+                    if self.browse_window and not self.browse_window._ao3_closed then self.browse_window:reload() end
+                end}
+                rows[#rows+1]={_('Tap to show work'),'',callback=rows[#rows].callback}
+                for i=3,15 do rows[#rows+1]={'',''} end
+            else
+                self:generateTable(rows,{work},updateFanficCallback,downloadFanficCallback)
+            end
+        end
+        return rows
+    end
+    local kv_pairs = legacyRows(ficResults)
     ficResults.total = nil
     local fanfics_loaded = ficResults
 
@@ -379,7 +430,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     end
 
     BrowseWindow.addNewFanfics = function(selfself, newFics)
-        selfself.kv_pairs = self:generateTable(selfself.kv_pairs, newFics, updateFanficCallback, downloadFanficCallback)
+        for _,row in ipairs(legacyRows(newFics)) do selfself.kv_pairs[#selfself.kv_pairs+1]=row end
 
         newFics.total = nil
         -- Add new works to loaded fanfics table
@@ -406,7 +457,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     end
 
     BrowseWindow.reload = function(selfself)
-        selfself.kv_pairs = self:generateTable({}, fanfics_loaded, updateFanficCallback, downloadFanficCallback)
+        selfself.kv_pairs = legacyRows(fanfics_loaded)
 
         -- Update the total number of pages
         selfself.pages = math.ceil(#selfself.kv_pairs / selfself.items_per_page)

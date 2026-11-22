@@ -30,7 +30,7 @@ function M.html(thread)
     local parts,links={},{}
     local function link(kind,comment,label)
         links[#links+1]={kind=kind,comment=comment}
-        return '<a href="ao3-comment:'..#links..'">'..escape(label)..'</a>'
+        return '<a href="ao3-comment:'..#links..'" style="color:#000000;text-decoration:none"><span style="color:#000000">'..escape(label)..'</span></a>'
     end
     for entry_index,comment in ipairs(thread.entries or {thread}) do
         local name=comment.author or comment.heading
@@ -48,6 +48,7 @@ end
 M.css=[[
 @page { margin: 0; }
 body { margin: 0; color: #000; background: #fff; line-height: 1.35; }
+a, a:link, a:visited, a:active { color: #000; text-decoration: none; }
 h2 { font-size: 1em; margin: 0 0 .2em; font-weight: bold; }
 p { margin: 0 0 .65em; }
 .comment { margin-bottom: 1em; border-bottom: 1px solid #888; }

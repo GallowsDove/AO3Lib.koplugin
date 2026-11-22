@@ -26,6 +26,10 @@ function M.show(owner,checkFilenameTemplate)
             {text=_('Show adult work warning'),key='show_adult_warning',type='Bool'},
             {text=_('Chapter progress format'),key='show_current_chapter',type='Bool',on=_('First unread'),off=_('Unread count')},
         }},
+        {title=_('Blacklist'),options={
+            {text=_('Enable tag blacklist'),key='tag_blacklist_enabled',type='Bool',default=true},
+            {text=_('Manage tag blacklist…'),type='Action',callback=function() require('ao3lib.ui.blacklist').show(owner) end},
+        }},
         {title=_('Downloads'),options={
             {text=_('Download folder'),key='fanfic_folder_path',type='Folder'},
             {text=_('Download layout'),key='author_folders',type='Bool',on=_('Author/Title'),off=_('Flat')},
@@ -43,6 +47,7 @@ function M.show(owner,checkFilenameTemplate)
     }
     local render
     local function current(option)
+        if option.type=='Action' then return nil end
         if option.value then return option.value() end
         return Config:readSetting(option.key,option.default)
     end
@@ -57,6 +62,7 @@ function M.show(owner,checkFilenameTemplate)
         refresh(group)
     end
     local function edit(option,group)
+        if option.type=='Action' then return option.callback() end
         local value=current(option)
         if option.type=='Choice' then
             local dialog
@@ -71,6 +77,7 @@ function M.show(owner,checkFilenameTemplate)
             local dialog
             local function choice(label,state)
                 return {{text=label,checked_func=function() return (not not value)==state end,
+                    no_refresh_checkmark=true,
                     callback=function() save(option,state,group,dialog) end}}
             end
             dialog=ButtonDialog:new{title=option.text,buttons={
@@ -115,7 +122,7 @@ function M.show(owner,checkFilenameTemplate)
                 for _,choice in ipairs(option.choices) do if choice[1]==value then value=choice[2];break end end
             end
             if option.type=='Bool' then value=value and (option.on or _('On')) or (option.off or _('Off')) end
-            rows[#rows+1]={text=option.text,mandatory=tostring(value or '')..(option.unit and (' '..option.unit) or ''),
+            rows[#rows+1]={text=option.text,mandatory=option.type~='Action' and (tostring(value or '')..(option.unit and (' '..option.unit) or '')) or nil,
                 callback=function() edit(option,group) end}
         end
         return rows

@@ -1,5 +1,6 @@
 dofile('tests/test_network.lua')
 local WorkView=require('ao3lib.ui.work_view')
+assert(WorkView.css:find('a:link',1,true) and not WorkView.css:find('text-decoration: underline',1,true))
 local Browser=require('ao3lib.ui.work_browser')
 local work={id='formatted',title='<Story & title>',author='Writer',rating='Explicit',category='M/M',
     warnings={'No Archive Warnings Apply'},chapters='2/?',words='12345',language='English',
@@ -10,6 +11,15 @@ Browser.showAuthorInfoCallback=function() authors=authors+1 end
 Browser.Fanfic={getWorksFromSeries=function() series=series+1;return true,{} end,onShowFanficBrowser=function() end}
 local function rows(w) return Browser:generateTable({}, {w},function() end,function() end) end
 local html,actions=WorkView.html(work,rows(work))
+local tapped={}
+local tag_html,tag_actions=WorkView.html(work,rows(work),{tag_action=function(kind,name) tapped[#tapped+1]={kind,name} end})
+assert(tag_html:find('>First tag</span></a>',1,true) and tag_html:find('>Fandom</span></a>',1,true))
+assert(tag_html:find('style="color:#000000;text-decoration:none"',1,true))
+for _,action in ipairs(tag_actions) do action() end
+local found={};for _,entry in ipairs(tapped) do found[entry[1]..':'..entry[2]]=true end
+assert(found['Fandom:Fandom'] and found['Freeform:First tag'] and found['Rating:Explicit']
+    and found['Category:M/M'] and found['Warning:No Archive Warnings Apply'])
+authors,series=0,0
 assert(html:find('&lt;Story &amp; title&gt;',1,true) and not html:find('<script>',1,true))
 assert(html:find('</p><p>Second paragraph.',1,true))
 assert(html:find('category-slash.png',1,true) and html:find('rating-explicit.png',1,true)

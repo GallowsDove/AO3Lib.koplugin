@@ -46,7 +46,24 @@ function M.html(work,rows,options)
     local function link(label,callback)
         if not callback then return escape(label) end
         actions[#actions+1]=callback
-        return '<a href="ao3-action:'..#actions..'">'..escape(label)..'</a>'
+        return '<a href="ao3-action:'..#actions..'" style="color:#000000;text-decoration:none"><span style="color:#000000">'..escape(label)..'</span></a>'
+    end
+    local function tagLink(kind,name)
+        local callback=options and options.tag_action and function() options.tag_action(kind,name) end
+        return link(name,callback)
+    end
+    local function tagList(value,kind,split)
+        if type(value)=='string' then
+            local items={}
+            if split then for item in value:gmatch('[^,]+') do items[#items+1]=item:match('^%s*(.-)%s*$') end
+            else items[1]=value end
+            value=items
+        end
+        local result={}
+        for __,name in ipairs(type(value)=='table' and value or {}) do
+            if type(name)=='string' and name~='' and name~='N/A' then result[#result+1]=tagLink(kind,name) end
+        end
+        return table.concat(result,' &#183; ')
     end
     local author,series,warning_row,tag_row
     for __,row in ipairs(rows) do
@@ -66,8 +83,8 @@ function M.html(work,rows,options)
     local badge='<table class="badges"><tr><td>'..cells[1]..'</td><td>'..cells[2]..'</td></tr><tr><td>'..cells[3]..'</td><td>'..cells[4]..'</td></tr></table>'
     local out={'<table class="heading" width="100%"><tr><td class="square">'..badge..'</td><td><h1>'..link(rows[1][1],rows[1].callback)..'</h1>',
         '<p class="author">'..escape(_('by'))..' '..link(author and author[2] or work.author or _('Anonymous'),author and author.callback)..'</p>'}
-    local fandoms=text(work.fandoms)
-    if fandoms~='' then out[#out+1]='<p class="fandom">'..escape(fandoms)..'</p>' end
+    local fandoms=tagList(work.fandoms,'Fandom',true)
+    if fandoms~='' then out[#out+1]='<p class="fandom">'..fandoms..'</p>' end
     out[#out+1]='</td></tr></table>'
     if type(work.series)=='table' and #work.series>0 and series then
         out[#out+1]='<p class="series">'..link(series[2],series.callback)..'</p>'
@@ -83,7 +100,10 @@ function M.html(work,rows,options)
         local value=text(work[field])
         if field=='warnings' and work.warnings_hidden then
             advisory[#advisory+1]=link(_('Show warnings'),warning_row and warning_row.callback)
-        elseif value~='' and value~='N/A' then advisory[#advisory+1]=escape(value) end
+        elseif value~='' and value~='N/A' then
+            local kind=field=='rating' and 'Rating' or field=='category' and 'Category' or 'Warning'
+            advisory[#advisory+1]=tagList(work[field],kind,field=='category')
+        end
     end
     if #advisory>0 then out[#out+1]='<p class="advisory">'..table.concat(advisory,' &#183; ')..'</p>' end
     local summary=text(work.summary)
@@ -109,7 +129,7 @@ function M.html(work,rows,options)
                 ..link(_('Show additional tags'),tag_row and tag_row.callback)..'</p></div>'
             return
         end
-        local value=work[field]
+        local value=field=='tags' and work.tag_names or work[field]
         local values={}
         if type(value)=='table' then values=value
         elseif type(value)=='string' then
@@ -118,7 +138,10 @@ function M.html(work,rows,options)
         local chips={}
         for __,item in ipairs(values) do
             item=tostring(item):gsub('%s+',' '):match('^%s*(.-)%s*$')
-            if item~='' and item~='N/A' then chips[#chips+1]='<span class="chip">'..escape(item)..'</span>' end
+            if item~='' and item~='N/A' then
+                local kind=field=='relationships' and 'Relationship' or field=='characters' and 'Character' or 'Freeform'
+                chips[#chips+1]='<span class="chip">'..tagLink(kind,item)..'</span>'
+            end
         end
         if #chips>0 then
             out[#out+1]='<div class="tag-group '..class..'"><p><span class="tag-heading">'..escape(label)..'</span> '..table.concat(chips,'&#160;&#183; ')..'</p></div>'
@@ -147,7 +170,7 @@ end
 M.css=[[
 @page { margin: 0; }
 body { margin: 0; line-height: 1.22; color: #000; background-color: #fff; }
-a { color: #000; text-decoration: none; }
+a, a:link, a:visited, a:active { color: #000; text-decoration: none; }
 p { margin: .25em 0; }
 h1 { font-size: 1.25em; font-weight: bold; line-height: 1.1; margin: 0 0 .12em; }
 h1, h1 a, h1 a:link, h1 a:visited, h1 a:active { color: #000; }
@@ -159,7 +182,6 @@ table.badges { border-spacing: .1em; width: 3.6em; }
 table.badges td { width: 1.7em; height: 1.7em; }
 table.badges img { width: 1.7em; height: 1.7em; }
 .author { font-size: .95em; font-style: normal; margin: 0; }
-.author a, .series a, .advisory a, .tag-group a { text-decoration: underline; }
 .fandom { font-size: .82em; color: #111; margin: .2em 0 0; }
 .series { font-size: .9em; font-style: normal; margin: .25em 0; }
 .work-facts { font-size: .85em; margin: .35em 0 .2em; }
@@ -169,18 +191,23 @@ table.badges img { width: 1.7em; height: 1.7em; }
 .summary p { margin: .4em 0; }
 .tag-group { margin: .3em 0; }
 .tag-group p { font-size: .85em; line-height: 1.4; }
-.chip { background-color: #fff; border-bottom: 1px solid #777; padding: .03em .15em; }
+.chip { background-color: #fff; padding: .03em .15em; }
 .relationships .chip { font-style: normal; }
 .footnote { border-top: 1px solid #777; margin-top: 1.1em; padding-top: .4em; font-size: .72em; color: #111; }
 .footnote b { color: #000; }
 .date { font-style: normal; }
+.hidden-work h1 { margin-bottom: .4em; }
+.hidden-work .hidden-label { font-size: .85em; font-weight: bold; margin: .5em 0 .2em; }
+.hidden-work .hidden-tag { margin: .2em 0; }
+.hidden-work .hidden-action { border-top: 1px solid #777; margin-top: .8em; padding-top: .5em; }
+.hidden-work .hidden-action a { font-weight: bold; }
 ]]
 
 -- Controller kept separate from rendering so paging/connection lifecycle can
 -- be tested without a device or a MuPDF renderer.
 function M.new(context)
     local pager=require('ao3lib.ao3.work_paging').get(context.fetch)
-    local self={context=context,works={},index=context.index or 1,closed=false,pager=pager}
+    local self={context=context,works={},index=context.index or 1,closed=false,pager=pager,revealed={}}
     for i,work in ipairs(context.works) do self.works[i]=work end
     self.total=tonumber(context.works.total)
     if self.total and self.total<#self.works then self.total=nil end
@@ -195,9 +222,25 @@ function M.new(context)
     function self:render()
         if self.closed then return end
         local work=self.works[self.index]
-        local rows=work and context.rows(work) or {}
+        local match=context.blacklist and work and not self.revealed[work.id or self.index]
+            and require('ao3lib.library.blacklist').match(work)
+        if match and #match==0 then match=nil end
+        local rows=work and not match and context.rows(work) or {}
         local html,actions
-        if work then html,actions=M.html(work,rows,context) else html,actions='<p>'..escape(_('No works found.'))..'</p>',{} end
+        if match then
+            local function reveal() self.revealed[work.id or self.index]=true;self:render() end
+            local label=_('Matched blacklist entries:')
+            local names=table.concat(match,', ')
+            rows={{_('Hidden work'),label..' '..names,callback=reveal},
+                {_('Show work'),'',callback=reveal}}
+            local entries={};for _,name in ipairs(match) do
+                entries[#entries+1]='<p class="hidden-tag">'..escape(name)..'</p>'
+            end
+            html='<div class="hidden-work"><h1>'..escape(_('Hidden work'))..'</h1>'
+                ..'<p class="hidden-label">'..escape(label)..'</p>'..table.concat(entries)
+                ..'<p class="hidden-action"><a href="ao3-action:1" style="color:#000000;text-decoration:none"><span style="color:#000000">'..escape(_('Show work'))..'</span></a></p></div>'
+            actions={reveal}
+        elseif work then html,actions=M.html(work,rows,context) else html,actions='<p>'..escape(_('No works found.'))..'</p>',{} end
         context.present(self,html,actions,rows)
     end
     function self:goTo(index,allow_unknown_next)
@@ -262,6 +305,9 @@ function M.show(browser,context)
     local width,height=Screen:getWidth(),Screen:getHeight()
     local padding=Screen:scaleBySize(12)
     local state
+    if not context.tag_action and context.plugin then
+        context.tag_action=function(kind,name) require('ao3lib.ui.tag_actions').show(context.plugin,kind,name) end
+    end
     function View:onClose() UI:close(self);return true end
     function View:onCloseWidget()
         self._ao3_closed=true

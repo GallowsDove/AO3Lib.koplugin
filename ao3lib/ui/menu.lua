@@ -348,6 +348,10 @@ function FanficMenu:onSelectTag(category)
                                     end,
                                 },
                             },
+                            {{text=_("Add to blacklist"),callback=function()
+                                require('ao3lib.library.blacklist').add(category,tag)
+                                UIManager:close(dialog)
+                            end}},
                         },
                     })
                     UIManager:show(dialog)
@@ -453,6 +457,10 @@ function FanficMenu:onSearchTag(category)
                                                         end,
                                                     },
                                                 },
+                                                {{text=_("Add to blacklist"),callback=function()
+                                                    require('ao3lib.library.blacklist').add(category,tag.name)
+                                                    UIManager:close(dialog)
+                                                end}},
                                             },
                                         })
                                         UIManager:show(dialog)

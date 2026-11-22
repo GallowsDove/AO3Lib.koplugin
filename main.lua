@@ -168,7 +168,7 @@ function Fanfic:onShowAuthor(author)
     return self:showUserInfo(username,pseud)
 end
 
-function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
+function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title, view_options)
     logger.dbg("AO3Lib.koplugin: Showing work browser")
     FanficBrowser:show(
         self.ui,
@@ -178,7 +178,8 @@ function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title)
         function(fanficId) self:DownloadFanfic(fanficId) end, -- Download callback
         function(author) self:onShowAuthor(author) end,-- Open author user browser callback
         self,
-        title
+        title,
+        view_options
     )
 
 end
