@@ -21,8 +21,14 @@ package.loaded['ui/widget/scrollhtmlwidget']={new=function(_,fields)
         end}
     scroll=fields;return fields
 end}
-package.loaded['ui/bidi']={mirroredUILayout=function() return false end}
+local mirrored=false
+package.loaded['ui/bidi']={mirroredUILayout=function() return mirrored end,
+    flipDirectionIfMirroredUILayout=function(direction)
+        if mirrored then return direction=='west' and 'east' or direction=='east' and 'west' or direction end
+        return direction
+    end}
 package.loaded.device={hasKeys=function() return false end,
+    isTouchDevice=function() return true end,
     screen={getWidth=function() return 600 end,getHeight=function() return 800 end,scaleBySize=function(_,n) return n end}}
 package.loaded['ffi/blitbuffer']={COLOR_WHITE=0}
 local UI=require('ui/uimanager')
@@ -52,10 +58,16 @@ assert(box:onHoldAO3Title(nil,{pos={x=11,y=20}}) and held=='one')
 held=nil
 assert(not box:onHoldAO3Title(nil,{pos={x=12,y=20}}) and not held)
 assert(not box:onHoldAO3Title(nil,{pos={x=0,y=20}}) and not held)
-state:next()
+assert(window.ges_events.SwipeWork[1].ges=='swipe')
+assert(not window:onSwipeWork(nil,{direction='north'}) and state.index==1)
+assert(window:onSwipeWork(nil,{direction='west'}) and state.index==2)
 scroll.html_link_tapped_callback{uri='ao3-action:1'};assert(selected=='two','Title actions must follow the current page')
 assert(scroll.htmlbox_widget:onHoldAO3Title(nil,{pos={x=11,y=20}}) and held=='two')
 assert(#context.plugin._ao3_navigation==1,'Changing works must replace the existing rendered page')
+assert(state.window:onSwipeWork(nil,{direction='east'}) and state.index==1)
+mirrored=true
+assert(state.window:onSwipeWork(nil,{direction='east'}) and state.index==2)
+mirrored=false
 state.window:onClose();assert(state.closed and #context.plugin._ao3_navigation==0)
 print('PASS: title action menu; only View options visible; author link; menu icon; page-specific actions; focus layout and navigation cleanup')
 

@@ -325,9 +325,21 @@ function M.show(browser,context)
         if not self._ao3_closed then state:previous() end
         return true
     end
+    function View:onSwipeWork(_,gesture)
+        local direction=require('ui/bidi').flipDirectionIfMirroredUILayout(gesture.direction)
+        if direction=='west' then return self:onNextWork() end
+        if direction=='east' then return self:onPreviousWork() end
+        return false
+    end
     function View:init()
         self.key_events=self.key_events or {}
         self.key_events.Close={{'Back'}}
+        if Device:isTouchDevice() then
+            self.ges_events=self.ges_events or {}
+            self.ges_events.SwipeWork={require('ui/gesturerange'):new{
+                ges='swipe',range=Geom:new{x=0,y=0,w=width,h=height},
+            }}
+        end
         if Device:hasKeys() then
             self.key_events.NextWork={{Device.input.group.PgFwd}}
             self.key_events.PreviousWork={{Device.input.group.PgBack}}

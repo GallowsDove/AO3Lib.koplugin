@@ -121,7 +121,7 @@ package.loaded['ui/widget/scrollhtmlwidget']={new=function(_,fields)
     return setmetatable(fields,{__index=Class})
 end}
 package.loaded['ui/bidi']={mirroredUILayout=function() return false end}
-package.loaded.device={hasKeys=function() return true end,
+package.loaded.device={hasKeys=function() return true end,isTouchDevice=function() return false end,
     input={group={PgFwd={'LPgFwd','RPgFwd'},PgBack={'LPgBack','RPgBack'}}},screen={getWidth=function() return 600 end,getHeight=function() return 800 end,
     scaleBySize=function(_,n) return n end}}
 package.loaded['ffi/blitbuffer']={COLOR_WHITE=0}

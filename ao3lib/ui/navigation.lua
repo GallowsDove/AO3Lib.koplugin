@@ -76,13 +76,16 @@ function M.menu(window)
     if menu and type(menu.onShowMenu) == "function" then
         -- Use the host's native FileManager/Reader top menu, just as Bookshelf
         -- does. AO3 windows remain mounted so dismissing it resumes browsing.
-        menu:onShowMenu()
+        require('ao3lib.ui.gestures').suspend(function() menu:onShowMenu() end)
     end
     return true
 end
 
 function M.bind(owner, window, options)
     options = options or {}
+    local gestures=require('ao3lib.ui.gestures')
+    gestures.installDialogs()
+    gestures.attach(owner,window)
     local frames = stack(owner)
     local frame = {owner=owner, window=window, options=options, close=window.onClose}
     local replaced = options.replace and options.replace._ao3_navigation
