@@ -43,7 +43,19 @@ assert(files['content.opf']:find('<dc:subject>Fanworks</dc:subject>',1,true))
 assert(not pcall(Converter.build,html,'999'))
 assert(not pcall(Converter.build,'<html>Login required</html>','123'))
 assert(not pcall(Converter.build,html:gsub('</body>',''),'123'))
-assert(not pcall(Converter.build,html,'123',function() error('Image unavailable') end))
+local missing_files,missing=Converter.build(html,'123',function() error('Image unavailable') end)
+assert(missing==1)
+local missing_content=''
+for path,bytes in pairs(missing_files) do if path:match('%.xhtml$') then missing_content=missing_content..bytes end end
+assert(missing_content:find('[Image unavailable]',1,true))
+assert(missing_content:find('href="https://example.test/image.png"',1,true))
+assert(not missing_files['image1.png'])
+local _,bad_image=Converter.build(html,'123',function() return '<html>Not an image</html>' end)
+assert(bad_image==1)
+local cancel={}
+package.loaded['ao3lib.ao3.background']={isCancelled=function(err) return err==cancel end}
+local completed,err=pcall(Converter.build,html,'123',function() error(cancel,0) end)
+assert(not completed and err==cancel,'Cancellation must not be treated as a missing image')
 -- Regression for work 52247068: author HTML uses bare <br> inside emphasis.
 local html_breaks=html:gsub('<img[^>]+/>',''):gsub('Content&nbsp;', '<em>Content<br>More</em>')
 local repaired=Converter.build(html_breaks,'123')

@@ -104,7 +104,7 @@ function CustomFilterMenu:textboxWidget(title, setting)
     local inputDialog
     inputDialog = InputDialog:new({
         title = title,
-        input = "",
+        input = self.filter[setting] or "",
         input_type = "text",
         buttons = {
             {
@@ -779,6 +779,10 @@ end
 function CustomFilterMenu:WorkInfoSubmenu()
     local menu_items = {
         {
+            text_func = function() return _("Title: ") .. (self.filter.work_title or _("Any")) end,
+            callback = function() self:textboxWidget(_("Work title"), "work_title") end,
+        },
+        {
             text_func = function()
                 local key_to_completion = {
                     ["T"] = "Complete works only",
@@ -1327,6 +1331,7 @@ function CustomFilterMenu:executeSearch(submitted,conflict_confirmed,disable_bla
         for _,value in ipairs(f.exclude_categories or {}) do if category_names[tostring(value)] then excluded[#excluded+1]=category_names[tostring(value)] end end
         if not disable_blacklist then excluded=require('ao3lib.library.blacklist').exclusions(excluded) end
         local parameters={
+            ["work_search[title]"]=f.work_title,
             ["work_search[complete]"]=f.completion_status,["work_search[crossover]"]=f.crossovers,
             ["work_search[single_chapter]"]=f.single_chapter,["work_search[word_count]"]=f.word_count,
             ["work_search[language_id]"]=f.language_id,["work_search[date_from]"]=f.date_from,["work_search[date_to]"]=f.date_to,

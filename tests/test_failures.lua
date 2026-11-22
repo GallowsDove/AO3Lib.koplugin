@@ -1,7 +1,7 @@
 -- Run from the plugin directory: luajit tests/test_failures.lua
 package.path = './?.lua;' .. package.path
 local function stub(name, value) package.loaded[name] = value end
-local queue, calls, resets, parses, warnings = {}, {}, 0, 0, 0
+local queue, calls, resets, parses, warnings, timeouts = {}, {}, 0, 0, 0, {}
 local function enqueue(...) for _,r in ipairs({...}) do queue[#queue+1] = r end end
 local function response(status, body, headers) return {status=status,body=body or '',headers=headers or {}} end
 stub('ssl.https', {request=function(req)
@@ -12,10 +12,11 @@ stub('ssl.https', {request=function(req)
     if r.body then assert(req.sink(r.body)) end
     if r.after then r.after() end
     if r.timeout then return nil, 'timeout' end
+    if r.error then return nil, r.error end
     return 1, r.status, r.headers
 end})
 stub('socketutil', {FILE_BLOCK_TIMEOUT=15,FILE_TOTAL_TIMEOUT=60,
-    set_timeout=function() end, reset_timeout=function() resets=resets+1 end})
+    set_timeout=function(_,block,total) timeouts[#timeouts+1]={block,total} end, reset_timeout=function() resets=resets+1 end})
 stub('socket.url', {absolute=function(base,rel)
     if rel:match('^https?://') then return rel end
     return base:match('^https?://[^/]+') .. rel
@@ -75,9 +76,16 @@ fails(Client:searchForUsers('Writer'),'429')
 enqueue(response(404,'not found'))
 fails(Client:getUserData('Writer','Writer'),'not found')
 enqueue({throw=true})
-fails(Client:getUserData('Writer','Writer'),'connect')
+fails(Client:getUserData('Writer','Writer'),'TLS exception')
 enqueue({timeout=true,body='partial response'})
-fails(Client:getUserData('Writer','Writer'),'connect')
+fails(Client:getUserData('Writer','Writer'),'timed out')
+assert(timeouts[#timeouts][1]==15 and timeouts[#timeouts][2]==60)
+enqueue({error='closed'})
+fails(Client:getUserData('Writer','Writer'),'closed')
+enqueue({error='wantread'})
+fails(Client:getUserData('Writer','Writer'),'timed out')
+enqueue({body=string.rep('a',32*1024*1024+1)})
+fails(Client:getUserData('Writer','Writer'),'32 MiB')
 assert(resets==#calls, 'socket timeouts must be reset after every request')
 -- Unknown layouts, optional profile sections, and parser exceptions.
 enqueue(response(200,'unexpected page'))
@@ -173,6 +181,7 @@ for _,r in ipairs({response(503,maintenance),response(200,maintenance),response(
 end
 enqueue(response(302,'redirect body',{location='/downloads/new.epub'}),response(200,'PK\003\004VALID EPUB'))
 assert(Client:downloadEpub('https://archiveofourown.org/downloads/123.epub',destination).success)
+assert(timeouts[#timeouts][1]==120 and timeouts[#timeouts][2]==300)
 assert(content()=='PK\003\004VALID EPUB')
 for path in pairs(partials) do assert(realOpen(path,'rb')==nil) end
 -- A new download may not overwrite a file that appears after path planning.
@@ -197,10 +206,11 @@ print('PASS: 503/500/429/404; maintenance HTML; malformed profiles/search/JSON; 
 
 -- Optional HTML fallback: disabled by default, native preferred, atomic commit.
 local source={id='123',epub_link='https://archiveofourown.org/downloads/123.epub',html_link='https://archiveofourown.org/downloads/123.html'}
-local converted=0
+local converted,missing_images=0,0
 stub('ao3lib.library.html_epub',{convert=function(html,path,id)
     assert(html=='HTML DOWNLOAD' and id=='123');converted=converted+1
     local f=assert(realOpen(path,'wb'));f:write('CONVERTED EPUB');f:close()
+    return missing_images
 end})
 enqueue(response(200,'invalid EPUB'))
 fails(Client:downloadEpub(source,destination,true))
@@ -209,7 +219,14 @@ settings.html_download_fallback=true
 enqueue(response(200,'PK\003\004VALID EPUB'))
 assert(Client:downloadEpub(source,destination,true).success and converted==0)
 enqueue(response(200,'invalid EPUB'),response(200,'HTML DOWNLOAD'))
-assert(Client:downloadEpub(source,destination,true).success and converted==1)
+missing_images=2
+local fallback=Client:downloadEpub(source,destination,true)
+assert(fallback.success and converted==1 and fallback.missing_images==2)
+assert(timeouts[#timeouts][1]==120 and timeouts[#timeouts][2]==300)
+assert(content()=='CONVERTED EPUB')
+missing_images=0
+enqueue(response(200,'invalid EPUB'),{timeout=true})
+fails(Client:downloadEpub(source,destination,true),'timed out')
 assert(content()=='CONVERTED EPUB')
 writeOld()
 enqueue(response(200,'invalid EPUB'),response(200,'HTML DOWNLOAD'))

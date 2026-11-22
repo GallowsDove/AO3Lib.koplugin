@@ -173,7 +173,7 @@ function M.apply(entry)
         result.work=updated
         return result
     end
-    return {success=true, work=updated}
+    return {success=true, work=updated, missing_images=response.missing_images}
 end
 
 function M.retrySave(session)
@@ -249,6 +249,7 @@ function Session:run(operation, targets, changed, schedule)
             for key,value in pairs(result) do entry[key]=value end
         elseif operation=="update" and ok and result.success then
             entry.work=result.work; entry.status="updated"; entry.selected=false; entry.error=nil; entry.failure=nil
+            entry.missing_images=result.missing_images
             entry.fingerprint=fingerprint(result.work.path)
         else
             entry.error=result.error

@@ -9,9 +9,11 @@ local Network=require('ao3lib.ao3.network')
 local Client=require('ao3lib.ao3.client')
 local Config=require('ao3lib.core.config')
 local cookies,saves={},0
+local fallback_enabled=false
 Config.readSetting=function(_,key,default)
     if key=='AO3_domain' then return 'https://archiveofourown.org' end
     if key=='cookies' then return cookies end
+    if key=='html_download_fallback' then return fallback_enabled end
     return default
 end
 Config.saveSetting=function(_,key,value)
@@ -84,6 +86,17 @@ Network.run(function() result=Client:downloadEpub('https://archiveofourown.org/d
     assert(not H.inChild());return true
 end) end);H.drain()
 assert(result.success and H.read(destination)==body)
+fallback_enabled=true;body='HTML DOWNLOAD'
+package.loaded['ao3lib.library.html_epub'].convert=function(_,path,_,_,_,progress)
+    assert(H.inChild());progress('Building the EPUB chapters…');H.sleep(60)
+    local f=assert(io.open(path,'wb'));f:write('CONVERTED');f:close();return 3
+end
+Network.run(function() result=Client:downloadEpub({id='123',epub_link='https://archiveofourown.org/a.epub',
+    html_link='https://archiveofourown.org/a.html'},destination,true) end)
+H.drain()
+assert(result.success and result.missing_images==3 and H.read(destination)=='CONVERTED',
+    'Publishing a staged conversion must preserve the missing-image count')
+fallback_enabled=false
 slow=true;write('KEEP');result=nil
 Network.run(function() result=Client:downloadEpub('https://archiveofourown.org/download/123',destination,true) end)
 H.tick();H.UI:close(H.stack[#H.stack]);H.drain()

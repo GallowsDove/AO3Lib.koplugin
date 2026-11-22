@@ -36,7 +36,7 @@ function M.request(request, handler, retries)
         local result, chunks, prefix
         for attempt = 1, attempts do
             chunks, prefix = {}, ""
-            local received = 0
+            local received, sink_error = 0, nil
             request.headers = request.headers or handler.get_default_headers()
             request.headers.Cookie = handler:getCookies(request.cookies, target)
             local function sink(chunk)
@@ -44,12 +44,16 @@ function M.request(request, handler, retries)
                 if #prefix < 4096 then prefix = prefix .. chunk:sub(1, 4096 - #prefix) end
                 if request.stream then return request.sink(chunk) end
                 received = received + #chunk
-                if received > 32 * 1024 * 1024 then return nil, "AO3 response is too large" end
+                if received > 32 * 1024 * 1024 then
+                    sink_error="AO3 response exceeds the 32 MiB limit."
+                    return nil, sink_error
+                end
                 chunks[#chunks + 1] = chunk
                 return 1
             end
             local ok, response, status, headers = pcall(function()
-                socketutil:set_timeout(socketutil.FILE_BLOCK_TIMEOUT, socketutil.FILE_TOTAL_TIMEOUT)
+                socketutil:set_timeout(request.download_timeout and 120 or socketutil.FILE_BLOCK_TIMEOUT,
+                    request.download_timeout and 300 or socketutil.FILE_TOTAL_TIMEOUT)
                 return https.request{
                     url = target, method = method, headers = request.headers,
                     sink = sink, source = request.source, redirect = false,
@@ -59,9 +63,19 @@ function M.request(request, handler, retries)
             -- Restore socket defaults on success, failure, and Lua exceptions.
             socketutil:reset_timeout()
             headers = type(headers) == "table" and headers or {}
+            local network_error=ok and status or response
             status = tonumber(status)
             if not ok or response ~= 1 or not status then
-                result = failure(nil, headers, "Could not connect to AO3. Please check your connection and try again.")
+                local reason=type(network_error)=='string' and network_error:lower() or ''
+                local timed_out=reason:find('timeout',1,true) or reason=='wantread' or reason=='wantwrite'
+                local message
+                if sink_error then message=sink_error
+                elseif timed_out then message="The AO3 request timed out ("..reason.."). Please try again later."
+                elseif reason=='closed' then message="The connection to AO3 was closed before the response completed."
+                elseif type(network_error)=='string' and network_error~='' then
+                    message="The AO3 request failed: "..network_error:sub(1,300)
+                else message="Could not connect to AO3. Please check your connection and try again." end
+                result = failure(nil, headers, message)
                 if attempt == attempts then return result end
             else
                 handler:setCookies(headers, target)

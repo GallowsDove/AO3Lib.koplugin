@@ -29,9 +29,11 @@ function M.run(task,done,options)
     if not named then UI:nextTick(function() done(nil,'Cannot create background result file') end);return job end
     local result_path=path..'.result'
     local writing_path=path..'.writing'
+    local progress_path=path..'.progress'
+    local progress_writing=path..'.progress-writing'
     os.remove(path);os.remove(result_path);os.remove(writing_path)
     local function clean()
-        os.remove(result_path);os.remove(writing_path)
+        os.remove(result_path);os.remove(writing_path);os.remove(progress_path);os.remove(progress_writing)
         if options.cleanup then pcall(options.cleanup) end
     end
     local function deliver(value,err)
@@ -48,7 +50,15 @@ function M.run(task,done,options)
         deliver(nil,CANCELLED)
     end
     local spawned,pid=pcall(ffiutil.runInSubProcess,function()
-        local ok,value=pcall(task)
+        local function report(value)
+            if not options.on_progress or type(value)~='string' then return end
+            local file=io.open(progress_writing,'wb')
+            if file then
+                local ok=file:write(value:sub(1,512));local closed=file:close()
+                if ok and closed then os.rename(progress_writing,progress_path) else os.remove(progress_writing) end
+            end
+        end
+        local ok,value=pcall(task,report)
         local packet={ok=ok}
         if ok then packet.value=value else packet.error=tostring(value) end
         local encoded=require('string.buffer').encode(packet)
@@ -63,8 +73,16 @@ function M.run(task,done,options)
         return job
     end
     job.pid=pid
+    local last_progress
     poll=function()
         if not job.cancelled and options.valid and not options.valid() then job:cancel() end
+        if not job.cancelled and options.on_progress then
+            local file=io.open(progress_path,'rb')
+            if file then
+                local value=file:read('*a');file:close()
+                if value and value~=last_progress then last_progress=value;options.on_progress(value) end
+            end
+        end
         if not ffiutil.isSubProcessDone(pid) then UI:scheduleIn(0.1,poll);return end
         job.finished=true
         if job.cancelled then clean();return end
@@ -116,12 +134,22 @@ function M.await(task,options)
             and (not items or anchor.item_table==items)
     end
     local info
-    if not (scope.silent or options.silent) then
-        info=require('ui/widget/infomessage'):new{modal=true,_ao3_background_info=true,
-            text=options.text or 'Contacting AO3…\n\nTap or press Back to cancel.'}
-    end
     local job
-    if info then info.dismiss_callback=function() if job then job:cancel() end end;UI:show(info) end
+    local function showInfo(message)
+        if info then info.dismiss_callback=nil;UI:close(info) end
+        info=require('ui/widget/infomessage'):new{modal=true,_ao3_background_info=true,
+            text=message..'\n\nTap or press Back to cancel.'}
+        info.dismiss_callback=function() if job then job:cancel() end end
+        UI:show(info)
+    end
+    if not (scope.silent or options.silent) then
+        if options.progress then showInfo(options.progress_text or 'Preparing download…')
+        else
+            info=require('ui/widget/infomessage'):new{modal=true,_ao3_background_info=true,
+                text=options.text or 'Contacting AO3…\n\nTap or press Back to cancel.'}
+            info.dismiss_callback=function() if job then job:cancel() end end;UI:show(info)
+        end
+    end
     local waiting=true
     job=M.run(task,function(value,err)
         if info then info.dismiss_callback=nil;UI:close(info) end
@@ -129,7 +157,9 @@ function M.await(task,options)
             local ok,why=coroutine.resume(co,value,err)
             if not ok then require('logger').warn('AO3 continuation failed:',why) end
         end
-    end,{valid=valid,cleanup=options.cleanup})
+    end,{valid=valid,cleanup=options.cleanup,on_progress=options.progress and function(message)
+        if info and valid() then showInfo(message) end
+    end or nil})
     local value,err=coroutine.yield()
     waiting=false
     if M.isCancelled(err) or not valid() then error(CANCELLED,0) end

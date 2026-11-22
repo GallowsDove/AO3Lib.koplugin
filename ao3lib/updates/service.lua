@@ -101,6 +101,7 @@ local function startNext()
                 for k,v in pairs(result) do entry[k]=v end
             elseif operation=="update" and ok and result.success then
                 entry.work=result.work;entry.status="updated";entry.selected=false;entry.error=nil;entry.failure=nil
+                entry.missing_images=result.missing_images
             else
                 entry.status=result.status or "error";entry.error=result.error
                 entry.failure=result.failure or {error=result.error,status=result.status,retry_later=result.retry_later,

@@ -14,6 +14,20 @@ end)
 assert(not completed,'A wrapped operation must give control back to UI')
 H.tick();assert(not completed)
 H.drain();assert(completed and #result.body==200000 and result.n==42)
+local progress_result
+B.wrap(function()
+    progress_result=B.await(function(report)
+        report('Converting the book…');H.sleep(100);return 'done'
+    end,{progress=true})
+end)
+H.tick()
+local saw_progress=false
+while #H.jobs>0 do
+    H.tick()
+    local top=H.stack[#H.stack]
+    if top and top.text and top.text:find('Converting the book',1,true) then saw_progress=true end
+end
+assert(saw_progress and progress_result=='done','Worker progress must update the visible dialog')
 -- Dismissal aborts the continuation, not merely its loading widget.
 local continued,cancelled,cleaned=false,false,false
 B.wrap(function()

@@ -12,6 +12,9 @@ local previous
 local previous_native
 local function eligible(entry) return entry.remote and (entry.status=="update" or entry.status=="review") end
 local function statusLabel(entry,details)
+    if entry.status=='updated' and (entry.missing_images or 0)>0 then
+        return string.format(_("Updated; %d image(s) unavailable"),entry.missing_images)
+    end
     local labels={unchecked=_("Not checked"), update=_("Update available"), review=_("Review needed"),
         current=_("Up to date"), updated=_("Updated"), error=_("Failed"),
         unavailable=_("Unavailable or restricted"), state_error=_("EPUB updated; reading-state save failed")}

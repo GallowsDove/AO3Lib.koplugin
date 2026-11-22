@@ -268,8 +268,11 @@ function Fanfic:DownloadFanfic(id)
 
 
     -- Show confirmation dialog
+    local missing=download_request_result.missing_images or 0
+    local message=T(_("File saved to:\n%1"), BD.filepath(fanfic.path))
+    if missing>0 then message=message..'\n\n'..T(_("%1 image(s) could not be included. Links are preserved in the book."),missing) end
     UIManager:show(ConfirmBox:new{
-        text = T(_("File saved to:\n%1\nWould you like to read the downloaded work now?"), BD.filepath(fanfic.path)),
+        text = message..'\n'.._("Would you like to read the downloaded work now?"),
         ok_text = _("Read now"),
         ok_callback = function()
             self:onOpenFanficReader(fanfic.path, fanfic)
@@ -286,11 +289,13 @@ function Fanfic:UpdateFanfic(fanfic)
         return Updates.apply(entry)
     end)
     if not ok and require("ao3lib.ao3.background").isCancelled(result) then error(result,0) end
-    UIManager:show(InfoMessage:new{
-        text = ok and result.success
-            and T(_("Work '%1' has been updated successfully."), fanfic.title)
-            or T(_("Could not update work: %1"), tostring(ok and result.error or result)),
-    })
+    local message=ok and result.success
+        and T(_("Work '%1' has been updated successfully."), fanfic.title)
+        or T(_("Could not update work: %1"), tostring(ok and result.error or result))
+    if ok and result.success and (result.missing_images or 0)>0 then
+        message=message..'\n\n'..T(_("%1 image(s) could not be included. Links are preserved in the book."),result.missing_images)
+    end
+    UIManager:show(InfoMessage:new{text=message})
 end
 
 function Fanfic:showUserInfo(username, pseud)

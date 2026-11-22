@@ -10,14 +10,15 @@ local function plain(n)
     for _,c in ipairs(n.children) do out[#out+1]=plain(c) end
     return table.concat(out)
 end
-local function walk(n,fn)
+local function walk(n,fn,parent)
     if type(n)~='table' then return end
-    fn(n)
-    for _,c in ipairs(n.children) do walk(c,fn) end
+    fn(n,parent)
+    for _,c in ipairs(n.children) do walk(c,fn,n) end
 end
 local function class(n,c) return (' '..((n.attrs or {}).class or '')..' '):find(' '..c..' ',1,true) end
 local function trim(s) return (s:gsub('^%s+',''):gsub('%s+$','')) end
-function M.build(html, expected_id, fetch, base)
+function M.build(html, expected_id, fetch, base, progress)
+    if progress then progress('Preparing the HTML for conversion…') end
     assert(type(html)=='string' and #html<=16*1024*1024,'HTML is too large')
     -- EPUB XHTML must not depend on an external DTD for named entities.
     html=html:gsub('&nbsp;','&#160;')
@@ -107,30 +108,56 @@ function M.build(html, expected_id, fetch, base)
         end
     end
     local files, manifest={}, {}
-    local images,total={},#html
-    walk(tree,function(n)
+    local images,total,missing={},#html,0
+    local image_count,image_index=0,0
+    if progress then walk(tree,function(n) if n.tag=='img' then image_count=image_count+1 end end) end
+    walk(tree,function(n,parent)
         if n.tag=='img' then
+            image_index=image_index+1
+            if progress then progress(string.format('Processing image %d of %d…',image_index,image_count)) end
             local src=n.attrs.src
-            assert(src and fetch,'Cannot embed image')
-            local image=images[src]
-            if not image then
-                local url=src
-                if not url:match('^https?://') then url=require('socket.url').absolute(base,url) end
-                local bytes=fetch(url)
-                total=total+#bytes; assert(total<=64*1024*1024,'Embedded images exceed work size limit')
-                local ext,media
-                if bytes:sub(1,8)=='\137PNG\13\10\26\10' then ext,media='png','image/png'
-                elseif bytes:sub(1,3)=='\255\216\255' then ext,media='jpg','image/jpeg'
-                elseif bytes:sub(1,6)=='GIF87a' or bytes:sub(1,6)=='GIF89a' then ext,media='gif','image/gif' end
-                assert(ext,'Unsupported image format')
-                local index=#manifest+1
-                image='image'..index..'.'..ext; images[src]=image; files[image]=bytes
-                manifest[#manifest+1]='<item id="image'..index..'" href="'..image..'" media-type="'..media..'"/>'
+            local url=src and src:gsub('&amp;','&')
+            if url and not url:match('^https?://') then
+                local ok,resolved=pcall(function() return require('socket.url').absolute(base,url) end)
+                url=ok and resolved or nil
             end
-            n.open=n.open:gsub('(%ssrc%s*=%s*)([\'"])(.-)%2',function(prefix) return prefix..'"'..image..'"' end)
+            local image=src and images[src]
+            if image==nil and src then
+                local ok,bytes=pcall(function()
+                    assert(url and url:match('^https?://') and fetch,'Image URL unavailable')
+                    return fetch(url,true)
+                end)
+                if not ok and type(bytes)~='string' and require('ao3lib.ao3.background').isCancelled(bytes) then error(bytes,0) end
+                local ext,media
+                if ok and type(bytes)=='string' then
+                    if bytes:sub(1,8)=='\137PNG\13\10\26\10' then ext,media='png','image/png'
+                    elseif bytes:sub(1,3)=='\255\216\255' then ext,media='jpg','image/jpeg'
+                    elseif bytes:sub(1,6)=='GIF87a' or bytes:sub(1,6)=='GIF89a' then ext,media='gif','image/gif' end
+                end
+                if ext and total+#bytes<=64*1024*1024 then
+                    total=total+#bytes
+                    local index=#manifest+1
+                    image='image'..index..'.'..ext; files[image]=bytes
+                    manifest[#manifest+1]='<item id="image'..index..'" href="'..image..'" media-type="'..media..'"/>'
+                else image=false end
+                images[src]=image
+            end
+            if image then
+                n.open=n.open:gsub('(%ssrc%s*=%s*)([\'"])(.-)%2',function(prefix) return prefix..'"'..image..'"' end)
+            else
+                missing=missing+1
+                local label='[Image unavailable]'
+                local safe=url and url:match('^https?://') and escape(url)
+                n.tag='span';n.open='<span>';n.close='</span>'
+                if safe and (not parent or parent.tag~='a') then
+                    n.children={'<a href="'..safe..'">'..label..'</a>'}
+                elseif safe then n.children={label..' '..safe}
+                else n.children={label} end
+            end
         end
     end)
     local language=root.attrs['xml:lang'] or root.attrs.lang or 'en'
+    if progress then progress('Building the EPUB chapters…') end
     local documents, document_manifest, spine, points=require('ao3lib.library.html_epub_sections').build(root,title,language)
     for name,bytes in pairs(documents) do files[name]=bytes end
     local creators={}
@@ -149,10 +176,11 @@ function M.build(html, expected_id, fetch, base)
         '</manifest><spine toc="ncx">'..spine..'</spine></package>'
     files['toc.ncx']='<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="'..uid..'"/><meta name="dtb:depth" content="1"/><meta name="dtb:totalPageCount" content="0"/><meta name="dtb:maxPageNumber" content="0"/></head><docTitle><text>'..title..'</text></docTitle><navMap>'..points..'</navMap></ncx>'
     files['META-INF/container.xml']='<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'
-    return files
+    return files,missing
 end
-function M.convert(html,path,id,fetch,base)
-    local files=M.build(html,id,fetch,base)
+function M.convert(html,path,id,fetch,base,progress)
+    local files,missing=M.build(html,id,fetch,base,progress)
+    if progress then progress('Writing the EPUB…') end
     local Archiver=require('ffi/archiver')
     local writer=Archiver.Writer:new()
     local reader
@@ -163,6 +191,7 @@ function M.convert(html,path,id,fetch,base)
         assert(writer:setZipCompression('deflate'))
         for name,bytes in pairs(files) do assert(writer:addFileFromMemory(name,bytes,os.time()),'Cannot write EPUB entry') end
         writer:close(); writer=nil
+        if progress then progress('Verifying the EPUB…') end
         reader=Archiver.Reader:new()
         assert(reader:open(path),'Cannot verify converted EPUB')
         for _ in reader:iterate() do end
@@ -174,5 +203,6 @@ function M.convert(html,path,id,fetch,base)
     if writer then pcall(function() writer:close() end) end
     if reader then pcall(function() reader:close() end) end
     if not ok then os.remove(path);error(err) end
+    return missing
 end
 return M

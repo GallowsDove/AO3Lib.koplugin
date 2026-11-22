@@ -429,7 +429,7 @@ local function downloadNative(self, download_link, filepath, allow_replace, befo
     local file, err = io.open(partial, "wb")
     if not file then return { success = false, error = "Could not create EPUB download: " .. tostring(err) } end
     local request = {
-        url = download_link, stream = true,
+        url = download_link, stream = true, download_timeout = true,
         headers = { ["Accept"] = "application/epub+zip" },
         sink = function(chunk) return file:write(chunk) end,
         reset_sink = function()
@@ -437,6 +437,7 @@ local function downloadNative(self, download_link, filepath, allow_replace, befo
             file = assert(io.open(partial, "wb"))
         end,
     }
+    if HTTPQueryHandler.progress then HTTPQueryHandler.progress('Downloading the EPUB from AO3…') end
     local ok, result = pcall(HTTPQueryHandler.performHTTPRequest, HTTPQueryHandler, request)
     local close_ok, closed, close_err = pcall(file.close, file)
     if not ok or not result.success or not close_ok or not closed then
@@ -489,20 +490,21 @@ function AO3LibClient:downloadEpub(source, filepath, allow_replace, before_commi
     end
     local native = downloadNative(self, source.epub_link, filepath, allow_replace, before_commit, staging)
     if native.success or not Config:readSetting("html_download_fallback", false) or not source.html_link then return native end
+    if HTTPQueryHandler.progress then HTTPQueryHandler.progress('Downloading the HTML from AO3…') end
     local token = os.tmpname(); os.remove(token)
     local partial = staging or (filepath .. ".ao3-" .. token:match("([^/]+)$") .. ".part")
     local fetch_failure
-    local function fetch(url)
+    local function fetch(url,is_image)
         assert(type(url)=="string" and url:match("^https?://"), "Invalid HTML or image URL")
         local chunks, size = {}, 0
-        local result = HTTPQueryHandler:performHTTPRequest{url=url, sink=function(chunk)
+        local result = HTTPQueryHandler:performHTTPRequest{url=url, download_timeout=not is_image, sink=function(chunk)
             if chunk then
                 size=size+#chunk; assert(size<=16*1024*1024, "HTML or image exceeds 16 MiB")
                 chunks[#chunks+1]=chunk
             end
             return 1
         end}
-        if not result.success then fetch_failure=result end
+        if not result.success and not is_image then fetch_failure=result end
         assert(result.success, result.error or "HTML download failed")
         return table.concat(chunks)
     end
@@ -511,16 +513,18 @@ function AO3LibClient:downloadEpub(source, filepath, allow_replace, before_commi
             local lfs=require("libs/libkoreader-lfs")
             assert(not (lfs.symlinkattributes or lfs.attributes)(filepath,"mode"), "The destination is already occupied.")
         end
-        require("ao3lib.library.html_epub").convert(fetch(source.html_link), partial, source.id, fetch, source.html_link)
+        return require("ao3lib.library.html_epub").convert(fetch(source.html_link), partial, source.id, fetch, source.html_link,HTTPQueryHandler.progress)
     end)
     if not ok then
         os.remove(partial)
+        if type(err)~='string' and require('ao3lib.ao3.background').isCancelled(err) then error(err,0) end
         local failure=fetch_failure or {}
         failure.success=false
         failure.error="HTML fallback failed: "..tostring(err)
         return failure
     end
-    if staging then return {success=true,staged=partial} end
+    local missing_images=tonumber(err) or 0
+    if staging then return {success=true,staged=partial,missing_images=missing_images} end
     local allowed, reason = true
     if allow_replace==false then
         local lfs=require("libs/libkoreader-lfs")
@@ -534,7 +538,7 @@ function AO3LibClient:downloadEpub(source, filepath, allow_replace, before_commi
     if not allowed then os.remove(partial); return {success=false,error=reason or "The work changed during download."} end
     local renamed, why=os.rename(partial,filepath)
     if not renamed then os.remove(partial); return {success=false,error="Could not save EPUB: "..tostring(why)} end
-    return {success=true,filepath=filepath}
+    return {success=true,filepath=filepath,missing_images=missing_images}
 end
 
 function AO3LibClient:searchByParameters(parameters, page_no)
@@ -2899,14 +2903,16 @@ for name, operation in pairs(AO3LibClient) do
                 staged=args[3]..".ao3-"..token:match("([^/]+)$")..".part"
             end
             local cookies=Config:readSetting("cookies",{})
-            local packet,err=Background.await(function()
+            local packet,err=Background.await(function(progress)
                 HTTPQueryHandler.in_worker=true
                 HTTPQueryHandler.cookies=cookies
+                if staged then HTTPQueryHandler.progress=progress end
                 local result
                 if staged then result=operation(args[1],args[2],args[3],args[4],nil,staged)
                 else result=operation(unpack(args,1,args.n)) end
                 return {result=result,cookies=HTTPQueryHandler.cookies_dirty and HTTPQueryHandler.cookies or nil}
             end,{
+                progress=staged~=nil,
                 text=(name:match("^get") or name:match("^search") or name=="GetSessionStatus" or staged)
                     and "Loading from AO3…\n\nTap or press Back to cancel."
                     or "Contacting AO3…\n\nTap or press Back to stop waiting. An account action may already have completed; check before trying again.",
@@ -2932,7 +2938,8 @@ for name, operation in pairs(AO3LibClient) do
                 if not allowed then os.remove(staged);return {success=false,error=reason or "The work changed during download."} end
                 local renamed,why=os.rename(staged,args[3])
                 if not renamed then return {success=false,error="Could not save EPUB: "..tostring(why)} end
-                result={success=true,filepath=args[3]}
+                result.filepath=args[3]
+                result.staged=nil
             end
             if type(result)~="table" then return {success=false,error="AO3 returned an unexpected response."} end
             local payload=payloads[name]

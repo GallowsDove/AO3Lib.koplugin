@@ -52,6 +52,18 @@ for _,item in ipairs(widget.item_table) do
 end
 assert(writes==1 and settings.saved_filters.legacy.parameters.main_tag==nil)
 assert(settings.saved_filters.legacy.parameters.additional_tags[2]=='Fluff')
+Filter:WorkInfoSubmenu()
+local title_row=widget.item_table[1]
+assert(title_row.text_func()=='Title: Any')
+title_row.callback()
+local title_dialog=shown[#shown]
+assert(title_dialog.input=='')
+title_dialog.input='A & B';title_dialog.buttons[1][2].callback()
+assert(Filter.filter.work_title=='A & B' and title_row.text_func()=='Title: A & B')
+title_row.callback();assert(shown[#shown].input=='A & B')
+shown[#shown].input='';shown[#shown].buttons[1][2].callback()
+assert(Filter.filter.work_title==nil)
+Filter.filter.work_title='A & B'
 Filter:selectAdditionalTags()
 assert(widget.item_table[2].text=='Enter tag by name')
 widget.item_table[2].callback()
@@ -73,6 +85,7 @@ table.remove(jobs,1)()
 local params=requests[#requests]
 assert(params.tag_id==nil and opened==1)
 assert(params['work_search[freeform_names]']=='My unwrangled tag')
+assert(params['work_search[title]']=='A & B')
 assert(params['work_search[excluded_tag_names]']=='Excluded tag,Graphic Depictions Of Violence,F/M')
 assert(params['work_search[excluded_tag_ids][]']==nil)
 assert(params['exclude_work_search[category_ids][]']==nil)
