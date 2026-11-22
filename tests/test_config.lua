@@ -5,7 +5,8 @@ local function copy(t)
     local out={};for k,v in pairs(t) do out[k]=copy(v) end;return out
 end
 local function stub(n,v) package.loaded[n]=v end
-local disk,exists,generation={version=1,AO3_domain='https://archiveofourown.org',cookies={session='secret'}},true,1
+local disk,exists,generation={version=1,AO3_domain='https://archiveofourown.org',cookies={session='secret'},
+    bookmarkedFandoms={'Old local favorite'},bookmarkedCharacters={'Old character'}},true,1
 local opens,flushes,closes=0,0,0
 stub('datastorage',{getSettingsDir=function() return '/settings' end})
 stub('logger',{})
@@ -27,6 +28,7 @@ stub('luasettings',{open=function()
     return store
 end})
 local Config=require('ao3lib.core.config')
+assert(not disk.bookmarkedFandoms and not disk.bookmarkedCharacters and disk.cookies.session=='secret')
 local initial_opens,initial_flushes=opens,flushes
 for _=1,1000 do assert(Config:readSetting('AO3_domain')=='https://archiveofourown.org') end
 assert(opens==initial_opens and flushes==initial_flushes and closes==0,

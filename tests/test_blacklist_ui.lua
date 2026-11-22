@@ -7,7 +7,7 @@ local shown
 package.loaded['ui/uimanager']={show=function(_,dialog) shown=dialog end,close=function() end}
 package.loaded['ui/widget/buttondialog']={new=function(_,options) return options end}
 package.loaded['ui/widget/inputdialog']={new=function(_,options) return options end}
-package.loaded['ao3lib.ao3.network']={wrap=function(fn) return fn end}
+package.loaded['ao3lib.ao3.network']={wrap=function(fn) return fn end,run=function(fn) fn() end}
 package.loaded['ui/widget/infomessage']={new=function(_,options) return options end}
 local menu={paths={}}
 function menu:GoDownInMenu(title,rows) self.paths[#self.paths+1]=self.rows;self.title,self.rows=title,rows end
@@ -27,9 +27,20 @@ for _,choice in ipairs({{index=5,name='Explicit'},{index=6,name='M/M'},{index=7,
 end
 local actions=require('ao3lib.ui.tag_actions')
 local dialog=actions.show(nil,'Freeform','A new tag')
-assert(dialog.buttons[1][1].text=='Add to blacklist')
-dialog.buttons[1][1].callback()
+assert(dialog.buttons[2][1].text=='Add to blacklist')
+dialog.buttons[2][1].callback()
 assert(saved.tag_blacklist[#saved.tag_blacklist].name=='A new tag')
 dialog=actions.show(nil,'Freeform','a NEW tag')
-assert(dialog.buttons[1][1].enabled==false)
+assert(dialog.buttons[2][1].enabled==false)
+local requested
+package.loaded['ao3lib.ao3.client']={getFavoriteTagState=function(_,name)
+    assert(name=='AO3 tag');return {success=true}
+end,setFavoriteTag=function(_,name,want)
+    requested={name=name,want=want};return {success=true}
+end}
+dialog=actions.show(nil,'Freeform','AO3 tag')
+dialog.buttons[1][1].callback()
+assert(shown.buttons[1][1].text=='Add AO3 favorite')
+shown.buttons[1][1].callback()
+assert(requested.name=='AO3 tag' and requested.want==true and shown.text=='Added to AO3 favorites.')
 print('PASS: blacklist rating, category and archive warning selection')

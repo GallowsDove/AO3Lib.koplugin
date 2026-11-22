@@ -29,6 +29,7 @@ function M.show(owner,checkFilenameTemplate)
         {title=_('Blacklist'),options={
             {text=_('Enable tag blacklist'),key='tag_blacklist_enabled',type='Bool',default=true},
             {text=_('Manage tag blacklist…'),type='Action',callback=function() require('ao3lib.ui.blacklist').show(owner) end},
+            {text=_('Manage muted AO3 users…'),type='Action',callback=function() require('ao3lib.ui.muted_users').show(owner) end},
         }},
         {title=_('Downloads'),options={
             {text=_('Download folder'),key='fanfic_folder_path',type='Folder'},

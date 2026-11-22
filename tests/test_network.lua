@@ -53,7 +53,7 @@ stub('logger', { dbg = function() end })
 stub('util', { trim = function(s) return s:match('^%s*(.-)%s*$') end })
 stub('ao3lib.core.config', { readSetting = function(_, key, default) if key=='formatted_work_view' then return false end; return default end })
 for _, name in ipairs({ 'ui/bidi', 'ui/event', 'dispatcher', 'ao3lib.ui.reader',
-    'ao3lib.ui.search', 'ao3lib.ui.downloaded_menu', 'ao3lib.ui.search_filters_menu',
+    'ao3lib.ui.search', 'ao3lib.ui.search_filters_menu',
     'apps/filemanager/filemanagerutil', 'apps/reader/readerui', 'ao3lib.ui.bookmark_dialog' }) do stub(name, {}) end
 local work = { id = '123', path = '/books/test.epub', title = 'Test', author = 'Writer',
     wordcount = '1234', updated = '2026-01-01', chapters = '1/1' }

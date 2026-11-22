@@ -18,6 +18,32 @@ function M.show(plugin,kind,name)
             end)
         end}}
     end
+    if kind then
+        buttons[#buttons+1]={{text=_('AO3 favorite…'),callback=function()
+            UI:close(dialog)
+            require('ao3lib.ao3.network').run(function()
+                local client=require('ao3lib.ao3.client')
+                local state=client:getFavoriteTagState(name)
+                if not state.success then UI:show(require('ui/widget/infomessage'):new{text=state.error});return end
+                local favorite=state.favorite_id~=nil
+                local choice
+                choice=ButtonDialog:new{title=name,buttons={
+                    {{text=favorite and _('Remove AO3 favorite') or _('Add AO3 favorite'),callback=function()
+                        UI:close(choice)
+                        require('ao3lib.ao3.network').run(function()
+                            local result=client:setFavoriteTag(name,not favorite)
+                            if result.success then require('ao3lib.ao3.favorite_cache').changed(name,not favorite) end
+                            UI:show(require('ui/widget/infomessage'):new{text=result.success
+                                and (favorite and _('Removed from AO3 favorites.') or _('Added to AO3 favorites.'))
+                                or result.error})
+                        end)
+                    end}},
+                    {{text=_('Cancel'),callback=function() UI:close(choice) end}},
+                }}
+                UI:show(choice)
+            end)
+        end}}
+    end
     buttons[#buttons+1]={{text=exists and _('Already on blacklist') or _('Add to blacklist'),enabled=not exists,
         callback=function()
             blacklist.add(kind,name);UI:close(dialog)

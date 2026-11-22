@@ -25,7 +25,7 @@ function M.show(browser,context)
     function Window:reload() state:render() end
     function Window:onCloseWidget(...)
         self._ao3_closed=true;context.plugin.menu_stack[self]=nil
-        if not self._replacing then state.closed=true end
+        if not self._replacing then state.closed=true;require('ao3lib.ao3.mute_cache').unwatch(state) end
         if Base.onCloseWidget then Base.onCloseWidget(self,...) else UI:setDirty(nil,'ui') end
     end
     context.rows=function(work) return browser:generateTable({}, {work},context.update,context.download) end

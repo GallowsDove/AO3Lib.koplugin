@@ -178,7 +178,7 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
             end,
         })
 
-        if settingValue=="additional_tags" then
+        if settingValue=="additional_tags" or settingValue=="fandom_names" then
             table.insert(menu_items,{
                 text="Enter tag by name",
                 callback=function()
@@ -187,17 +187,19 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                         {text=_("Cancel"),callback=function() UIManager:close(dialog) end},
                         {text=_("Exclude"),callback=function()
                             local value=(dialog:getInputText() or ""):match("^%s*(.-)%s*$")
-                            if value~="" and not util.contains(self.filter[excludeSettingValue],value) then
-                                table.insert(self.filter[excludeSettingValue],value)
+                            if value~="" then
+                                util.remove(self.filter[settingValue],value)
+                                if not util.contains(self.filter[excludeSettingValue],value) then table.insert(self.filter[excludeSettingValue],value) end
                             end
-                            refresh();UIManager:close(dialog)
+                            self.menuWidget.item_table=refresh();self.menuWidget:updateItems();UIManager:close(dialog)
                         end},
                         {text=_("Add"),callback=function()
                             local value=(dialog:getInputText() or ""):match("^%s*(.-)%s*$")
-                            if value~="" and not util.contains(self.filter[settingValue],value) then
-                                table.insert(self.filter[settingValue],value)
+                            if value~="" then
+                                util.remove(self.filter[excludeSettingValue],value)
+                                if not util.contains(self.filter[settingValue],value) then table.insert(self.filter[settingValue],value) end
                             end
-                            refresh();UIManager:close(dialog)
+                            self.menuWidget.item_table=refresh();self.menuWidget:updateItems();UIManager:close(dialog)
                         end},
                     }}}
                     UIManager:show(dialog);dialog:onShowKeyboard()
@@ -249,96 +251,59 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
             end,
         })
 
-        for __, tag in pairs(self.filter[settingValue]) do
-            table.insert(menu_items, {
-                text = "✓ " .. tag,
-                value = tag,
-                callback = function()
-                    local optionsDialog
-                    optionsDialog = ButtonDialog:new({
-                        buttons = {
-                            {
-                                {
-                                    text = "Move to exclude filter",
+        table.insert(menu_items,{
+            text=_("AO3 favorite tags"),callback=Network.wrap(function()
+                local result=require('ao3lib.ao3.client'):getFavoriteTags()
+                if not result.success then UIManager:show(InfoMessage:new{text=result.error});return end
+                require('ao3lib.ao3.favorite_cache').remember(result)
+                local rows={}
+                for __,tag in ipairs(result.tags) do
+                    local name=tag.name
+                    rows[#rows+1]={text=name,callback=function()
+                        util.remove(self.filter[excludeSettingValue],name)
+                        if not util.contains(self.filter[settingValue],name) then table.insert(self.filter[settingValue],name) end
+                        local paths=self.menuWidget.paths
+                        if paths and paths[#paths] then paths[#paths].items=refresh() end
+                        self.menuWidget:updateItems()
+                    end}
+                end
+                if #rows==0 then rows[1]={text=_("No favorite tags on AO3."),enabled=false} end
+                self.menuWidget:GoDownInMenu(_("AO3 favorite tags"),rows,_("All favorite tag types"))
+            end),
+        })
 
-                                    callback = function()
-                                        util.remove(self.filter[settingValue], tag)
-                                        table.insert(self.filter[excludeSettingValue], tag)
-
-                                        self.menuWidget.item_table = refresh()
-                                        self.menuWidget:updateItems(1)
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                                {
-                                    text = "Remove tag",
-                                    callback = function()
-                                        util.remove(self.filter[settingValue], tag)
-                                        self.menuWidget.item_table = refresh()
-                                        self.menuWidget:updateItems(1)
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                                {
-                                    text = "Cancel",
-                                    callback = function()
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                            },
-                        },
-                    })
-                    UIManager:show(optionsDialog)
-                end,
-            })
+        local function addSelectedTags(source, destination, prefix, move_label)
+            for __, tag in ipairs(self.filter[source]) do
+                table.insert(menu_items, {
+                    text = prefix .. tag,
+                    value = tag,
+                    callback = function()
+                        local optionsDialog
+                        optionsDialog = ButtonDialog:new{buttons={
+                            {{text=move_label, callback=function()
+                                util.remove(self.filter[source], tag)
+                                if not util.contains(self.filter[destination], tag) then
+                                    table.insert(self.filter[destination], tag)
+                                end
+                                self.menuWidget.item_table=refresh()
+                                self.menuWidget:updateItems(1)
+                                UIManager:close(optionsDialog)
+                            end}},
+                            {{text=_("Remove tag"), callback=function()
+                                util.remove(self.filter[source], tag)
+                                self.menuWidget.item_table=refresh()
+                                self.menuWidget:updateItems(1)
+                                UIManager:close(optionsDialog)
+                            end}},
+                            {{text=_("Cancel"), callback=function() UIManager:close(optionsDialog) end}},
+                        }}
+                        UIManager:show(optionsDialog)
+                    end,
+                })
+            end
         end
-        for __, tag in pairs(self.filter[excludeSettingValue]) do
-            table.insert(menu_items, {
-                text = "× " .. tag,
-                value = tag,
-                callback = function()
-                    local optionsDialog
-                    optionsDialog = ButtonDialog:new({
-                        buttons = {
-                            {
-                                {
-                                    text = "Move to include filter",
-
-                                    callback = function()
-                                        util.remove(self.filter[excludeSettingValue], tag)
-                                        table.insert(self.filter[settingValue], tag)
-
-                                        self.menuWidget.item_table = refresh()
-                                        self.menuWidget:updateItems(1)
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                            },
-                            {
-                                {
-                                    text = "Remove tag",
-                                    callback = function()
-                                        util.remove(self.filter[excludeSettingValue], tag)
-                                        self.menuWidget.item_table = refresh()
-                                        self.menuWidget:updateItems(1)
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                            },
-                            {
-                                {
-                                    text = "Cancel",
-                                    callback = function()
-                                        UIManager:close(optionsDialog)
-                                    end,
-                                },
-                            },
-                        },
-                    })
-                    UIManager:show(optionsDialog)
-                end,
-            })
-        end
+        addSelectedTags(settingValue, excludeSettingValue, "✓ ", _("Move to exclude filter"))
+        addSelectedTags(excludeSettingValue, settingValue, "× ", _("Move to include filter"))
 
         return menu_items
     end
@@ -363,6 +328,10 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
 
     for __, tag in pairs(tagSearchResults) do
         table.insert(menu_items, {
+            hold_callback = function()
+                local kinds={fandom_names='Fandom',characters='Character',relationships='Relationship',additional_tags='Freeform'}
+                require('ao3lib.ui.tag_actions').show(self.fanfic,kinds[settingValue],tag.name)
+            end,
             text_func = function()
                 local show_checked = util.contains(self.filter[settingValue], tag.name)
                 local show_cross = util.contains(self.filter[excludeSettingValue], tag.name)
@@ -383,161 +352,14 @@ function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, sett
                 else
                     table.insert(self.filter[settingValue], tag.name)
                 end
+                local paths=self.menuWidget.paths
+                if paths and paths[#paths] then paths[#paths].items=refreshCallback() end
                 self.menuWidget:updateItems()
             end,
         })
     end
 
     self.menuWidget:GoDownInMenu(title, menu_items, "Tap tag to add to filter, again for exclude filter")
-end
-
-function CustomFilterMenu:singleTagSelection(title, tagCatagoryForSearch, settingValue)
-    local inputDialog
-    inputDialog = InputDialog:new({
-        title = title,
-        input = "",
-        input_type = "text",
-        buttons = {
-            {
-                {
-                    text = _("Cancel"),
-                    callback = function()
-                        UIManager:close(inputDialog)
-                    end,
-                },
-                {
-                    text = _("Search"),
-                    is_enter_default = true,
-                    callback = Network.wrap(function()
-                        local value = inputDialog:getInputText()
-                        if value == "" then
-                            return
-                        end
-                        local success, tagSearchResults = self.fanfic:searchForTags(value, tagCatagoryForSearch)
-                        if success then
-                            self:singleTagSearchSelection(
-                                "Tap on character tags to add to filter",
-                                tagSearchResults,
-                                settingValue
-                            )
-                            UIManager:close(inputDialog)
-                        end
-                    end),
-                },
-            },
-        },
-    })
-    UIManager:show(inputDialog)
-    inputDialog:onShowKeyboard()
-end
-
-function CustomFilterMenu:singleTagSearchSelection(title, tagSearchResults, settingValue)
-    local menu_items = {}
-
-    table.insert(menu_items, {
-        text = "← Exit search",
-        callback = function()
-            self:goBack()
-        end,
-    })
-
-    for __, tag in pairs(tagSearchResults) do
-        table.insert(menu_items, {
-            text_func = function()
-                local show_checked = self.filter[settingValue] == tag.name
-                if show_checked then
-                    return "✓ " .. tag.name
-                else
-                    return tag.name
-                end
-            end,
-            callback = function()
-                self.filter[settingValue] = tag.name
-                self:goBack()
-            end,
-        })
-    end
-
-    self.menuWidget:GoDownInMenu(title, menu_items)
-end
-
-function CustomFilterMenu:show(menuWidget, fanfic)
-    self.menuWidget = menuWidget
-    self.fanfic = fanfic
-
-    self.menuWidget:GoDownInMenu("Select filter", self:refreshMainMenu())
-end
-
-function CustomFilterMenu:refreshMainMenu()
-    local menuOptions = {
-        {
-            text = "+ Create new filter",
-            callback = function()
-                CustomFilterMenu:FilterCrafter()
-            end,
-        },
-    }
-    local filters = require("ao3lib.ui.saved_searches").saved(Config)
-    if next(filters) then
-        table.insert(menuOptions, {
-            text = "Saved filters:",
-        })
-    end
-    for __, filter in pairs(filters) do
-        table.insert(menuOptions, {
-            text = "     " .. filter.title,
-            callback = function()
-                local optionsDialog
-                optionsDialog = ButtonDialog:new({
-                    buttons = {
-                        {
-                            {
-                                text = "Search using filter",
-                                callback = function()
-                                    self.filter = filter.parameters
-                                    self:executeSearch()
-                                    UIManager:close(optionsDialog)
-                                end,
-                            },
-                        },
-                        {
-                            {
-                                text = "Edit filter",
-                                callback = function()
-                                    self:UpdateFilterCrafter(filter)
-                                    UIManager:close(optionsDialog)
-                                end,
-                            },
-                        },
-                        {
-                            {
-                                text = "Delete filter",
-                                callback = function()
-                                    self.filter = filter.parameters
-                                    local filters = Config:readSetting("saved_filters")
-                                    filters[filter.title] = nil
-                                    Config:saveSetting("saved_filters", filters)
-                                    self.menuWidget.item_table = self:refreshMainMenu()
-                                    self.menuWidget:updateItems()
-                                    UIManager:close(optionsDialog)
-                                end,
-                            },
-                        },
-                        {
-                            {
-                                text = "Cancel",
-                                callback = function()
-                                    UIManager:close(optionsDialog)
-                                end,
-                            },
-                        },
-                    },
-                })
-                UIManager:show(optionsDialog)
-            end,
-        })
-    end
-    return menuOptions
 end
 
 function CustomFilterMenu:filterMenuRows()
@@ -583,7 +405,7 @@ function CustomFilterMenu:OverwriteFilter(filter)
     filters[filter.title]={title=filter.title,parameters=deepcopy(self.filter)}
     Config:saveSetting("saved_filters",filters)
     UIManager:show(InfoMessage:new{text='Filter "'..filter.title..'" has been overwritten'})
-    self.menuWidget:updateMenuBack(1,nil,self:refreshMainMenu(),nil)
+    self.menuWidget:updateMenuBack(1,nil,self.refreshSearchRows(),nil)
 end
 
 function CustomFilterMenu:SaveFilters()
@@ -601,7 +423,7 @@ function CustomFilterMenu:SaveFilters()
             filters[title]=saved;Config:saveSetting("saved_filters",filters)
             UIManager:show(InfoMessage:new{text='Filter "'..title..'" has been saved'})
             UIManager:close(dialog)
-            self.menuWidget:updateMenuBack(1,nil,self:refreshMainMenu(),nil)
+            self.menuWidget:updateMenuBack(1,nil,self.refreshSearchRows(),nil)
         end},
     }}}
     UIManager:show(dialog);dialog:onShowKeyboard()
@@ -875,7 +697,7 @@ function CustomFilterMenu:WorkStatSubmenu()
                 return "Comments: " .. (self.filter.comments or "any amount")
             end,
             callback = function()
-                self:selectWordCount()
+                self:selectComments()
             end,
         },
         {
@@ -883,7 +705,7 @@ function CustomFilterMenu:WorkStatSubmenu()
                 return "Bookmarks: " .. (self.filter.bookmarks or "any amount")
             end,
             callback = function()
-                self:selectWordCount()
+                self:selectBookmarks()
             end,
         },
     }
@@ -1100,37 +922,7 @@ function CustomFilterMenu:showDatePicker(setting)
 end
 
 function CustomFilterMenu:selectedFandoms()
-    self.filter.fandom_names=self.filter.fandom_names or {}
-    self.filter.exclude_fandom_names=self.filter.exclude_fandom_names or {}
-    self.menuWidget.lock_return=true
-    self.menuWidget:GoDownInMenu("Select Fandoms",{
-        {text="← Back to filters menu",callback=function() self.menuWidget.lock_return=false;self:goBack() end},
-        {text="Search fandom by name",callback=function() self:tagSelectionWidget("Select Fandoms","Fandom","fandom_names") end},
-        {text="Enter tag by name",callback=function()
-            local dialog
-            dialog=InputDialog:new{title=_("Enter fandom"),input="",input_type="text",buttons={{
-                {text=_("Cancel"),callback=function() UIManager:close(dialog) end},
-                {text=_("Exclude"),callback=function()
-                    local v=(dialog:getInputText() or ""):match("^%s*(.-)%s*$")
-                    if v~="" then table.insert(self.filter.exclude_fandom_names,v) end;UIManager:close(dialog)
-                end},
-                {text=_("Add"),callback=function()
-                    local v=(dialog:getInputText() or ""):match("^%s*(.-)%s*$")
-                    if v~="" and not util.contains(self.filter.fandom_names,v) then table.insert(self.filter.fandom_names,v) end;UIManager:close(dialog)
-                end},
-            }}}
-            UIManager:show(dialog);dialog:onShowKeyboard()
-        end},
-        {text="Bookmarked tags",callback=function()
-            local values=Config:readSetting("bookmarkedFandoms",{}) or {}
-            local rows={{text="← Back to fandoms",callback=function() self:selectedFandoms() end}}
-            for _,tag in ipairs(values) do rows[#rows+1]={text=tag,callback=function()
-                if not util.contains(self.filter.fandom_names,tag) then table.insert(self.filter.fandom_names,tag) end
-                self.menuWidget:updateItems()
-            end} end
-            self.menuWidget:GoDownInMenu("Bookmarked tags",rows)
-        end},
-    })
+    self:tagSelectionWidget(_("Select fandoms"),"Fandom","fandom_names")
 end
 
 function CustomFilterMenu:selectWarnings()

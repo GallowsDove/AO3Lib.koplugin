@@ -356,25 +356,28 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     local pager=require("ao3lib.ao3.work_paging").get(fetchNextPage)
     if pager then pager:setTotal(total_fic_count) end
     if not Config:readSetting("formatted_work_view",true) and pager and pager.total then
-        return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,
+        return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
             plugin=Fanfic,title=title,index=view_options.index,
             replacing=view_options.replacing,resume=resume})
     end
     if Config:readSetting("formatted_work_view",true) then
-        return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,
+        return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
             plugin=Fanfic,title=title,index=view_options.index,
             replacing=view_options.replacing,resume=resume})
     end
+    require("ao3lib.ao3.mute_cache").ensure()
     local revealed={}
     local function legacyRows(works)
         local rows={}
-        for _,work in ipairs(works) do
+        for __,work in ipairs(works) do
             local key=work.id or work
-            local match=view_options.blacklist~=false and not revealed[key] and require('ao3lib.library.blacklist').match(work)
+            local match=require('ao3lib.ui.hidden_work').reasons(work,{
+                blacklist=view_options.blacklist~=false,mutes=true,revealed=revealed[key],
+            })
             if match and #match>0 then
-                rows[#rows+1]={_('Hidden work'),_('Blacklisted tags: ')..table.concat(match,', '),callback=function()
+                rows[#rows+1]={_('Hidden work'),_('Hidden because of: ')..table.concat(match,', '),callback=function()
                     revealed[key]=true
                     if self.browse_window and not self.browse_window._ao3_closed then self.browse_window:reload() end
                 end}
@@ -429,6 +432,12 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         KeyValuePage._populateItems(selfself)
     end
 
+    local function watchMutes(window)
+        require('ao3lib.ao3.mute_cache').watch(window,function(owner)
+            if self.browse_window==owner and not owner._ao3_closed then owner:reload() end
+        end)
+    end
+
     BrowseWindow.addNewFanfics = function(selfself, newFics)
         for _,row in ipairs(legacyRows(newFics)) do selfself.kv_pairs[#selfself.kv_pairs+1]=row end
 
@@ -451,6 +460,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             value_overflow_align = "center",
         })
         require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume})
+        watchMutes(self.browse_window)
         self.browse_window:setMaximumPageValueCount(items_per_fic)
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
@@ -476,6 +486,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         })
         self.Fanfic.menu_stack[self.browse_window] = true
         require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume})
+        watchMutes(self.browse_window)
         self.browse_window:setMaximumPageValueCount(items_per_fic)
         UIManager:show(self.browse_window)
         UIManager:close(selfself)
@@ -489,6 +500,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
 
     BrowseWindow.onClose = function(selfself)
         selfself._ao3_closed = true
+        require("ao3lib.ao3.mute_cache").unwatch(selfself)
         self.Fanfic.menu_stack[selfself] = nil
         return KeyValuePage.onClose(selfself)
     end
@@ -507,6 +519,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
 
     require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=view_options.replacing, resume=resume})
 
+    watchMutes(self.browse_window)
     self.browse_window:setMaximumPageValueCount(items_per_fic)
 
     UIManager:show(self.browse_window)

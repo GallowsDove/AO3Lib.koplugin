@@ -19,6 +19,8 @@ package.loaded['ui/widget/scrollhtmlwidget']={new=function(_,fields)
             if pos.x==1 then return {uri='ao3-action:1'} end
             if pos.x==2 then return {uri='ao3-action:2'} end
         end}
+    fields.getCurrentRatio=function(self) return self.ratio or 0 end
+    fields.scrollToRatio=function(self,ratio) self.ratio=ratio end
     scroll=fields;return fields
 end}
 local mirrored=false
@@ -38,7 +40,7 @@ UI.setDirty=function() end
 local held
 local selected,options,author,menus=nil,0,0,0
 local context={plugin={menu_stack={},ui={menu={onShowMenu=function() menus=menus+1 end}}},
-    works={{id='one',title='One'},{id='two',title='Two'}},summary_html=true,
+    works={{id='one',title='One',fandoms={'Fav fandom'}},{id='two',title='Two'}},summary_html=true,
     rows=function(work) return {{work.title,callback=function() selected=work.id end,hold_callback=function() held=work.id end},
         {'Author:','Writer',callback=function() author=author+1 end}} end,
     list=function() options=options+1 end,
@@ -58,6 +60,11 @@ assert(box:onHoldAO3Title(nil,{pos={x=11,y=20}}) and held=='one')
 held=nil
 assert(not box:onHoldAO3Title(nil,{pos={x=12,y=20}}) and not held)
 assert(not box:onHoldAO3Title(nil,{pos={x=0,y=20}}) and not held)
+scroll.ratio=0.5
+require('ao3lib.ao3.favorite_cache').remember{success=true,username='Writer',tags={{name='Fav fandom'}}}
+assert(scroll.html_body:find('&#9733;',1,true) and scroll.ratio==0.5,
+    'Asynchronous favorite highlights must preserve the current scroll position')
+window=state.window
 assert(window.ges_events.SwipeWork[1].ges=='swipe')
 assert(not window:onSwipeWork(nil,{direction='north'}) and state.index==1)
 assert(window:onSwipeWork(nil,{direction='west'}) and state.index==2)

@@ -15,6 +15,10 @@ local tapped={}
 local tag_html,tag_actions=WorkView.html(work,rows(work),{tag_action=function(kind,name) tapped[#tapped+1]={kind,name} end})
 assert(tag_html:find('>First tag</span></a>',1,true) and tag_html:find('>Fandom</span></a>',1,true))
 assert(tag_html:find('style="color:#000000;text-decoration:none"',1,true))
+local highlighted=WorkView.html(work,rows(work),{tag_action=function() end,
+    is_favorite=function(name) return name=='First tag' or name=='Fandom' end})
+assert(select(2,highlighted:gsub('&#9733;',''))==2,'Favorite tags should receive visible markers')
+assert(highlighted:find('&#9733;</span> <a',1,true),'Favorite tags must remain tappable')
 for _,action in ipairs(tag_actions) do action() end
 local found={};for _,entry in ipairs(tapped) do found[entry[1]..':'..entry[2]]=true end
 assert(found['Fandom:Fandom'] and found['Freeform:First tag'] and found['Rating:Explicit']

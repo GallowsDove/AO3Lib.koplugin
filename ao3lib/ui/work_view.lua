@@ -50,7 +50,9 @@ function M.html(work,rows,options)
     end
     local function tagLink(kind,name)
         local callback=options and options.tag_action and function() options.tag_action(kind,name) end
-        return link(name,callback)
+        local star=options and options.is_favorite and options.is_favorite(name)
+            and '<span style="color:#000000">&#9733;</span> ' or ''
+        return star..link(name,callback)
     end
     local function tagList(value,kind,split)
         if type(value)=='string' then
@@ -217,19 +219,27 @@ function M.new(context)
         while pager.works[pager.loaded+1] do pager.loaded=pager.loaded+1 end
         self.works=pager.works
     end
+    if context.mutes then
+        local cache=require('ao3lib.ao3.mute_cache')
+        cache.watch(self,function(owner)
+            if not owner.closed and owner.window and not owner.window._ao3_closed then owner:render() end
+        end)
+        cache.ensure()
+    end
     function self:pageCount() return (self.pager and (self.pager.total or self.pager.loaded)) or self.total or #self.works end
     self.index=math.max(1,math.min(self.index,math.max(1,self:pageCount())))
     function self:render()
         if self.closed then return end
         local work=self.works[self.index]
-        local match=context.blacklist and work and not self.revealed[work.id or self.index]
-            and require('ao3lib.library.blacklist').match(work)
-        if match and #match==0 then match=nil end
+        local match=require('ao3lib.ui.hidden_work').reasons(work,{
+            blacklist=context.blacklist,mutes=context.mutes,
+            revealed=work and self.revealed[work.id or self.index],
+        })
         local rows=work and not match and context.rows(work) or {}
         local html,actions
         if match then
             local function reveal() self.revealed[work.id or self.index]=true;self:render() end
-            local label=_('Matched blacklist entries:')
+            local label=_('Hidden because of:')
             local names=table.concat(match,', ')
             rows={{_('Hidden work'),label..' '..names,callback=reveal},
                 {_('Show work'),'',callback=reveal}}
@@ -312,7 +322,11 @@ function M.show(browser,context)
     function View:onCloseWidget()
         self._ao3_closed=true
         context.plugin.menu_stack[self]=nil
-        if not self._replacing then state.closed=true end
+        if not self._replacing then
+            state.closed=true
+            require('ao3lib.ao3.favorite_cache').unwatch(state)
+            require('ao3lib.ao3.mute_cache').unwatch(state)
+        end
         UI:setDirty(nil,'ui')
     end
     function View:onShow() UI:setDirty(self,'ui');return true end
@@ -385,6 +399,7 @@ function M.show(browser,context)
                 local id=tonumber((link.uri or ''):match('^ao3%-action:(%d+)$'))
                 if id and self.actions[id] then self.actions[id]() end
             end}
+        self.work_scroll=scroll
         M.bindTitleHold(scroll,function()
             local title=self.rows and self.rows[1]
             if title and title.hold_callback then title.hold_callback();return true end
@@ -407,21 +422,41 @@ function M.show(browser,context)
         self.layout=view_options and {{view_options},self.page_buttons} or {self.page_buttons}
     end
     context.rows=context.rows or function(work) return browser:generateTable({}, {work},context.update,context.download) end
+    local favorites=require('ao3lib.ao3.favorite_cache')
+    context.is_favorite=context.is_favorite or favorites.contains
     context.network=require('ao3lib.ao3.network').run
     context.present=function(_,html,actions,rows)
         local previous=state.window
+        local ratio=state._favorite_refresh and previous and previous.work_scroll
+            and previous.work_scroll.getCurrentRatio and previous.work_scroll:getCurrentRatio()
+        state._favorite_refresh=nil
         local window=View:new{html=html,actions=actions,rows=rows}
         state.window=window;browser.browse_window=window
         require("ao3lib.ui.navigation").bind(context.plugin, window, {
-            replace=previous or context.replacing, resume=context.resume,
+            replace=previous or context.replacing, resume=function(resumed)
+                if context.resume then context.resume(resumed) end
+                if state._favorites_dirty and not state.closed then
+                    state._favorites_dirty=nil;state._favorite_refresh=true;state:render()
+                end
+            end,
             back=context.on_back,
         })
         context.replacing=nil
         UI:show(window)
         if previous then previous._replacing=true;UI:close(previous) end
+        if ratio and window.work_scroll and window.work_scroll.scrollToRatio then window.work_scroll:scrollToRatio(ratio) end
     end
     state=M.new(context)
     state:render()
+    favorites.watch(state,function(current)
+        local window=current.window
+        if current.closed or not window or window._ao3_closed then return end
+        local top=UI.getTopmostVisibleWidget and UI:getTopmostVisibleWidget()
+        if top and top~=window and not top.modal then current._favorites_dirty=true;return end
+        current._favorites_dirty=nil
+        current._favorite_refresh=true;current:render()
+    end)
+    favorites.ensure()
     return state
 end
 return M

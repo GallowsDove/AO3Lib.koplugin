@@ -9,8 +9,7 @@ package.loaded["ao3lib.ao3.network"]={
     defer=function(fn) if deferred==false then deferred=fn;return true end return false end,
     schedule=function(_,fn) jobs[#jobs+1]=fn end,
 }
-local settings={saved_filters={legacy={title='Legacy',parameters={main_tag='Fluff',additional_tags={'Old'}}}},
-    bookmarkedFandoms={'A fandom'}}
+local settings={saved_filters={legacy={title='Legacy',parameters={main_tag='Fluff',additional_tags={'Old'}}}}}
 local config=require('ao3lib.core.config')
 local writes=0
 config.readSetting=function(_,key,default) return settings[key] or default end
@@ -134,18 +133,30 @@ for _,item in ipairs(widget.item_table) do
     assert(not item.text_func or not item.text_func():find('any type',1,true))
 end
 Filter:selectedFandoms()
-assert(widget.item_table[4].text=='Bookmarked tags')
+assert(widget.item_table[4].text=='AO3 favorite tags')
+widget.item_table[2].callback();local fandom_input=shown[#shown]
+fandom_input.input='Zootopia';fandom_input.buttons[1][3].callback()
+assert(widget.item_table[5].text=='✓ Zootopia','Included fandom should appear directly in the editor')
+widget.item_table[2].callback();fandom_input=shown[#shown]
+fandom_input.input='Another fandom';fandom_input.buttons[1][2].callback()
+assert(widget.item_table[6].text=='× Another fandom','Excluded fandom should appear directly in the editor')
+widget.item_table[5].callback();shown[#shown].buttons[1][1].callback()
+assert(widget.item_table[5].text=='× Another fandom' and widget.item_table[6].text=='× Zootopia')
+local client=require('ao3lib.ao3.client')
+client.getFavoriteTags=function() return {success=true,tags={{name='A fandom'}}} end
 widget.item_table[4].callback()
-widget.item_table[2].callback()
+widget.item_table[1].callback()
 assert(Filter.filter.fandom_names[1]=='A fandom')
+widget:onReturn()
+assert(widget.item_table[5].text=='✓ A fandom','Returning from favorites must refresh the fandom editor')
 -- The migrated tag is editable in Additional Tags like every other freeform tag.
 Filter:selectAdditionalTags()
 for _,item in ipairs(widget.item_table) do
     if item.value=='Fluff' then item.callback();break end
 end
-shown[#shown].buttons[1][2].callback() -- Remove tag.
+shown[#shown].buttons[2][1].callback() -- Remove tag.
 assert(Filter.filter.additional_tags[1]=='Edited' and #Filter.filter.additional_tags==1)
-Filter:refreshMainMenu()
+Menu:searchWorksRows()
 assert(writes==1,'Opening searches again must not repeat migration writes')
 -- Wi-Fi continuation uses the submitted criteria, even after another filter opens.
 Filter.filter={additional_tags={'Offline tag'}};deferred=false
@@ -154,6 +165,46 @@ assert(type(deferred)=='function' and #jobs==0)
 Filter.filter={main_tag='Another search'}
 local resume=deferred;deferred=nil;resume();table.remove(jobs,1)()
 assert(requests[#requests].tag_id==nil and requests[#requests]['work_search[freeform_names]']=='Offline tag')
-Menu:onBrowseByTag('Fluff')
-assert(Filter.filter.main_tag==nil and Filter.filter.additional_tags[1]=='Fluff' and widget.title=='Search works')
+settings.saved_filters={z={title='Zebra',parameters={}},b={title='beta',parameters={}},
+    a={title='Alpha',parameters={}},a2={title='alpha',parameters={}}}
+Menu:onSearchFanficMenu();widget.item_table[1].callback()
+assert(widget.item_table[3].text=='     Alpha' and widget.item_table[4].text=='     alpha'
+    and widget.item_table[5].text=='     beta' and widget.item_table[6].text=='     Zebra')
+-- Both statistic controls edit their own fields.
+Filter.filter={}
+Filter:WorkStatSubmenu()
+widget.item_table[3].callback();local stats_dialog=shown[#shown]
+stats_dialog.input='>10';stats_dialog.buttons[1][2].callback()
+widget.item_table[4].callback();stats_dialog=shown[#shown]
+stats_dialog.input='5-20';stats_dialog.buttons[1][2].callback()
+assert(Filter.filter.comments=='>10' and Filter.filter.bookmarks=='5-20' and not Filter.filter.word_count)
+
+-- Included and excluded tags use the same vertical action layout.
+Filter.filter={fandom_names={'Included'},exclude_fandom_names={'Excluded'}}
+Filter:selectedFandoms()
+widget.item_table[5].callback();local included_dialog=shown[#shown]
+widget.item_table[6].callback();local excluded_dialog=shown[#shown]
+assert(#included_dialog.buttons==3 and #excluded_dialog.buttons==3)
+assert(included_dialog.buttons[2][1].text==excluded_dialog.buttons[2][1].text)
+excluded_dialog.buttons[1][1].callback()
+assert(Filter.filter.fandom_names[2]=='Excluded' and #Filter.filter.exclude_fandom_names==0)
+
+-- Saving and overwriting rebuild the same search menu without adding a level.
+function widget:updateMenuBack(n, title, items)
+    local path=self.paths[#self.paths-n+1]
+    path.title=title or path.title;path.items=items or path.items
+end
+widget.paths={};Menu:onSearchFanficMenu();widget.item_table[1].callback()
+widget.item_table[1].callback();Filter:SaveFilters()
+local save_dialog=shown[#shown];save_dialog.input='New saved';save_dialog.buttons[1][2].callback()
+widget:onReturn()
+assert(widget.title=='Search works' and widget.item_table[1].text=='New search')
+local saved_row
+for _,row in ipairs(widget.item_table) do if row.text=='     New saved' then saved_row=row end end
+assert(saved_row,'Saved filter must appear when returning')
+saved_row.callback();shown[#shown].buttons[2][1].callback()
+Filter:OverwriteFilter(Filter.current_filter);widget:onReturn()
+assert(widget.item_table[1].text=='New search','Overwriting must preserve the unified search menu')
+local sorted=require('ao3lib.ui.saved_searches').sorted({z={title='Same'},a={title='Same'}})
+assert(sorted[1].key=='a' and sorted[2].key=='z','Equal titles need a deterministic tie-breaker')
 print('PASS: one work-search interface; direct include/exclude tags; global filters; persisted legacy migration; editable migrated tags; bookmarks; submitted criteria survive Wi-Fi and edits')

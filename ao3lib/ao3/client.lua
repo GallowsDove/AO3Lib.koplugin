@@ -596,6 +596,124 @@ function AO3LibClient:searchByParameters(parameters, page_no)
     }
 end
 
+local function tagPath(tag_name)
+    if type(tag_name)~='string' or not tag_name:find('%S') then return nil end
+    return '/tags/'..encodeHelper:urlEncode(tag_name:gsub('/', '*s*'):gsub('&', '*a*'):gsub('%.', '*d*'))..'/works'
+end
+
+function AO3LibClient:getFavoriteTags(silent)
+    local status=self:GetSessionStatus()
+    if not status.success then return status end
+    if not status.logged_in then return {success=false,auth_required=not silent,error='Please sign in to view favorite tags.'} end
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL(),method='GET',sink=ltn12.sink.table(body)}
+    if not result.success then return result end
+    local root=htmlparser.parse(table.concat(body))
+    if root:select('body.logged-out')[1] then return {success=false,auth_required=not silent,error='Please sign in to view favorite tags.'} end
+    local tags=require('ao3lib.ao3.favorite_tags').list(root,
+        function(value) return encodeHelper:parseFromHTML(value) end)
+    if not tags then return {success=false,error='AO3 returned an unexpected favorite-tags page.'} end
+    return {success=true,tags=tags,username=status.username}
+end
+
+function AO3LibClient:getFavoriteTagState(name)
+    local path=tagPath(name)
+    if not path then return {success=false,error='Invalid tag name.'} end
+    local status=self:GetSessionStatus()
+    if not status.success then return status end
+    if not status.logged_in then return {success=false,auth_required=true,error='Please sign in to manage favorite tags.'} end
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..path,method='GET',sink=ltn12.sink.table(body)}
+    if not result.success then return result end
+    local root=htmlparser.parse(table.concat(body))
+    if root:select('body.logged-out')[1] then return {success=false,auth_required=true,error='Please sign in to manage favorite tags.'} end
+    local form=require('ao3lib.ao3.favorite_tags').form(root,status.username)
+    if not form then return {success=false,error='AO3 did not provide a favorite form for this tag. Only canonical tags can be favorited.'} end
+    form.success=true;form.username=status.username
+    return form
+end
+
+function AO3LibClient:setFavoriteTag(name,want_favorite)
+    local state=self:getFavoriteTagState(name)
+    if not state.success then return state end
+    if (state.favorite_id~=nil)==want_favorite then return {success=true,favorited=want_favorite} end
+    local token=self:requestAO3Token()
+    if not token.success then return token end
+    local data={authenticity_token=token.token}
+    if want_favorite then data['favorite_tag[tag_id]']=state.tag_id else data._method='delete' end
+    local form=encodeHelper:generateParametersStringForm(data)
+    local headers=HTTPQueryHandler:get_default_headers()
+    headers['Content-Type']='application/x-www-form-urlencoded; charset=UTF-8'
+    headers['Content-Length']=tostring(#form)
+    headers.Accept='application/json, text/javascript, */*; q=0.01'
+    headers['X-Requested-With']='XMLHttpRequest';headers['X-CSRF-Token']=token.token
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..state.action,method='POST',headers=headers,
+        source=ltn12.source.string(form),sink=ltn12.sink.table(body)}
+    if not result.success then
+        if result.status==422 then return {success=false,error='AO3 rejected the favorite. Check that the tag is canonical and the account has fewer than 20 favorites.'} end
+        return result
+    end
+    local decoded=require('dkjson').decode(table.concat(body))
+    if type(decoded)~='table' or (want_favorite and (result.status~=201 or not decoded.item_id))
+            or (not want_favorite and (result.status~=200 or not decoded.item_success_message)) then
+        return {success=false,error='AO3 returned an unexpected response. Check your favorites before retrying.'}
+    end
+    return {success=true,favorited=want_favorite}
+end
+
+function AO3LibClient:getMutedUsers(silent)
+    local status=self:GetSessionStatus()
+    if not status.success then return status end
+    if not status.logged_in then return {success=false,auth_required=not silent,error='Please sign in to manage muted users.'} end
+    local username=status.username
+    if not username or not username:match('^[%w_%-]+$') then return {success=false,error='Invalid account name.'} end
+    local all,page,seen={},1,{}
+    repeat
+        if seen[page] or page>200 then return {success=false,error='AO3 returned invalid mute-list pagination.'} end
+        seen[page]=true
+        local body={}
+        local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..'/users/'..username..'/muted/users?page='..page,method='GET',sink=ltn12.sink.table(body)}
+        if not result.success then return result end
+        local entries,next_page=require('ao3lib.ao3.muted_users').page(htmlparser.parse(table.concat(body)),username)
+        if not entries then return {success=false,error='AO3 returned an unexpected muted-users page.'} end
+        for _,entry in ipairs(entries) do all[#all+1]=entry end
+        page=next_page
+    until not page
+    return {success=true,users=all,username=username}
+end
+
+function AO3LibClient:setMutedUser(name,want_muted)
+    if type(name)~='string' or not name:match('^[%w_%-]+$') then return {success=false,error='Invalid AO3 username.'} end
+    local list=self:getMutedUsers()
+    if not list.success then return list end
+    local existing
+    for _,entry in ipairs(list.users) do if entry.name:lower()==name:lower() then existing=entry;break end end
+    if (existing~=nil)==want_muted then return list end
+    local base='/users/'..list.username..'/muted/users'
+    local confirm=want_muted and (base..'/confirm_mute?muted_id='..encodeHelper:urlEncode(name)) or (base..'/'..existing.id..'/confirm_unmute')
+    local body={}
+    local response=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..confirm,method='GET',sink=ltn12.sink.table(body)}
+    if not response.success then return response end
+    local action=require('ao3lib.ao3.muted_users').confirm(htmlparser.parse(table.concat(body)),base,not want_muted)
+    if not action then return {success=false,error='AO3 did not provide the expected mute confirmation.'} end
+    local token=self:requestAO3Token()
+    if not token.success then return token end
+    local fields={authenticity_token=token.token}
+    if not want_muted then fields._method='delete' end
+    local form=encodeHelper:generateParametersStringForm(fields)
+    local headers=HTTPQueryHandler:get_default_headers()
+    headers['Content-Type']='application/x-www-form-urlencoded; charset=UTF-8';headers['Content-Length']=tostring(#form)
+    response=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..action,method='POST',headers=headers,source=ltn12.source.string(form),sink=ltn12.sink.table({})}
+    if not response.success then return response end
+    local updated=self:getMutedUsers()
+    if not updated.success then return updated end
+    local found=false
+    for _,entry in ipairs(updated.users) do if entry.name:lower()==name:lower() then found=true end end
+    if found~=want_muted then return {success=false,error='AO3 did not confirm the mute change.'} end
+    return updated
+end
+
 function AO3LibClient:searchByTag(tag_name, sort_by, page_no)
     local page = page_no or 1
     logger.dbg("AO3Lib.koplugin: Executing work search by tag: " .. tostring(tag_name) .. ", page no: " .. tostring(page_no))
@@ -2221,8 +2339,10 @@ function AO3WebParser:parseWorkElement(element)
         local rating = ratingElement and ratingElement.attributes["title"] or "N/A"
         local category = categoryElement and categoryElement.attributes["title"] or "N/A"
         local iswip = iswipElement and iswipElement.attributes["title"] or "N/A"
-        local author_table = {}
+        local author_table, author_accounts = {}, {}
         for _, author in pairs(authorElements) do
+            local account=(author.attributes.href or ''):match('/users/([%w_%-]+)/')
+            if account then author_accounts[#author_accounts+1]=account end
             table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
         end
 
@@ -2256,6 +2376,7 @@ function AO3WebParser:parseWorkElement(element)
             iswip = iswip,
             link = getAO3URL() .. href,
             author = author,
+            author_accounts = author_accounts,
             gifted_to = gifted_to,
             series = self:parseWorkSeries(element),
             summary = summary,
@@ -2351,8 +2472,10 @@ function AO3WebParser:parseWorkPage(root)
         or "Unknown title"
 
 
-    local author_table = {}
+    local author_table, author_accounts = {}, {}
     for _, author in pairs(authorElements) do
+        local account=(author.attributes.href or ''):match('/users/([%w_%-]+)/')
+        if account then author_accounts[#author_accounts+1]=account end
         table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
     end
 
@@ -2482,6 +2605,7 @@ function AO3WebParser:parseWorkPage(root)
     local work = {
         title = title,
         author = author,
+        author_accounts = author_accounts,
         gifted_to = gifted_to,
         chapterData = chapterData,
         series = self:parseWorkSeries(root),
@@ -2878,6 +3002,7 @@ for name, selector in pairs(page_parsers) do
 end
 
 local payloads = {
+    getFavoriteTags = 'tags', getMutedUsers = 'users',
     getHiddenTags = "tags",
     getComments = "comments",
     getSubscriptions = "subscriptions",
@@ -2893,6 +3018,12 @@ local payloads = {
 -- unexpected server response unwind KOReader's event loop.
 for name, operation in pairs(AO3LibClient) do
     AO3LibClient[name] = function(...)
+        if name=='startLoggedInSession' or name=='endLoggedInSession' then
+            local cache=package.loaded['ao3lib.ao3.favorite_cache']
+            if cache then cache.invalidate() end
+            local mutes=package.loaded['ao3lib.ao3.mute_cache']
+            if mutes then mutes.invalidate() end
+        end
         local Background = require("ao3lib.ao3.background")
         if not HTTPQueryHandler.in_worker and Background.available() then
             assert(coroutine.running(), "AO3 request requires a network continuation")
@@ -2958,6 +3089,16 @@ for name, operation in pairs(AO3LibClient) do
                 AO3LibClient.recovering_auth = nil
                 if not ok then error(authenticated,0) end
             end
+            if name=='GetSessionStatus' then
+                local cache=package.loaded['ao3lib.ao3.favorite_cache']
+                if cache then cache.observeSession(result) end
+                local mutes=package.loaded['ao3lib.ao3.mute_cache']
+                if mutes then mutes.observeSession(result) end
+            end
+            if name=='startLoggedInSession' and result.success then
+                local cache=package.loaded['ao3lib.ao3.favorite_cache']
+                if cache then cache.ensure() end
+            end
             return result
         end
         local ok, result = pcall(operation, ...)
@@ -2968,6 +3109,16 @@ for name, operation in pairs(AO3LibClient) do
             return { success = false, unexpected_response = true, error = "AO3 returned an unexpected response. The site may be unavailable or its page format may have changed. Please try again later." }
         end
         if not result.success and type(result.error) ~= "string" then result.error = "AO3 request failed. Please try again later." end
+        if name=='GetSessionStatus' then
+            local cache=package.loaded['ao3lib.ao3.favorite_cache']
+            if cache then cache.observeSession(result) end
+            local mutes=package.loaded['ao3lib.ao3.mute_cache']
+            if mutes then mutes.observeSession(result) end
+        end
+        if name=='startLoggedInSession' and result.success then
+            local cache=package.loaded['ao3lib.ao3.favorite_cache']
+            if cache then cache.ensure() end
+        end
         return result
     end
 end

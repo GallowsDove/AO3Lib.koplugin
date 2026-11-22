@@ -67,55 +67,13 @@ end
 function AO3UserBrowser:generateMenuTable()
     local kv_pairs = {}
 
-    local table_contains = function(table, element)
-        for _, value in pairs(table) do
-            if value == element then
-                return true
-            end
-        end
-        return false
-    end
-
-    local table_remove = function(table, element)
-        for i, value in pairs(table) do
-            if value == element then
-                table[i] = nil
-                return
-            end
-        end
-    end
-
-    local Config = require("ao3lib.core.config")
-
-    local bookmarked_users = Config:readSetting("bookmarkedUsers", {})
-
+    local bookmarks=require('ao3lib.users.bookmarks')
     local user_display_name = (self.userData.username == self.userData.pseud and self.userData.username or self.userData.pseud .. " (" .. self.userData.username .. ")")
-
-    local is_bookmarked = table_contains(bookmarked_users, user_display_name)
-
     local bookmark_user_item = {
-        is_bookmarked and "★ Remove user from bookmarks" or "☆ Bookmark user",
+        bookmarks.contains(self.userData.username) and "★ Remove user from bookmarks" or "☆ Bookmark user",
         "",
         callback = function()
-            -- Make sure to get most recent version of bookmarks in case of changes elsewhere
-            bookmarked_users = Config:readSetting("bookmarkedUsers", {})
-            is_bookmarked = table_contains(bookmarked_users, user_display_name)
-            local InfoMessage = require("ui/widget/infomessage")
-            if is_bookmarked then
-                table_remove(bookmarked_users, user_display_name)
-                Config:saveSetting("bookmarkedUsers", bookmarked_users)
-                UIManager:show(InfoMessage:new({
-                    text = T("User: '%1' has been removed from your bookmarks.", user_display_name),
-                }))
-            else
-                table.insert(bookmarked_users, user_display_name)
-                Config:saveSetting("bookmarkedUsers", bookmarked_users)
-                UIManager:show(InfoMessage:new({
-                    text = T("User: '%1' has been added to your bookmarks.", user_display_name),
-                }))
-            end
-
-            self:reloadProfile()
+            require('ao3lib.ui.user_actions').toggle(self.userData,function() self:reloadProfile() end)
         end,
         separator = true,
     }
@@ -123,6 +81,17 @@ function AO3UserBrowser:generateMenuTable()
     table.insert(kv_pairs, bookmark_user_item)
     table.insert(kv_pairs, {_("Manage author subscription"), "", callback=Network.wrap(function()
         require("ao3lib.ui.subscriptions").manage(self.Fanfic,"User",self.userData.username,user_display_name)
+    end)})
+
+    table.insert(kv_pairs, {_("Manage AO3 mute"), "", callback=Network.wrap(function()
+        local result=require('ao3lib.ao3.client'):getMutedUsers()
+        if not result.success then UIManager:show(InfoMessage:new{text=result.error});return end
+        local muted=false
+        for _,entry in ipairs(result.users) do
+            if entry.name:lower()==self.userData.username:lower() then muted=true;break end
+        end
+        require('ao3lib.ao3.mute_cache').remember(result)
+        require('ao3lib.ui.muted_users').change(self.userData.username,not muted,function() self:reloadProfile() end)
     end)})
 
     local pseuds_item = {

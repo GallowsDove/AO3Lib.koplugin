@@ -125,6 +125,16 @@ function FanficMenu:show(fanfic)
     require("ao3lib.ui.navigation").bind(fanfic, window, {
         root=function() return #(window.paths or {}) == 0 end,
         back=function() return window:onReturn() end,
+        resume=function()
+            if not self.refreshBookmarkedUsers then return end
+            local title=_("Bookmarked Users")
+            if window.title==title then
+                window.item_table=self.refreshBookmarkedUsers();window:updateItems()
+            end
+            for __,path in ipairs(window.paths or {}) do
+                if path.title==title then path.items=self.refreshBookmarkedUsers() end
+            end
+        end,
     })
 
     return self.menuWidget
@@ -221,6 +231,45 @@ function FanficMenu:enterUserDetails()
     self.login_dialog:onShowKeyboard()
 end
 
+function FanficMenu:searchWorksRows()
+    local widget=self.menuWidget
+    local filters=require("ao3lib.ui.saved_searches").saved(Config)
+    local rows={{text=_("New search"),callback=function()
+        CustomFilterMenu.menuWidget=widget
+        CustomFilterMenu.fanfic=self.fanfic
+        CustomFilterMenu:FilterCrafter()
+    end},{text=_("Saved filters:"),enabled=false}}
+    for __,entry in ipairs(require("ao3lib.ui.saved_searches").sorted(filters)) do
+        local key,saved_filter=entry.key,entry.filter
+        rows[#rows+1]={text="     "..(saved_filter.title or tostring(key)),callback=function()
+            local options
+            options=ButtonDialog:new{buttons={{
+                {text=_("Search using filter"),callback=function()
+                    CustomFilterMenu.menuWidget=widget
+                    CustomFilterMenu.fanfic=self.fanfic
+                    CustomFilterMenu.filter=require("ao3lib.core.table").deepCopy(saved_filter.parameters)
+                    CustomFilterMenu:executeSearch();UIManager:close(options)
+                end},
+            },{
+                {text=_("Edit filter"),callback=function()
+                    CustomFilterMenu.menuWidget=widget
+                    CustomFilterMenu.fanfic=self.fanfic
+                    CustomFilterMenu:UpdateFilterCrafter(saved_filter);UIManager:close(options)
+                end},
+            },{
+                {text=_("Delete filter"),callback=function()
+                    filters[key]=nil;Config:saveSetting("saved_filters",filters)
+                    widget.item_table=self:searchWorksRows();widget:updateItems();UIManager:close(options)
+                end},
+            },{
+                {text=_("Cancel"),callback=function() UIManager:close(options) end},
+            }}}
+            UIManager:show(options)
+        end}
+    end
+    return rows
+end
+
 function FanficMenu:onSearchFanficMenu()
     local widget=self.menuWidget
     -- Saved-filter actions can open the editor without going through the
@@ -231,41 +280,8 @@ function FanficMenu:onSearchFanficMenu()
     widget:GoDownInMenu(_("Search"),{{text=_("Search works"),callback=function()
         CustomFilterMenu.menuWidget=widget
         CustomFilterMenu.fanfic=self.fanfic
-        local filters=require("ao3lib.ui.saved_searches").saved(Config)
-        local rows={{text=_("New search"),callback=function()
-            CustomFilterMenu.menuWidget=widget
-            CustomFilterMenu.fanfic=self.fanfic
-            CustomFilterMenu:FilterCrafter()
-        end},{text=_("Saved filters:"),enabled=false}}
-        for key,filter in pairs(filters) do
-            local saved_filter=filter
-            rows[#rows+1]={text="     "..(saved_filter.title or tostring(key)),callback=function()
-                local options
-                options=ButtonDialog:new{buttons={{
-                    {text=_("Search using filter"),callback=function()
-                        CustomFilterMenu.menuWidget=widget
-                        CustomFilterMenu.fanfic=self.fanfic
-                        CustomFilterMenu.filter=require("ao3lib.core.table").deepCopy(saved_filter.parameters)
-                        CustomFilterMenu:executeSearch();UIManager:close(options)
-                    end},
-                },{
-                    {text=_("Edit filter"),callback=function()
-                        CustomFilterMenu.menuWidget=widget
-                        CustomFilterMenu.fanfic=self.fanfic
-                        CustomFilterMenu:UpdateFilterCrafter(saved_filter);UIManager:close(options)
-                    end},
-                },{
-                    {text=_("Delete filter"),callback=function()
-                        filters[key]=nil;Config:saveSetting("saved_filters",filters)
-                        widget.item_table[2].callback();UIManager:close(options)
-                    end},
-                },{
-                    {text=_("Cancel"),callback=function() UIManager:close(options) end},
-                }}}
-                UIManager:show(options)
-            end}
-        end
-        widget:GoDownInMenu(_("Search works"),rows)
+        CustomFilterMenu.refreshSearchRows=function() return self:searchWorksRows() end
+        widget:GoDownInMenu(_("Search works"),self:searchWorksRows())
     end},
     {text=_("Search work by ID"),callback=function() self:onShowFanficSearch() end},
     {text=_("Search for users"),callback=function() self:onSelectUserSearch() end},
@@ -292,214 +308,6 @@ function FanficMenu:onShowFanficSearch()
     end)
 end
 
-function FanficMenu:onSelectTag(category)
-    local bookmarkSetting = T("bookmarked%1s", category)
-    local function refreshMenu()
-        local menu_items = {}
-
-        -- Add an option to search for fandoms
-        table.insert(menu_items, {
-            text = T("\u{f002} Search %1", category),
-            callback = function()
-                self:onSearchTag(category)
-            end,
-        })
-
-        -- Get the list of bookmarked fandoms
-        local bookmarks = Config:readSetting(bookmarkSetting, {})
-
-        -- Add bookmarked fandoms to the menu
-        for __, tag in ipairs(bookmarks) do
-            local displayText = T("★ %1", tag)
-            table.insert(menu_items, {
-                text = displayText,
-                callback = function()
-                    -- Submenu for the selected fandom
-                    local dialog
-                    dialog = ButtonDialog:new({
-                        title = displayText,
-                        buttons = {
-                            {
-                                {
-                                    text = _("Browse Works"),
-                                    callback = function()
-                                        self:onBrowseByTag(tag)
-                                        UIManager:close(dialog)
-                                    end,
-                                },
-                                {
-                                    text = _(T("Unbookmark %1", category)),
-                                    callback = function()
-                                        -- Remove the fandom from bookmarks
-                                        for i, v in ipairs(bookmarks) do
-                                            if v == tag then
-                                                table.remove(bookmarks, i)
-                                                break
-                                            end
-                                        end
-                                        Config:saveSetting(bookmarkSetting, bookmarks)
-                                        UIManager:show(InfoMessage:new({
-                                            text = T("'%1' has been removed from your bookmarks.", tag),
-                                        }))
-                                        UIManager:close(dialog)
-                                        refreshMenu()                              -- Refresh the menu to update the star
-                                        self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
-                                        self.menuWidget:updateItems()
-                                    end,
-                                },
-                            },
-                            {{text=_("Add to blacklist"),callback=function()
-                                require('ao3lib.library.blacklist').add(category,tag)
-                                UIManager:close(dialog)
-                            end}},
-                        },
-                    })
-                    UIManager:show(dialog)
-                end,
-            })
-        end
-
-        return menu_items
-    end
-
-    -- Initial menu display
-
-    self.menuWidget:GoDownInMenu(T("Select a %1 tag", category), refreshMenu())
-end
-
-function FanficMenu:onSearchTag(category)
-    -- Show an input dialog to enter the fandom search query
-    local searchDialog
-    local bookmarkSetting = T("bookmarked%1s", category)
-    searchDialog = InputDialog:new({
-        title = T("Search for %1s tags on AO3", category),
-        input = "",
-        input_type = "text",
-        buttons = {
-            {
-                {
-                    text = _("Close"),
-                    id = "close",
-                    callback = function()
-                        UIManager:close(searchDialog)
-                    end,
-                },
-                {
-                    text = _("Search"),
-                    is_enter_default = true,
-                    callback = Network.wrap(function()
-                        local query = searchDialog:getInputText()
-                        local success, tags
-                        -- Function to refresh the menu items
-                        local function refreshMenu()
-                            local bookmarks = Config:readSetting(bookmarkSetting, {})
-
-                            -- Show the matching fandoms in a menu
-                            local menu_items = {}
-                            for __, tag in ipairs(tags) do
-                                local isBookmarked = util.contains(bookmarks, tag.name)
-                                local displayText = isBookmarked and T("★ (%1) %2", tag.uses, tag.name)
-                                    or T("(%1) %2", tag.uses, tag.name)
-
-                                table.insert(menu_items, {
-                                    text = displayText,
-                                    callback = function()
-                                        local dialog
-                                        dialog = ButtonDialog:new({
-                                            title = displayText,
-                                            buttons = {
-                                                {
-                                                    {
-                                                        text = _("Browse Works"),
-                                                        callback = function()
-                                                            self:onBrowseByTag(tag.name)
-                                                            UIManager:close(dialog)
-                                                        end,
-                                                    },
-                                                    {
-                                                        text = _(
-                                                            not isBookmarked and T("Bookmark %1", category)
-                                                            or T("Unbookmark %1", category)
-                                                        ),
-                                                        callback = function()
-                                                            -- Add the fandom to bookmarks
-                                                            if not isBookmarked then
-                                                                table.insert(bookmarks, tag.name)
-                                                                Config:saveSetting(bookmarkSetting, bookmarks)
-                                                                UIManager:show(
-                                                                    InfoMessage:new({
-                                                                        text = T(
-                                                                            "'%1' has been added to your bookmarks.",
-                                                                            tag.name
-                                                                        ),
-                                                                    })
-                                                                )
-                                                            else
-                                                                for i, v in ipairs(bookmarks) do
-                                                                    if v == tag.name then
-                                                                        table.remove(bookmarks, i)
-                                                                        break
-                                                                    end
-                                                                end
-                                                                Config:saveSetting(bookmarkSetting, bookmarks)
-                                                                UIManager:show(
-                                                                    InfoMessage:new({
-                                                                        text = T(
-                                                                            "'%1' has been removed from your bookmarks.",
-                                                                            tag.name
-                                                                        ),
-                                                                    })
-                                                                )
-                                                            end
-                                                            UIManager:close(dialog)
-                                                            self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
-                                                            self.menuWidget:updateItems()
-                                                        end,
-                                                    },
-                                                },
-                                                {{text=_("Add to blacklist"),callback=function()
-                                                    require('ao3lib.library.blacklist').add(category,tag.name)
-                                                    UIManager:close(dialog)
-                                                end}},
-                                            },
-                                        })
-                                        UIManager:show(dialog)
-                                    end,
-                                })
-                            end
-                            return menu_items
-                        end
-                        Network.schedule(0, function()
-                            local success
-                            success, tags = self.fanfic:searchForTags(query, category)
-
-                            if not success or not tags then
-                                return
-                            end
-                            UIManager:close(searchDialog)
-                            --
-
-                            -- Initial menu display
-
-                            self.menuWidget:GoDownInMenu(T('"%1" %2 query results', query, category), refreshMenu())
-                        end)
-                    end),
-                },
-            },
-        },
-    })
-
-    UIManager:show(searchDialog)
-    searchDialog:onShowKeyboard()
-end
-
-function FanficMenu:onBrowseByTag(selectedTag)
-    CustomFilterMenu.menuWidget=self.menuWidget
-    CustomFilterMenu.fanfic=self.fanfic
-    CustomFilterMenu.filter={additional_tags={selectedTag}}
-    self.menuWidget:GoDownInMenu(_("Search works"),CustomFilterMenu:filterMenuRows())
-end
-
 -- Reuse the last discovered library within this KOReader session. The EPUB
 -- cache supplies the initial snapshot in a worker on a cold start.
 function FanficMenu:onViewDownloadedFanfics()
@@ -508,78 +316,17 @@ end
 
 function FanficMenu:onSelectUserSearch()
     local function refreshMenu()
-        local users = Config:readSetting("bookmarkedUsers", {})
-
-
-        -- Show the matching fandoms in a menu
-        local menu_items = {}
-
-
-        table.insert(menu_items, {
-            text = "\u{f002} " .. _("Search for user"),
-            callback = function()
-                self:onSearchUser()
-            end,
-        })
-
-        for __, user in ipairs(users) do
-            local displayText = T("★ %1", user)
-            local function openProfile()
-                local username = user:match("%((.-)%)")
-                local pseud = user:match("^(.-)%s*%(")
-                self.fanfic:showUserInfo(username or user, pseud or user, self.menuWidget)
-            end
-            table.insert(menu_items, {
-                text = displayText,
-                callback = openProfile,
-                hold_callback = function()
-                    local dialog = nil
-                    dialog = ButtonDialog:new({
-                        title = displayText,
-                        buttons = {
-                            {
-                                {
-                                    text = _("View user profile"),
-                                    callback = function()
-                                        UIManager:close(dialog)
-                                        openProfile()
-                                    end,
-                                },
-                                {
-                                    text = _("Unbookmark User"),
-                                    callback = function()
-                                        -- Remove the fandom from bookmarks
-                                        for i, v in ipairs(users) do
-                                            if v == user then
-                                                table.remove(users, i)
-                                                break
-                                            end
-                                        end
-                                        Config:saveSetting("bookmarkedUsers", users)
-                                        UIManager:show(InfoMessage:new({
-                                            text = T("User: '%1' has been removed from your bookmarks.", user),
-                                        }))
-                                        UIManager:close(dialog)
-                                        self.menuWidget.item_table = refreshMenu() -- Refresh the menu to update the star
-                                        self.menuWidget:updateItems()
-                                    end,
-                                },
-                            },
-                        },
-
-                    })
-                    UIManager:show(dialog)
-                end,
-            })
+        local rows={{text="\u{f002} ".._("Search for user"),callback=function() self:onSearchUser() end}}
+        for __,user in ipairs(require('ao3lib.users.bookmarks').list()) do
+            rows[#rows+1]=require('ao3lib.ui.user_actions').row(user,self,"★ "..user.display,function()
+                self.menuWidget.item_table=refreshMenu();self.menuWidget:updateItems()
+            end)
         end
-
-        return menu_items
+        return rows
     end
-
-    self.menuWidget:GoDownInMenu("Bookmarked Users", refreshMenu())
-
+    self.refreshBookmarkedUsers=refreshMenu
+    self.menuWidget:GoDownInMenu(_("Bookmarked Users"),refreshMenu())
 end
-
 
 function FanficMenu:onSearchUser()
     local search_dialog
@@ -609,46 +356,18 @@ function FanficMenu:onSearchUser()
                         local function generateMenuItems()
                             local menu_items = {}
                             for __, user in ipairs(users) do
-                                table.insert(menu_items, {
-                                    text = T("%1 (%2) | (%3 works) (%4 bookmarks)",user.pseud, user.username, tostring(user.works_count), tostring(user.bookmarks_count)),
-                                    callback = function()
-                                        local dialog
-                                        dialog = ButtonDialog:new({
-                                            buttons = {
-                                                {
-                                                    {
-                                                        text = _("View user profile"),
-                                                        callback = function()
-                                                            self.fanfic:showUserInfo(user.username, user.pseud, self.menuWidget)
-                                                            UIManager:close(dialog)
-                                                        end,
-                                                    },
-                                                },
-                                                {
-                                                    {
-                                                        text = _("Bookmark User"),
-                                                        callback = function()
-                                                            local users = Config:readSetting("bookmarkedUsers", {})
-                                                            if not util.contains(users, user.username) then
-                                                                table.insert(users, user.username)
-                                                                Config:saveSetting("bookmarkedUsers", users)
-                                                                UIManager:show(InfoMessage:new({
-                                                                    text = T("User: '%1' has been added to your bookmarks.", user.username),
-                                                                }))
-                                                            else
-                                                                UIManager:show(InfoMessage:new({
-                                                                    text = T("User: '%1' is already in your bookmarks.", user.username),
-                                                                }))
-                                                            end
-                                                            UIManager:close(dialog)
-                                                        end,
-                                                    },
-                                                },
-                                            },
-                                        })
-                                        UIManager:show(dialog)
-                                    end,
-                                })
+                                local label=T("%1 (%2) | (%3 works) (%4 bookmarks)",user.pseud,user.username,
+                                    tostring(user.works_count),tostring(user.bookmarks_count))
+                                menu_items[#menu_items+1]=require('ao3lib.ui.user_actions').row(user,self,label,function()
+                                    -- The bookmarked-users screen sits directly behind search results.
+                                    local paths=self.menuWidget.paths
+                                    if self.refreshBookmarkedUsers and paths then
+                                        for __,path in ipairs(paths) do
+                                            if path.title==_("Bookmarked Users") then path.items=self.refreshBookmarkedUsers() end
+                                        end
+                                    end
+                                    self.menuWidget:updateItems()
+                                end)
                             end
                             return menu_items
                         end

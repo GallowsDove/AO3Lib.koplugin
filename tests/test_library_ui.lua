@@ -28,8 +28,8 @@ end
 local opened
 local plugin={ui={},onOpenFanficReader=function(_,_,work) opened=work end}
 Menu.fanfic=plugin
-local a={id='1',path='/books/1.epub',title='First',author='Writer',chapters='1/1',wordcount='12345'}
-local b={id='2',path='/books/2.epub',title='Second',author='Writer, Other',chapters='3/3',wordcount='34567'}
+local a={id='1',path='/books/1.epub',title='First',author='Writer',chapters='1/1',wordcount='12345',fandoms={'Fandom'}}
+local b={id='2',path='/books/2.epub',title='Second',author='Writer, Other',chapters='3/3',wordcount='34567',fandoms={'Fandom', 'Other Fandom'}}
 local c={id='3',path='/books/3.epub',title='Third',author='Other',chapters='1/?'}
 local window=Menu:onViewDownloadedFanfics()
 assert(window.title=='Downloaded Works' and #window.item_table==0 and window.library_model.notice:find('Loading',1,true))
@@ -93,6 +93,16 @@ assert(window.library_model.scope_label=='Author: Writer' and window.library_mod
 window.library_model.review()
 assert(#reviewed.works==1 and reviewed.works[1].id=='2')
 option(2,1)
+-- Fandom grouping also handles crossovers and scopes the list correctly.
+option(1);actions.buttons[3][1].callback()
+assert(actions.title=='Choose fandom')
+local fandom_found=false
+for _,row in ipairs(actions.item_table) do
+    if row.text=='Fandom (2)' then fandom_found=true;row.callback();break end
+end
+assert(fandom_found and window.library_model.total==2 and #window.item_table==2)
+option(1);actions.buttons[2][1].callback()
+for _,row in ipairs(actions.item_table) do if row.text=='Writer (2)' then row.callback();break end end
 option(5)
 assert(actions.title=='Sort downloaded works')
 actions.buttons[3][1].callback()
@@ -185,4 +195,11 @@ visible=false
 assert(not jobs[#jobs].valid())
 reopened:onCloseWidget()
 assert(reopened.is_borderless and not reopened.is_popout and reopened.linesize==0 and reopened.with_bottom_line)
+-- Imported works without recognized metadata remain visible offline.
+visible=true;view_settings=nil
+snapshot={['222']={id='222',path='/books/localized.epub',title='Localized work'}}
+local unknown_window=Menu:onViewDownloadedFanfics()
+assert(#unknown_window.item_table==1 and unknown_window.item_table[1].work.id=='222')
+assert(unknown_window.item_table[1].text:find('Anonymous',1,true))
+unknown_window:onCloseWidget()
 print('PASS: fixed downloaded-library controls; cached offline loading; reading filters; coauthor scope; sort; visible-only update review; deletion and cancellation')

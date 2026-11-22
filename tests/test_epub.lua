@@ -223,111 +223,9 @@ drain()
 assert(not finished and saves == oldSaves and handlesClosed > oldClosed)
 assert(flushes > 0)
 print('PASS: preface-only identity; OPF/spine paths; metadata; positive/negative/persisted cache; invalidation; corrupt archives; history independence; library discovery/removal/cancellation')
--- Imported books without English tag/stat labels still appear in the menu.
+-- Keep a localized preface in the cache to verify invalidation below.
 fixture('/home/localized.epub', '222')
 archives['/home/localized.epub']['Text/front matter.xhtml'] = preface('222'):gsub('<dl.-</dl>', '')
-local unknown = History.rememberLocal(Epub.read('/home/localized.epub'))
-local Class = {}
-function Class:new(t) return t end
-for _, module in ipairs({'ui/widget/buttondialog','ui/widget/infomessage','ui/widget/textviewer'}) do stub(module, Class) end
-stub('ao3lib.ui.reader', {})
-stub('ao3lib.ao3.network', {schedule=function(delay,fn) UI:scheduleIn(delay,fn) end})
-stub('ao3lib.core.config', {readSetting=function(_, _, default) return default end})
-stub('gettext', function(s) return s end)
-require('ffi/util').template = function(s, ...)
-    local args = {...}; return (s:gsub('%%(%d)', function(i) return tostring(args[tonumber(i)]) end))
-end
-local title, menu
-local parent = {GoDownInMenu=function(_, t, items) title, menu = t, items end}
-require('ao3lib.ui.downloaded_menu'):show({}, parent, function() end, {}, {['222']=unknown})
-assert(title == 'Downloaded Works' and menu[1].text == 'By fandom' and menu[2].text == 'By author')
-menu[1].callback()
-assert(title == 'Downloaded Works by Fandom' and menu[1].text == '(1) Unknown Fandom')
-menu[1].callback()
-assert(#menu == 2 and menu[1].id == '222' and menu[1].text:find('?/?', 1, true))
-print('PASS: imported works with incomplete/localized metadata remain visible in Downloaded works')
-
--- Author browsing uses the same offline files and work actions as fandoms.
-local works = {}
-local function localWork(id, author, fandom, accessed)
-    local work = copy(unknown)
-    work.id, work.author, work.title = id, author, 'Title '..id
-    work.fandoms, work.last_accessed = {fandom}, accessed
-    works[id] = work
-    return work
-end
-local shared = localWork('1', 'Writer, coauthor, Writer', 'Fandom', '2026-01-01')
-local latest = localWork('2', 'Writer', 'Other Fandom', '2026-02-01')
-localWork('3', nil, 'Must not become author', nil)
-localWork('4', '   ', 'Fandom', nil)
-local stack = {}
-parent.GoDownInMenu = function(_, t, items)
-    stack[#stack+1] = {title=title, items=menu}
-    title, menu, parent.item_table = t, items, items
-end
-parent.updateMenuBack = function(_, n, _, items) stack[#stack-n+1].items = items end
-parent.updateItems = function() end
-parent.onReturn = function()
-    local previous = table.remove(stack)
-    title, menu, parent.item_table = previous.title, previous.items, previous.items
-end
-local shown, opened, deleted
-UI.show = function(_, widget) shown = widget end
-UI.close = function() end
-local realUpdate, realDelete = History.update, History.delete
-History.update = function(work) assert(work == latest) end
-History.delete = function(id) deleted = id end
-require('util').removeFile = function() return true end
-require('ao3lib.ui.downloaded_menu'):show({}, parent, function() end, {
-    onOpenFanficReader = function(_, path, work) opened = work end,
-}, works)
-local modes = menu
-modes[2].callback()
-assert(title == 'Downloaded Works by Author' and #menu == 3)
-assert(menu[1].text == '(2) Anonymous' and menu[2].text == '(1) coauthor' and menu[3].text == '(2) Writer')
-menu[2].callback()
-assert(title == 'Works by coauthor' and #menu == 2 and menu[1].id == shared.id)
-local old_review=package.loaded['ao3lib.ui.update_review']
-local opened_scope
-package.loaded['ao3lib.ui.update_review']={show=function(_,scope) opened_scope=scope end}
-assert(menu[2].text=='Review updates for this author')
-menu[2].callback()
-assert(opened_scope.kind=='author' and opened_scope.value=='coauthor')
-package.loaded['ao3lib.ui.update_review']=old_review
-parent:onReturn()
-menu[3].callback()
-assert(title == 'Works by Writer' and #menu == 3 and menu[1].id == '2' and menu[2].id == '1')
-menu[1].callback()
-shown.buttons[2][1].callback()
-assert(opened == latest)
-menu[2].callback()
-shown.buttons[3][1].callback() -- Delete local copy opens confirmation
-shown.buttons[1][1].callback()
-assert(deleted == '1' and works['1'] == nil and #menu == 2 and menu[1].id == '2')
-parent:onReturn()
-assert(title == 'Downloaded Works by Author' and #menu == 2 and menu[2].text == '(1) Writer')
-parent:onReturn()
-assert(title == 'Downloaded Works' and menu == modes)
-modes[1].callback()
-assert(title == 'Downloaded Works by Fandom')
-for _, item in ipairs(menu) do assert(item.text ~= '(1) coauthor' and item.text ~= '(2) Writer') end
-History.update, History.delete = realUpdate, realDelete
-print('PASS: author/fandom selection; coauthors; deduplication; anonymous fallback; sorting; offline open; deletion refreshes groups; back navigation')
-
--- Crossover-heavy libraries must not sort every unopened group's works.
-local names={};for i=1,30 do names[i]='Fandom '..i end
-local many={
-    a={id='a',title='Alpha',author='Writer',chapters='1/1',fandoms=names},
-    b={id='b',title='Beta',author='Writer',chapters='1/1',fandoms=names},
-}
-require('ao3lib.ui.downloaded_menu'):show({},parent,function() end,{},many)
-local real_sort,sorts=table.sort,0
-table.sort=function(...) sorts=sorts+1;return real_sort(...) end
-menu[1].callback()
-assert(#menu==30 and sorts==1,'Only the group names should be sorted while opening the fandom list')
-menu[1].callback()
-assert(#menu==3 and sorts==2,'Sort works only in the selected group')
-table.sort=real_sort
 
 -- A warm read-only rescan uses cached metadata without rewriting the cache.
 Epub.flush();drain()
@@ -344,4 +242,4 @@ Epub.invalidate('/home/localized.epub')
 assert(flushes==cold_flush+1,'Explicit invalidation must still persist cache removal')
 Epub.invalidate('/not-cached.epub')
 assert(flushes==cold_flush+1,'Invalidating an absent entry must not rewrite the cache')
-print('PASS: lazy sorting across 30 fandoms; unchanged scans and absent invalidations do not write cache; scheduled flush deduplication')
+print('PASS: unchanged scans and absent invalidations do not write cache; scheduled flush deduplication')

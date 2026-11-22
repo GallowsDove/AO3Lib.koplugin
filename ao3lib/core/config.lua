@@ -37,12 +37,6 @@ local function createConfig()
         work_view_font_size = 20,
         ao3_eink_symbols = false,
         version = 1,
-        bookmarkedFandoms = {
-            "原神 | Genshin Impact (Video Game)",
-            "Miraculous Ladybug",
-            "Marvel Cinematic Universe",
-            "Star Wars - All Media Types",
-        },
         filename_template = "%I",
         author_folders = true,
         html_download_fallback = false,
@@ -59,6 +53,12 @@ local function createConfig()
         if self:readSetting("version") == nil then
             self:updateSettingsFile_1()
         end
+        local store=settings()
+        local removed=false
+        for _,key in ipairs({'bookmarkedFandoms','bookmarkedCharacters','bookmarkedRelationships','bookmarkedFreeforms'}) do
+            if store:readSetting(key)~=nil then store:saveSetting(key,nil);removed=true end
+        end
+        if removed then persist(store) end
     end
 
     function config:setup()

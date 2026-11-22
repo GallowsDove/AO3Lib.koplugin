@@ -33,4 +33,17 @@ function M.saved(config)
     if changed then config:saveSetting("saved_filters",output) end
     return output
 end
+function M.sorted(filters)
+    local entries={}
+    for key,filter in pairs(filters or {}) do
+        if type(filter)=='table' then entries[#entries+1]={key=key,filter=filter,title=tostring(filter.title or key)} end
+    end
+    table.sort(entries,function(a,b)
+        local left,right=a.title:lower(),b.title:lower()
+        if left~=right then return left<right end
+        if a.title~=b.title then return a.title<b.title end
+        return tostring(a.key)<tostring(b.key)
+    end)
+    return entries
+end
 return M
