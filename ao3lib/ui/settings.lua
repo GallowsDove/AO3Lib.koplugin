@@ -33,9 +33,8 @@ function M.show(owner,checkFilenameTemplate)
         }},
         {title=_('Downloads'),options={
             {text=_('Download folder'),key='fanfic_folder_path',type='Folder'},
-            {text=_('Download layout'),key='author_folders',type='Bool',on=_('Author/Title'),off=_('Flat')},
-            {text=_('Flat filename template'),key='filename_template',type='String',default='%I',
-                description=_('%I = work ID, %T = title, %A = author'),check=checkFilenameTemplate},
+            {text=_('Download layout template'),key='download_layout_template',type='String',default='%A/%T',
+                description=_('Folders separated by /; .epub is added automatically.\n%A: first author (account when available); %B: all authors; %T: title; %I: work ID; %F: fandom (multiple fandoms: Crossover); %L: language; %Y: published year; %S: status; %R: series.\n%t: title with underscores; %a: all authors with underscores.'),check=checkFilenameTemplate},
             {text=_('HTML download fallback'),key='html_download_fallback',type='Bool'},
         }},
         {title=_('Update checks'),options={

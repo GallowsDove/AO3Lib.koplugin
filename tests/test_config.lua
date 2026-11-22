@@ -59,6 +59,15 @@ assert(flushes==initial_flushes+2)
 package.loaded["ao3lib.core.config"]=nil;disk={};exists=false
 before=flushes
 Config=require('ao3lib.core.config')
-assert(flushes==before+1 and Config:readSetting('author_folders')==true)
-assert(disk.filename_template=='%I' and disk.version==1)
+assert(flushes==before+1 and Config:readSetting('download_layout_template')=='%A/%T')
+assert(disk.download_layout_template=='%A/%T' and disk.version==1)
 print('PASS: 1000 setting reads use one cached load and zero writes; single explicit saves; external edits; false defaults; table isolation; fresh install')
+
+-- Legacy settings are converted once without changing flat filenames.
+package.loaded['ao3lib.core.config']=nil;disk={version=1,author_folders=false,filename_template='%T - %A [%I]'};exists=true;generation=generation+1
+Config=require('ao3lib.core.config')
+assert(disk.download_layout_template=='%t - %a [%I]' and disk.author_folders==nil and disk.filename_template==nil)
+package.loaded['ao3lib.core.config']=nil;disk={version=1,author_folders=true,filename_template='%T'};generation=generation+1
+Config=require('ao3lib.core.config')
+assert(disk.download_layout_template=='%A/%T' and disk.author_folders==nil)
+print('PASS: flat and author-folder layout migration')

@@ -162,14 +162,31 @@ local function work(id,author,title,path,withState)
     history[path],collections[path]='last read page','Favorites'
     return w
 end
-local opts={author_folders=true}
+local opts={template='%A/%T'}
 assert(Layout.author({author='Pseud (account), Other'})=='account')
 assert(Layout.author({author='A/B:C'})=='A_B_C')
 assert(Layout.basePath({author='Writer',title='A title',id='1'},'/books',opts)=='/books/Writer/A title.epub')
-assert(Layout.basePath({author='Writer',title='A title',id='1'},'/books',{author_folders=false,filename_template='%T_%I'})=='/books/A_title_1.epub')
+assert(Layout.basePath({author='Writer',title='A title',id='1'},'/books',{template='%t_%I'})=='/books/A_title_1.epub')
+local example={id='42',title='A story',author='Pen (first-user), Second',fandoms={'One','Two'},
+    language='English',published='2020-02-01',iswip='Complete',series={{title='A series'}}}
+assert(Layout.basePath(example,'/books',{template='%F/%A/%T [%I]'})=='/books/Crossover/first-user/A story [42].epub')
+assert(Layout.basePath(example,'/books',{template='%L/%Y/%S/%R/%B'})=='/books/English/2020/Complete/A series/Pen (first-user), Second.epub')
+assert(Layout.basePath({title='Title',fandoms={'A fandom, with comma'}},'/books',{template='%F/%T'})=='/books/A fandom, with comma/Title.epub')
+assert(Layout.basePath({title='Title',fandoms={}},'/books',{template='%F/%T'})=='/books/Unknown fandom/Title.epub')
+assert(Layout.basePath({title='../Unsafe/Title',fandoms={'../Escaping'}},'/books',{template='%F/%T'})=='/books/.._Escaping/.._Unsafe_Title.epub')
+for _,bad in ipairs({'/absolute','../%T','%A//%T','%A/','%Z','%T%','a\\b','./%T'}) do
+    assert(not Layout.validate(bad),'Unsafe or invalid template accepted: '..bad)
+    assert(not Layout.destination(example,'/books',{template=bad}))
+end
+assert(Layout.validate('%F/%A/%T [%I]'))
 assert(Layout.root('./more')=='/cwd/more')
 local a=work('1','Pseud (Writer)','Shared title',nil,true)
 local originalA=a.path
+a.fandoms={'First','Second'}
+local crossover_plan=assert(Organizer.plan({a},'/books',{template='%F/%A/%T'}))
+assert(crossover_plan.moves[1].to=='/books/Crossover/Writer/Shared title.epub')
+assert(Organizer.describe(crossover_plan):find('%F/%A/%T',1,true))
+a.fandoms=nil
 local b=work('2','Writer','Shared title')
 local c=work('3','Another','../Unsafe: title?')
 local open=work('4','Writer','Open book')

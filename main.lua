@@ -156,10 +156,6 @@ function Fanfic:closeAllMenus()
     require("ao3lib.ui.navigation").closeAll(self)
 end
 
-function Fanfic.GenerateFileName(metadata)
-    return require("ao3lib.library.layout").filename(metadata, Config:readSetting("filename_template", "%I"))
-end
-
 -- Shared by online browsing and offline work details. showUserInfo handles
 -- the network continuation, so opening local details itself stays offline.
 function Fanfic:onShowAuthor(author)
@@ -215,7 +211,7 @@ function Fanfic:DownloadFanfic(id)
     local destination, path_err = require("ao3lib.library.layout").destination(request_result.work_metadata, Config:readSetting("fanfic_folder_path"))
     if not destination then UIManager:show(InfoMessage:new{text=path_err}); return end
     local made, mkdir_err = util.makePath(destination:match("^(.*)/[^/]+$"))
-    if not made then UIManager:show(InfoMessage:new{text=tostring(mkdir_err or "Could not create the author folder")}); return end
+    if not made then UIManager:show(InfoMessage:new{text=tostring(mkdir_err or "Could not create the destination folder")}); return end
     local download_request_result = AO3LibClient:downloadEpub(url, destination, false)
     if not download_request_result.success then
         UIManager:show(InfoMessage:new{
@@ -234,6 +230,8 @@ function Fanfic:DownloadFanfic(id)
         chapter_data = request_result.work_metadata.chapterData or {},
         summary = request_result.work_metadata.summary,
         fandoms = request_result.work_metadata.fandoms,
+        language = request_result.work_metadata.language,
+        series = request_result.work_metadata.series,
         tags = request_result.work_metadata.tags,
         relationships = request_result.work_metadata.relationships,
         characters = request_result.work_metadata.characters,

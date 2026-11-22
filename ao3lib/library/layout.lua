@@ -12,23 +12,65 @@ end
 
 function M.author(work)
     local first = util.trim((tostring(work.author or ""):match('^[^,]+') or ""))
-    local username = first:match('%(([%w_]+)%)$')
+    local username = first:match('%(([%w_%-]+)%)$')
     return component(username or first, "Unknown author", 100)
 end
 
+function M.fandom(work)
+    local fandoms=require('ao3lib.library.fields').list(work.fandoms)
+    local names,seen={},{}
+    for _,value in ipairs(fandoms) do
+        local name=util.trim(tostring(value or ''))
+        if name~='' and name~='N/A' and not seen[name:lower()] then
+            names[#names+1]=name;seen[name:lower()]=true
+        end
+    end
+    if #names>1 then return 'Crossover' end
+    return names[1] or 'Unknown fandom'
+end
+
+function M.validate(template)
+    if type(template)~='string' or util.trim(template)=='' then return false, 'Layout template cannot be empty.' end
+    if template:sub(1,1)=='/' or template:sub(-1)=='/' or template:find('//',1,true) then
+        return false, 'Use / only between folder and filename components.'
+    end
+    if template:find('[\\:*?"<>|%c]') then return false, 'Template contains an invalid filename character.' end
+    for part in template:gmatch('[^/]+') do
+        if part=='.' or part=='..' or util.trim(part)=='' then return false, 'Folder and filename components cannot be empty, . or ..' end
+        if part:find('[%.%s]+$') then return false, 'Components cannot end with a dot or whitespace.' end
+    end
+    local pos=1
+    while true do
+        local i=template:find('%',pos,true)
+        if not i then break end
+        local token=template:sub(i+1,i+1)
+        if token=='' or not ('ITAFBLYSRta'):find(token,1,true) then return false, 'Unknown layout token: %'..token end
+        pos=i+2
+    end
+    return true
+end
+
+local function tokens(work)
+    local title=tostring(work.title or '')
+    local authors=tostring(work.author or '')
+    local series=type(work.series)=='table' and work.series[1]
+    local series_name=type(series)=='table' and series.title or type(series)=='string' and series or nil
+    local date=tostring(work.published or ''):match('^(%d%d%d%d)')
+    local status=tostring(work.iswip or '')
+    if status=='' or status=='N/A' then status='Unknown status' end
+    return {I=tostring(work.id or 'Unknown ID'),T=title~='' and title or 'Untitled',A=M.author(work),F=M.fandom(work),
+        B=authors~='' and authors or 'Unknown author',L=work.language or 'Unknown language',Y=date or 'Unknown year',
+        S=status,R=series_name or 'No series',t=(title~='' and title or 'Untitled'):gsub('%s+','_'),
+        a=(authors~='' and authors or 'Unknown author'):gsub('%s+','_')}
+end
+
 function M.filename(work, template)
-    local fields = { I = tostring(work.id or ""), T = tostring(work.title or ""), A = tostring(work.author or "") }
-    return component((template or "%I"):gsub('%%([ITA])', function(key)
-        return fields[key]:gsub('%s+', '_')
-    end), tostring(work.id or "Untitled"))
+    local fields=tokens(work)
+    return component((template or '%I'):gsub('%%([ITAFBLYSRta])',fields),tostring(work.id or 'Untitled'))
 end
 
 function M.options()
-    local config = require("ao3lib.core.config")
-    return {
-        author_folders = config:readSetting("author_folders", true),
-        filename_template = config:readSetting("filename_template", "%I"),
-    }
+    return {template=require('ao3lib.core.config'):readSetting('download_layout_template','%A/%T')}
 end
 
 function M.root(path)
@@ -46,10 +88,16 @@ end
 function M.basePath(work, root, options)
     options = options or M.options()
     root = M.root(root):gsub('/+$', '')
-    if options.author_folders then
-        return root .. '/' .. M.author(work) .. '/' .. component(work.title, "Untitled") .. '.epub'
+    local template=options.template or '%A/%T'
+    local valid,err=M.validate(template)
+    if not valid then return nil,err end
+    local fields=tokens(work)
+    local parts={}
+    for part in template:gmatch('[^/]+') do
+        local expanded=part:gsub('%%([ITAFBLYSRta])',fields)
+        parts[#parts+1]=component(expanded,'Unknown')
     end
-    return root .. '/' .. M.filename(work, options.filename_template) .. '.epub'
+    return root .. '/' .. table.concat(parts,'/') .. '.epub'
 end
 
 function M.parentProblem(path)
@@ -83,7 +131,8 @@ end
 -- the plain title. A numeric suffix also handles stale/colliding ID paths.
 function M.destination(work, root, options, reserved)
     if type(root) ~= 'string' or root == '' then return nil, 'Set the work folder first' end
-    local base = M.basePath(work, root, options)
+    local base,err = M.basePath(work, root, options)
+    if not base then return nil,err end
     reserved = reserved or {}
     local function available(path)
         return not reserved[path:lower()] and not M.occupied(path, work.path)

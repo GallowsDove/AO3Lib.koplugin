@@ -37,8 +37,7 @@ local function createConfig()
         work_view_font_size = 20,
         ao3_eink_symbols = false,
         version = 1,
-        filename_template = "%I",
-        author_folders = true,
+        download_layout_template = "%A/%T",
         html_download_fallback = false,
         update_check_delay_seconds = 4,
         fanfic_folder_path = Paths.getHomeDirectory() .. "/Downloads",
@@ -55,6 +54,17 @@ local function createConfig()
         end
         local store=settings()
         local removed=false
+        if store:readSetting('download_layout_template')==nil then
+            local author_folders=store:readSetting('author_folders')
+            local old=store:readSetting('filename_template') or '%I'
+            local template=author_folders~=false and '%A/%T'
+                or old:gsub('%%T','%%t'):gsub('%%A','%%a')
+            store:saveSetting('download_layout_template',template)
+            removed=true
+        end
+        for _,key in ipairs({'author_folders','filename_template'}) do
+            if store:readSetting(key)~=nil then store:saveSetting(key,nil);removed=true end
+        end
         for _,key in ipairs({'bookmarkedFandoms','bookmarkedCharacters','bookmarkedRelationships','bookmarkedFreeforms'}) do
             if store:readSetting(key)~=nil then store:saveSetting(key,nil);removed=true end
         end

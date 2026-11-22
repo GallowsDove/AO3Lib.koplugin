@@ -398,17 +398,7 @@ function FanficMenu:onSelectAccountHistory(marked_for_later)
 end
 
 function FanficMenu:onOpenSettings()
-    local function checkFilenameTemplate(template)
-        if util.trim(template) == "" then return false, "Filename template cannot be empty" end
-        if template:find('[\\/:*?"<>|]') then return false, "Filename template cannot contain path separators or reserved filename characters" end
-        if template:find("[%.%s]+$") then return false, "Filename template cannot end with a dot or whitespace" end
-        for token in template:gmatch("%%(.)") do
-            if token ~= "I" and token ~= "T" and token ~= "A" then return false, "Use %I, %T, or %A in the filename template" end
-        end
-        return true
-    end
-
-    return require("ao3lib.ui.settings").show(self,checkFilenameTemplate)
+    return require("ao3lib.ui.settings").show(self,require("ao3lib.library.layout").validate)
 end
 
 return FanficMenu

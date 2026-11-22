@@ -2152,11 +2152,11 @@ function AO3WebParser:parseUserCollectionsPage(root)
 
             local authorElements = element:select(".heading > a.owner")
             local author_table = {}
-            for _, author in pairs(authorElements) do
+            for _, author in ipairs(authorElements) do
                 table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
             end
             authorElements = element:select(".heading > a.mod")
-            for _, author in pairs(authorElements) do
+            for _, author in ipairs(authorElements) do
                 table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
             end
             local author = #author_table > 0 and table.concat(author_table, ", ") or nil
@@ -2341,7 +2341,7 @@ function AO3WebParser:parseWorkElement(element)
         local category = categoryElement and categoryElement.attributes["title"] or "N/A"
         local iswip = iswipElement and iswipElement.attributes["title"] or "N/A"
         local author_table, author_accounts = {}, {}
-        for _, author in pairs(authorElements) do
+        for _, author in ipairs(authorElements) do
             local account=(author.attributes.href or ''):match('/users/([%w_%-]+)/')
             if account then author_accounts[#author_accounts+1]=account end
             table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
@@ -2474,7 +2474,7 @@ function AO3WebParser:parseWorkPage(root)
 
 
     local author_table, author_accounts = {}, {}
-    for _, author in pairs(authorElements) do
+    for _, author in ipairs(authorElements) do
         local account=(author.attributes.href or ''):match('/users/([%w_%-]+)/')
         if account then author_accounts[#author_accounts+1]=account end
         table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))

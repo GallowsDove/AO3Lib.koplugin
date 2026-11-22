@@ -2,7 +2,7 @@ dofile('tests/test_network.lua')
 local UI=require('ui/uimanager')
 local Config=require('ao3lib.core.config')
 local Menu=require('ao3lib.ui.menu')
-local values={work_view_font_size=22,update_check_delay_seconds=9,filename_template='%I',author_folders=true,
+local values={work_view_font_size=22,update_check_delay_seconds=9,download_layout_template='%A/%T',
     formatted_work_view=true,AO3_domain='https://archiveofourown.org',fanfic_folder_path='/books'}
 Config.readSetting=function(_,key,default) if values[key]~=nil then return values[key] end;return default end
 local saves=0
@@ -44,7 +44,11 @@ assert(values.work_view_font_size==24 and values.update_check_delay_seconds==15)
 Menu:onOpenSettings();find('Blacklist').callback()
 assert(find('Enable tag blacklist').mandatory=='On' and find('Manage tag blacklist…'))
 Menu:onOpenSettings();find('Downloads').callback()
-assert(find('Download layout').mandatory=='Author/Title')
+assert(find('Download layout template').mandatory=='%A/%T')
+find('Download layout template').callback()
+assert(shown.title:find('Crossover',1,true) and shown.title:find('%F',1,true))
+shown.input='%F/%A/%T';shown.buttons[1][2].callback()
+assert(values.download_layout_template=='%F/%A/%T')
 find('HTML download fallback').callback()
 assert(shown.title=='HTML download fallback')
 local before_show=show_count

@@ -76,8 +76,7 @@ end
 function M.describe(plan)
     local lines = {
         'Destination: ' .. plan.root,
-        plan.options.author_folders and 'Layout: Author/Title.epub (first listed author; account name when available).'
-            or 'Layout: flat, using the filename template.',
+        'Layout: ' .. (plan.options.template or '%A/%T') .. '.epub',
         'AO3 IDs are added only to resolve filename or sidecar collisions.',
         'Reading-state backups and a move journal are created before any work moves.',
         '', tostring(#plan.moves) .. ' to move; ' .. tostring(#plan.skipped) .. ' skipped.', '',
