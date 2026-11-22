@@ -4,6 +4,19 @@ local M = {}
 local CANCELLED = {}
 local scopes = setmetatable({}, {__mode='k'})
 local request_revision=0
+local function safe_tmpname()
+    local ok, path = pcall(os.tmpname)
+    if ok and path then return true, path end
+    local DataStorage = require("datastorage")
+    local lfs = require("libs/libkoreader-lfs")
+    local dir = DataStorage:getDataDir() .. "/cache"
+    if lfs.attributes(dir, "mode") ~= "directory" then lfs.mkdir(dir) end
+    local p = string.format("%s/ao3lib_%d_%d", dir, os.time(), math.random(1, 1000000000))
+    local f = io.open(p, "w")
+    if not f then return false end
+    f:close()
+    return true, p
+end
 function M.isCancelled(err) return err == CANCELLED end
 function M.isDetached()
     local co=coroutine.running()
@@ -25,7 +38,7 @@ function M.run(task,done,options)
     options=options or {}
     local UI=require('ui/uimanager')
     local job={}
-    local named,path=pcall(os.tmpname)
+    local named,path=safe_tmpname()
     if not named then UI:nextTick(function() done(nil,'Cannot create background result file') end);return job end
     local result_path=path..'.result'
     local writing_path=path..'.writing'
