@@ -130,7 +130,7 @@ local old=Browser:show({}, {work,{id='next',title='Next'},total=2},nil,
     function() end,function() end,function() authors=authors+1 end,plugin,'Test browser')
 assert(old and old.window and visible[old.window] and old.index==1)
 assert(scrollers[1].html_resource_directory:match('assets/$') and scrollers[1].height>0)
-assert(scrollers[1].default_font_size==18,'Default text size must preserve the existing rendering')
+assert(scrollers[1].default_font_size==20,'Default text size must be 20')
 scrollers[1].html_link_tapped_callback{uri='ao3-action:2'}
 assert(authors==2)
 assert(old.window.key_events.NextWork and old.window.key_events.PreviousWork)
@@ -179,7 +179,7 @@ local homeChild=Browser:show({},{{id='home-key',title='Home key'},total=1},nil,
 assert(press(homeChild.window,'Home') and homeChild.closed and not visible[homeChild.window])
 assert(#plugin._ao3_navigation==1 and Browser.browse_window==parentWindow)
 
--- The settings picker persists the chosen base size, with Reset to 18.
+-- The settings picker persists the chosen base size, with Reset to 20.
 local Menu=require('ao3lib.ui.menu')
 local settings,spin
 local read=Config.readSetting
@@ -196,14 +196,14 @@ for _,item in ipairs(settings) do if item.text=='Reading and display' then item.
 for _,item in ipairs(settings) do
     if item.text=='Formatted view text size' then item.callback() end
 end
-assert(spin and spin.value==18 and spin.default_value==18 and spin.value_min==12 and spin.value_max==32)
+assert(spin and spin.value==20 and spin.default_value==20 and spin.value_min==12 and spin.value_max==32)
 spin.callback{value=22}
 Browser.browse_window:reload()
 assert(fontSize==22 and scrollers[#scrollers].default_font_size==22)
-spin.callback{value=18}
+spin.callback{value=20}
 Browser.browse_window:reload()
-assert(scrollers[#scrollers].default_font_size==18)
-fontSize='invalid';assert(WorkView.baseTextSize()==18)
+assert(scrollers[#scrollers].default_font_size==20)
+fontSize='invalid';assert(WorkView.baseTextSize()==20)
 fontSize=99;assert(WorkView.baseTextSize()==32)
 fontSize=1;assert(WorkView.baseTextSize()==12)
 fontSize=nil;Config.readSetting=read

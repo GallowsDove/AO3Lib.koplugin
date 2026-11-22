@@ -22,7 +22,7 @@ function M.bindTitleHold(scroll,callback)
 end
 
 function M.baseTextSize()
-    local size=tonumber(require('ao3lib.core.config'):readSetting('work_view_font_size',18)) or 18
+    local size=tonumber(require('ao3lib.core.config'):readSetting('work_view_font_size',20)) or 20
     if size~=size then size=18 end
     return math.max(12,math.min(32,math.floor(size)))
 end

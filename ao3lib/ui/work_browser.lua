@@ -323,13 +323,13 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     local total_fic_count=ficResults.total
     local pager=require("ao3lib.ao3.work_paging").get(fetchNextPage)
     if pager then pager:setTotal(total_fic_count) end
-    if not Config:readSetting("formatted_work_view",false) and pager and pager.total then
+    if not Config:readSetting("formatted_work_view",true) and pager and pager.total then
         return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
             plugin=Fanfic,title=title,index=view_options.index,
             replacing=view_options.replacing,resume=resume})
     end
-    if Config:readSetting("formatted_work_view",false) then
+    if Config:readSetting("formatted_work_view",true) then
         return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
             plugin=Fanfic,title=title,index=view_options.index,

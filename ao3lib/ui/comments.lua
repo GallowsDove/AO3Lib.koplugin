@@ -51,6 +51,7 @@ function M.compose(owner,work,options)
         title=options.parent_id and _("Reply to ")..(options.author or _("comment")) or _("Write comment"),
         description=(work.title or '')..(not options.parent_id and ('\n'.._('Posting to: ')..target) or ''),
         input=options.initial_input or drafts[key] or '',input_type='text',allow_newline=true,
+        use_available_height=true,
         buttons={{{text=_("Cancel"),id='close',callback=function() dismissed=true;saveDraft();UI:close(dialog) end},
             {text=_("Post comment"),callback=function()
                 if busy then return end
