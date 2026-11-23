@@ -182,13 +182,21 @@ stub('device', {isAndroid=function() return false end})
 local History = require('ao3lib.library.history')
 local saves = 0
 History.save = function() saves = saves + 1 end
-History.add({id='123', path='/old/name.epub', title='Saved title', tags='Fluff, with a comma, Comfort', read=true, chapter_data={{id='chapter',read=true}}})
+History.add({id='123', path='/old/name.epub', title='Saved title', tags='Fluff, with a comma, Comfort', warnings={}, read=true, chapter_data={{id='chapter',read=true}}})
 assert(History.checkIfStored('123') == nil) -- history alone is insufficient
 local remembered = History.rememberLocal(Epub.read('/home/renamed.epub'))
 assert(remembered.path == '/home/renamed.epub' and remembered.read and remembered.chapter_data[1].read)
 assert(#remembered.tag_names==2 and remembered.tag_names[1]=='Fluff, with a comma' and remembered.tag_names[2]=='Comfort',
     'Existing flattened history must recover exact tag boundaries from the EPUB')
 assert(History.get('123').tag_names[1]=='Fluff, with a comma')
+assert(remembered.warnings[1]=='No Archive Warnings Apply' and History.get('123').warnings[1]==remembered.warnings[1],
+    'Empty saved warnings must be recovered from the EPUB')
+History.add({id='hidden',path='/hidden.epub',warnings={},warnings_hidden=true})
+local hidden=History.rememberLocal({id='hidden',path='/hidden.epub',warnings={'Major Character Death'}})
+assert(hidden.warnings_hidden and #hidden.warnings==0, 'Deliberately hidden warnings must remain hidden')
+History.add({id='known',path='/known.epub',warnings={'Major Character Death'}})
+local known=History.rememberLocal({id='known',path='/known.epub',warnings={'No Archive Warnings Apply'}})
+assert(known.warnings[1]=='Major Character Death', 'Existing saved warnings must not be overwritten')
 assert(History.checkIfStored('123').path == '/home/renamed.epub')
 History.add({id='wrong', path='/home/renamed.epub', title='Wrong identity'})
 assert(History.checkIfStored('wrong') == nil)

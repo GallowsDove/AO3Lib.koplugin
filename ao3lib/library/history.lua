@@ -244,6 +244,13 @@ function DownloadedFanfics.rememberLocal(work, defer_save)
         merged.tag_names=deepcopy(work.tags)
         changed=true
     end
+    -- Empty saved metadata must not hide warnings available in the EPUB.
+    -- Keep AO3's deliberately hidden warnings hidden until the user reveals them.
+    if not merged.warnings_hidden and type(work.warnings)=='table' and #work.warnings>0
+            and type(merged.warnings)=='table' and #merged.warnings==0 then
+        merged.warnings=deepcopy(work.warnings)
+        changed=true
+    end
     merged.id, merged.path = id, work.path
     merged.chapter_data = merged.chapter_data or {}
     downloaded_fanfics[id] = merged
