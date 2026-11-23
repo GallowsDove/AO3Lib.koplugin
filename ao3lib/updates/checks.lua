@@ -186,7 +186,9 @@ function M.apply(entry)
     updated.chapter_data = chapters
     if #chapters==0 and n==1 and #(old.chapter_data or {})==1 then updated.chapter_data=old.chapter_data end
     if #updated.chapter_data > 0 or (n and count(entry.local_work) and n>count(entry.local_work)) then updated.read=nil end
-    local saved, save_err = History.update(updated)
+    History.update(updated,true)
+    local saved, save_err
+    if History.awaitSave then saved,save_err=History.awaitSave() else saved,save_err=History.save() end
     if not saved then
         pcall(function() require('ao3lib.library.local_cache').index(updated.path) end)
         pcall(function() require('ao3lib.library.metadata_refresh').notify(updated.path) end)
@@ -195,6 +197,8 @@ function M.apply(entry)
         result.work=updated
         return result
     end
+    local background=require('ao3lib.ao3.background')
+    if background.checkpoint then background.checkpoint() end
     local old_path=updated.path
     local ok,moved,move_err=pcall(organizeUpdated,updated)
     if ok then updated=moved else move_err=moved;updated=History.get(updated.id) or updated end

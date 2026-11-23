@@ -62,7 +62,7 @@ function M.merge(roots,works)
     for id,work in pairs(copy(works)) do snapshot[id]=work end
     revision=revision+1
 end
-function M.index(path)
+function M.index(path,done)
     local Background=require('ao3lib.ao3.background')
     if not Background.available() then return end
     return Background.run(function() return require('ao3lib.library.epub').inspect(path) end,
@@ -84,6 +84,7 @@ function M.index(path)
                 end
             end
             revision=revision+1
+            if done then done(work) end
         end)
 end
 function M.load(roots,done,valid)

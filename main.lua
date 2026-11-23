@@ -171,7 +171,7 @@ function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title, view_optio
         ficResults,
         fetchNextPage,
         function(fanfic) self:UpdateFanfic(fanfic) end, -- Update callback
-        function(fanficId) self:DownloadFanfic(fanficId) end, -- Download callback
+        function(fanficId, done) self:DownloadFanfic(fanficId, done) end, -- Download callback
         function(author) self:onShowAuthor(author) end,-- Open author user browser callback
         self,
         title,
@@ -180,8 +180,8 @@ function Fanfic:onShowFanficBrowser(ficResults, fetchNextPage, title, view_optio
 
 end
 
-function Fanfic:DownloadFanfic(id)
-    if Network.defer(function() self:DownloadFanfic(id) end) then return end
+function Fanfic:DownloadFanfic(id, done)
+    if Network.defer(function() self:DownloadFanfic(id, done) end) then return end
 
     local existing = DownloadedFanfics.checkIfStored(id)
     if existing then self:UpdateFanfic(existing); return end
@@ -206,8 +206,7 @@ function Fanfic:DownloadFanfic(id)
         return
     end
 
-    os.execute("sleep " .. math.random(1, 3))
-
+    if DownloadedFanfics.checkIfStored(id) then return end
     local destination, path_err = require("ao3lib.library.layout").destination(request_result.work_metadata, Config:readSetting("fanfic_folder_path"))
     if not destination then UIManager:show(InfoMessage:new{text=path_err}); return end
     local made, mkdir_err = util.makePath(destination:match("^(.*)/[^/]+$"))
@@ -260,8 +259,17 @@ function Fanfic:DownloadFanfic(id)
     end
 
     DownloadedFanfics.add(fanfic)
-    pcall(function() require('ao3lib.library.local_cache').index(fanfic.path) end)
-    pcall(function() require('ao3lib.library.metadata_refresh').notify(fanfic.path) end)
+    local indexed, dismissed, refreshed = false, false, false
+    local function refreshWhenReady()
+        if done and indexed and dismissed and not refreshed then
+            refreshed=true
+            UIManager:nextTick(done)
+        end
+    end
+    pcall(function() require('ao3lib.library.local_cache').index(fanfic.path, function()
+        indexed=true
+        refreshWhenReady()
+    end) end)
 
 
 
@@ -272,6 +280,10 @@ function Fanfic:DownloadFanfic(id)
     UIManager:show(ConfirmBox:new{
         text = message..'\n'.._("Would you like to read the downloaded work now?"),
         ok_text = _("Read now"),
+        cancel_callback = function()
+            dismissed=true
+            refreshWhenReady()
+        end,
         ok_callback = function()
             self:onOpenFanficReader(fanfic.path, fanfic)
         end,
@@ -300,6 +312,9 @@ function Fanfic:UpdateFanfic(fanfic)
 end
 
 function Fanfic:showUserInfo(username, pseud)
+    local Nav=require('ao3lib.ui.navigation')
+    local identity=Nav.key('user',username,pseud or username)
+    if Nav.isCurrent(self,identity) then return end
     if Network.defer(function() self:showUserInfo(username, pseud) end) then return end
     local AO3UserBrowser = require("ao3lib.ui.user_browser")
     local request_result = AO3LibClient:getUserData(username, pseud)
@@ -309,7 +324,7 @@ function Fanfic:showUserInfo(username, pseud)
         })
         return
     end
-    AO3UserBrowser:show(request_result.user_data, self.ui, self)
+    if not Nav.isCurrent(self,identity) then AO3UserBrowser:show(request_result.user_data, self.ui, self) end
 end
 
 function Fanfic:getUserData(username, pseud)

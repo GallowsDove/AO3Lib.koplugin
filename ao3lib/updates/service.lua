@@ -121,7 +121,9 @@ local function startNext()
             else
                 running=false;session.busy=false;startNext()
             end
-        end,{silent=true,detached=true})
+        end,{silent=true,detached=true,valid=function()
+            return token==generation and not suspended and not session.closed
+        end})
     end)
 end
 function M.add(works)

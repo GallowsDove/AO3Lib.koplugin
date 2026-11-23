@@ -82,12 +82,14 @@ local warm_reads,warm_revision=reads,History.revision()
 History.load();History.load()
 assert(reads==warm_reads and History.revision()==warm_revision,'Reader initialization must reuse freshly saved history')
 baseline=encodes;assert(History.flushPending());assert(encodes==baseline)
--- A newer explicit save/delete always wins over an older worker.
+-- A deletion supersedes an older worker and is itself saved in the background.
 History.markChapterAsRead('1',3);tick()
 assert(History.delete('1'));local deleted=fs[path]
-finish();assert(fs[path]==deleted and not encoded[fs[path]]['1'] and #tasks==0)
+finish();assert(fs[path]==deleted and not History.get('1') and #tasks==1)
+tick();finish();assert(not encoded[fs[path]]['1'] and #tasks==0)
 -- Child failure retains the in-memory flag for a shutdown checkpoint.
 History.add{id='2',chapter_data={{id='x'}}}
+assert(History.flushPending())
 History.markChapterAsRead('2',1);fail_encode=true;tick();finish();fail_encode=false
 assert(History.get('2').chapter_data[1].read and not encoded[fs[path]]['2'].chapter_data[1].read)
 assert(History.flushPending());assert(encoded[fs[path]]['2'].chapter_data[1].read)
@@ -106,6 +108,23 @@ warm_reads=reads
 History.load()
 assert(reads==warm_reads+1 and not History.get('4').chapter_data[1].read,'External file changes must still reload history')
 History.load();assert(reads==warm_reads+1)
+-- Updates wait without blocking and only resume after the newest snapshot wins.
+local resumed
+local work=History.get('4')
+work.title='Updated title'
+local before_update=encodes
+History.update(work,true)
+local co=coroutine.create(function() resumed={History.awaitSave()} end)
+assert(coroutine.resume(co) and coroutine.status(co)=='suspended')
+assert(encodes==before_update and #tasks==1)
+tick()
+History.add{id='5',title='Added during save'}
+finish()
+assert(not resumed and coroutine.status(co)=='suspended' and #tasks==1)
+tick();finish()
+assert(resumed and resumed[1] and coroutine.status(co)=='dead')
+assert(encoded[fs[path]]['4'].title=='Updated title' and encoded[fs[path]]['5'])
+assert(encoding_context[encodes]=='child')
 io,os=real_io,real_os
 print('PASS: zero page-turn serialization/I/O; immediate progress/revision; coalescing; stale worker/delete protection; reload safety; failed child/fork; close/suspend checkpoint')
 print('PASS: warm reader opens avoid history parsing; cache tracks background saves and external changes')

@@ -10,6 +10,21 @@ local function stack(owner)
     return owner._ao3_navigation
 end
 
+-- View identities describe destinations, independent of titles or pagination.
+function M.key(kind,...)
+    local parts={tostring(kind)}
+    for i=1,select('#',...) do
+        local value=tostring(select(i,...) or ''):lower()
+        parts[#parts+1]=#value..':'..value
+    end
+    return table.concat(parts,'|')
+end
+function M.isCurrent(owner,identity)
+    local frames=owner and owner._ao3_navigation
+    local current=frames and frames[#frames]
+    return identity~=nil and current~=nil and current.options.identity==identity
+end
+
 function M.update(window)
     local frame = window._ao3_navigation
     if not frame then return end

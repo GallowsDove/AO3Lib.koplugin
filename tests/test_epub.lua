@@ -176,7 +176,7 @@ assert(Epub.read('/home/missing.epub') == nil and Epub.read('/home/book.pdf') ==
 stub('dkjson', {})
 stub('ao3lib.core.paths', {getHomeDirectory=function() return '/data/fanfic' end})
 stub('ao3lib.core.persistent', {path=function(name) return '/data/fanfic/'..name end})
-stub('logger', {dbg=function() end, err=function() end})
+stub('logger', {dbg=function() end, err=function() end, warn=function() end})
 stub('ffi/util', {realpath=function(path) return path end})
 stub('device', {isAndroid=function() return false end})
 local History = require('ao3lib.library.history')

@@ -131,7 +131,7 @@ stub('ui/widget/booklist',{resetBookInfoCache=function() end})
 stub('lib/bookshelf_book_repository',{invalidateWalkCache=function() end})
 stub('lib/bookshelf_scaled_cover_cache',{drop=function() end})
 stub('ui/event',{new=function(_,name) return name end})
-stub('ui/uimanager',{broadcastEvent=function() end})
+stub('ui/uimanager',{broadcastEvent=function() end,scheduleIn=function() end,unschedule=function() end})
 local reader={}
 stub('apps/reader/readerui',reader)
 stub('lib/bookshelf_reader_park',{parkedFile=function() end})
@@ -153,6 +153,7 @@ local function work(id,author,title,path,withState)
     put(path,'EPUB:'..id)
     local w={id=id,path=path,author=author,title=title,chapter_data={{id='chapter',read=true}},read=true}
     History.add(w)
+    assert(History.flushPending())
     if withState then
         put(sidecar(path)..'/metadata.epub.lua','XP0INTER+ANNOTATIONS+BOOKMARKS')
         put(sidecar(path)..'/cover.png','CUSTOM COVER')
@@ -285,6 +286,7 @@ local UI=require('ui/uimanager')
 UI.show=function(_,widget) shown[#shown+1]=widget end
 UI.close=function(_,widget) closed[widget]=true end
 UI.scheduleIn=function(_,_,fn) tasks[#tasks+1]=fn end
+UI.unschedule=function(_,fn) for i=#tasks,1,-1 do if tasks[i]==fn then table.remove(tasks,i) end end end
 UI.forceRePaint=function() end
 local Class={new=function(_,t) return t end}
 stub('ui/widget/infomessage',Class)

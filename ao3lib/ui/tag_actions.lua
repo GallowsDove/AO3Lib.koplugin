@@ -12,9 +12,13 @@ function M.show(plugin,kind,name)
     if plugin and plugin.fetchFanficsByTag then
         buttons[#buttons+1]={{text=_('Browse works'),callback=function()
             UI:close(dialog)
+            local Nav=require('ao3lib.ui.navigation')
+            local identity=Nav.key('tag',name)
+            if Nav.isCurrent(plugin,identity) then return end
             require('ao3lib.ao3.network').run(function()
+                if Nav.isCurrent(plugin,identity) then return end
                 local success,works,nextPage=plugin:fetchFanficsByTag(name)
-                if success then plugin:onShowFanficBrowser(works,nextPage,name) end
+                if success and not Nav.isCurrent(plugin,identity) then plugin:onShowFanficBrowser(works,nextPage,name,{identity=identity}) end
             end)
         end}}
     end

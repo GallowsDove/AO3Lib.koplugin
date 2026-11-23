@@ -213,6 +213,7 @@ function AO3UserBrowser:loadPage(title, menu_table, keeping_current_page, restor
     })
     require("ao3lib.ui.navigation").bind(self.Fanfic, self.AO3UserWindow, {
         replace=previous,
+        identity=#self.menu_layers==0 and require('ao3lib.ui.navigation').key('user',self.userData.username,self.userData.pseud or self.userData.username) or nil,
         back=function()
             if #self.menu_layers > 0 then self:GoUpInMenu(); return true end
             return false
@@ -252,9 +253,9 @@ function AO3UserBrowser:openUserSeriesList()
             table.insert(series_menu_kv, {
                 series.title,
                 "",
-                callback = Network.wrap(function()
+                callback = function()
                     require("ao3lib.ui.subscriptions").openSeries(self.Fanfic,series.id,series.title,series.work_count)
-                end),
+                end,
                 hold_callback = function()
                     require("ao3lib.ui.subscriptions").manage(self.Fanfic,'Series',series.id,series.title)
                 end,

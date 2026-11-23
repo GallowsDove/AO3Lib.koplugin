@@ -25,11 +25,12 @@ stub('ui/network/manager', {
         pending = callback
     end,
 })
-local shown, closed, tasks = {}, {}, {}
+local shown, closed, tasks, task_delays = {}, {}, {}, {}
 local UI = {
     show = function(_, w) shown[#shown + 1] = w end,
     close = function(_, w) closed[w] = true end,
-    scheduleIn = function(_, _, callback) tasks[#tasks + 1] = callback end,
+    scheduleIn = function(_, delay, callback) tasks[#tasks + 1] = callback;task_delays[#task_delays+1]=delay end,
+    nextTick = function(_, callback) tasks[#tasks + 1] = callback end,
 }
 stub('ui/uimanager', UI)
 local function connect()
@@ -368,17 +369,37 @@ client.downloadEpub=function(_,_,destination,allow_replace)
     downloaded=destination; downloadCalls=(downloadCalls or 0)+1
     return {success=true,filepath=destination}
 end
-local realExecute=os.execute
 require('ui/bidi').filepath=function(path) return path end
-os.execute=function() return true end
-plugin:DownloadFanfic('900')
-os.execute=realExecute
+local indexed, index_done, reloads = {}, nil, 0
+stub('ao3lib.library.local_cache', {index=function(path, done)
+    indexed[#indexed+1]=path; index_done=done
+end})
+local notified=false
+stub('ao3lib.library.metadata_refresh', {notify=function() notified=true end})
+plugin:DownloadFanfic('900',function() reloads=reloads+1 end)
 assert(made=='/books/Account' and downloaded=='/books/Account/Fresh title [900].epub')
 assert(added.id=='900' and added.path==downloaded and added.chapter_data[1].read==false)
+assert(not notified, 'New downloads should not trigger a broad metadata refresh')
+assert(indexed[1]==downloaded and reloads==0, 'Work view must wait for the background index')
+index_done({id='900'});assert(reloads==0)
+lastShown().cancel_callback()
+assert(reloads==0);table.remove(tasks,#tasks)();assert(reloads==1)
 added.chapter_data[1].read=true
 plugin.UpdateFanfic=function(_,existing) updated=existing end
 plugin:DownloadFanfic('900')
 assert(downloadCalls==1 and updated==added and updated.chapter_data[1].read)
+-- Losing Wi-Fi before the request resumes the same download after reconnecting.
+offline();plugin:DownloadFanfic('901')
+assert(pending and downloadCalls==1)
+connect()
+assert(downloadCalls==2 and added.id=='901')
+local earlier=reloads
+plugin:DownloadFanfic('902',function() reloads=reloads+1 end)
+lastShown().cancel_callback()
+assert(reloads==earlier,'Dismissing the prompt must not scan the EPUB')
+index_done({id='902'})
+table.remove(tasks,#tasks)()
+assert(reloads==earlier+1,'The work view refreshes after indexing completes')
 print('PASS: new downloads use Author/Title and safe collision suffixes; downloading an existing ID preserves tracked progress through Update')
 
 local history_flushes=0

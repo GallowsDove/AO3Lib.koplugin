@@ -25,11 +25,14 @@ function M.manage(owner,kind,target,title)
     return dialog
 end
 function M.openSeries(owner,id,title,count)
+    local Nav=require('ao3lib.ui.navigation')
+    local identity=Nav.key('series',id)
+    if Nav.isCurrent(owner,identity) then return end
     if Network.defer(function() M.openSeries(owner,id,title,count) end) then return end
     local ok,works,next_page=owner:getWorksFromSeries(id)
-    if ok then
+    if ok and not Nav.isCurrent(owner,identity) then
         if count then works.total=count end
-        owner:onShowFanficBrowser(works,next_page,title)
+        owner:onShowFanficBrowser(works,next_page,title,{identity=identity})
     end
 end
 function M.show(owner)

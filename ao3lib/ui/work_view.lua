@@ -433,7 +433,7 @@ function M.show(browser,context)
         local window=View:new{html=html,actions=actions,rows=rows,holds=holds}
         state.window=window;browser.browse_window=window
         require("ao3lib.ui.navigation").bind(context.plugin, window, {
-            replace=previous or context.replacing, resume=function(resumed)
+            replace=previous or context.replacing, identity=context.identity, resume=function(resumed)
                 if context.resume then context.resume(resumed) end
                 if state._favorites_dirty and not state.closed then
                     state._favorites_dirty=nil;state._favorite_refresh=true;state:render()

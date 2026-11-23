@@ -194,18 +194,18 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                 local dialog,buttons
                 buttons={}
                 for i,series in ipairs(memberships) do
-                    buttons[#buttons+1]={{text=labels[i],enabled=series.id~=nil,callback=Network.wrap(function()
+                    buttons[#buttons+1]={{text=labels[i],enabled=series.id~=nil,callback=function()
                         UIManager:close(dialog);action(series)
-                    end)}}
+                    end}}
                 end
                 buttons[#buttons+1]={{text=_("Close"),callback=function() UIManager:close(dialog) end}}
                 dialog=ButtonDialog:new{title=_("Series"),buttons=buttons};UIManager:show(dialog)
             end
             local row={"     " .. _("Series:"),table.concat(labels,"; ")}
             if #memberships>1 or memberships[1].id then
-                row.callback=function() chooseSeries(Network.wrap(function(series)
+                row.callback=function() chooseSeries(function(series)
                     require('ao3lib.ui.subscriptions').openSeries(self.Fanfic,series.id,series.title)
-                end)) end
+                end) end
                 row.hold_callback=function() chooseSeries(function(series)
                     require('ao3lib.ui.subscriptions').manage(self.Fanfic,'Series',series.id,series.title)
                 end) end
@@ -330,8 +330,10 @@ function FanficBrowser:showDownloadDialog(fanfic)
                     text = "Yes",
                     callback = function()
                         Network.schedule(0, function()
-                            self.downloadFanficCallback(fanfic.id)
-                            self.browse_window:reload()
+                            local window=self.browse_window
+                            self.downloadFanficCallback(fanfic.id, function()
+                                if window and not window._ao3_closed and self.browse_window==window then window:reload() end
+                            end)
                         end)
                         UIManager:close(confirmDialog)
                     end,
@@ -386,13 +388,13 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     if not Config:readSetting("formatted_work_view",true) and pager and pager.total then
         return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
-            plugin=Fanfic,title=title,index=view_options.index,
+            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,
             replacing=view_options.replacing,resume=resume})
     end
     if Config:readSetting("formatted_work_view",true) then
         return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
-            plugin=Fanfic,title=title,index=view_options.index,
+            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,
             replacing=view_options.replacing,resume=resume})
     end
     require("ao3lib.ao3.mute_cache").ensure()
@@ -487,7 +489,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             show_page = selfself.show_page,
             value_overflow_align = "center",
         })
-        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume})
+        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume, identity=view_options.identity})
         watchMutes(self.browse_window)
         self.browse_window:setMaximumPageValueCount(items_per_fic)
         UIManager:show(self.browse_window)
@@ -513,7 +515,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             value_overflow_align = "center",
         })
         self.Fanfic.menu_stack[self.browse_window] = true
-        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume})
+        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume, identity=view_options.identity})
         watchMutes(self.browse_window)
         self.browse_window:setMaximumPageValueCount(items_per_fic)
         UIManager:show(self.browse_window)
@@ -545,7 +547,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         show_page = view_options.index or 1,
     })
 
-    require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=view_options.replacing, resume=resume})
+    require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=view_options.replacing, resume=resume, identity=view_options.identity})
 
     watchMutes(self.browse_window)
     self.browse_window:setMaximumPageValueCount(items_per_fic)

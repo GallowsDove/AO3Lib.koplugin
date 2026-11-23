@@ -4,6 +4,7 @@ local lfs = require("libs/libkoreader-lfs")
 local util = require("util")
 local M = {}
 local cache, settings, flush_scheduled, cache_dirty
+local cache_revision, cache_worker = 0, nil
 local MAX_TEXT = 4 * 1024 * 1024
 local METADATA_VERSION = 4
 
@@ -238,16 +239,72 @@ local function getCache()
     return cache
 end
 
+-- Explicit checkpoints remain synchronous and supersede any worker snapshot.
 function M.flush()
     if flush_scheduled then
         local UI = require("ui/uimanager")
-        if UI.unschedule then UI:unschedule(M.flush) end
+        if UI.unschedule then UI:unschedule(M.flushAsync) end
     end
     flush_scheduled = false
+    cache_revision=cache_revision+1
     if cache_dirty and settings then
         local ok = pcall(function() settings:saveSetting("preface_v1", cache); settings:flush() end)
         if ok then cache_dirty = false end
     end
+end
+
+local function scheduleFlush()
+    if flush_scheduled or cache_worker or not cache_dirty then return end
+    flush_scheduled=true
+    require('ui/uimanager'):scheduleIn(1,M.flushAsync)
+end
+
+-- Fork a snapshot to serialize off the UI thread. The parent alone publishes
+-- a current snapshot, so a late worker can never overwrite a newer cache.
+function M.flushAsync()
+    if flush_scheduled then
+        local UI=require('ui/uimanager')
+        if UI.unschedule then UI:unschedule(M.flushAsync) end
+    end
+    flush_scheduled=false
+    if not cache_dirty or not settings or cache_worker then return end
+    local ok,Background=pcall(require,'ao3lib.ao3.background')
+    if not ok or not Background.available() or type(settings.file)~='string' then
+        return M.flush()
+    end
+    local staging,err=require('ao3lib.core.tempfile').reserve(settings.file..'.ao3-')
+    if not staging then
+        require('logger').warn('AO3 EPUB cache staging failed:',err)
+        return
+    end
+    local revision=cache_revision
+    cache_worker=true
+    Background.run(function()
+        local data={}
+        for key,value in pairs(settings.data or {}) do data[key]=value end
+        data.preface_v1=cache
+        local bytes='return '..require('dump')(data)..'\n'
+        local file,open_err=io.open(staging,'wb')
+        assert(file,open_err)
+        local wrote,write_err=file:write(bytes)
+        if not wrote then file:close();error(write_err) end
+        local ffiutil=require('ffi/util')
+        if ffiutil.fsyncOpenedFile then ffiutil.fsyncOpenedFile(file) end
+        local closed,close_err=file:close()
+        assert(closed,close_err)
+        return true
+    end,function(value,why)
+        cache_worker=nil
+        if value and revision==cache_revision then
+            local moved,move_err=os.rename(staging,settings.file)
+            if moved then cache_dirty=false
+            else require('logger').warn('AO3 EPUB cache publish failed:',move_err) end
+        elseif not value then
+            require('logger').warn('AO3 EPUB cache worker failed:',why)
+        end
+        os.remove(staging);os.remove(staging..'.old')
+        if cache_dirty and revision~=cache_revision then scheduleFlush() end
+    end)
 end
 
 function M.invalidate(path, defer)
@@ -255,10 +312,10 @@ function M.invalidate(path, defer)
     if entries[path] ~= nil then
         entries[path] = nil
         cache_dirty = true
+        cache_revision=cache_revision+1
         if defer then
             if not flush_scheduled then
-                flush_scheduled=true
-                require("ui/uimanager"):scheduleIn(1,M.flush)
+                scheduleFlush()
             end
         else M.flush() end
     end
@@ -327,10 +384,8 @@ end
 local function remember(path,entry)
     getCache()[path]=entry
     cache_dirty=true
-    if not flush_scheduled then
-        flush_scheduled=true
-        require("ui/uimanager"):scheduleIn(1,M.flush)
-    end
+    cache_revision=cache_revision+1
+    scheduleFlush()
 end
 -- Warm cache only: library discovery never opens an uncached EPUB in the UI.
 function M.cached(path)

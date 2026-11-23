@@ -37,21 +37,21 @@ function M.scan(roots, done, cancelled, options)
     local step
     local function finish(err)
         closeDirectories()
-        if invalid() then Epub.flush();return end
+        if invalid() then Epub.flushAsync();return end
         if not err and #errors>0 then err=table.concat(errors,"; ") end
         local cache=package.loaded['ao3lib.library.local_cache']
         if not err and cache and cache.merge then cache.merge(roots,found) end
-        if options.read_only then Epub.flush();done(found,err);return end
+        if options.read_only then Epub.flushAsync();done(found,err);return end
         local works,changed={},false
         for id,work in pairs(found) do
             local merged,updated=DownloadedFanfics.rememberLocal(work,true)
             works[id],changed=merged,changed or updated
         end
-        if changed then DownloadedFanfics.save() end
-        Epub.flush();done(works,err)
+        if changed then DownloadedFanfics.saveAsync() end
+        Epub.flushAsync();done(works,err)
     end
     step=function()
-        if invalid() then closeDirectories(); Epub.flush(); return end
+        if invalid() then closeDirectories(); Epub.flushAsync(); return end
         local uncached={}
         for _ = 1, 20 do
             local frame = stack[#stack]

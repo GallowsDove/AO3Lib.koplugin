@@ -5,6 +5,11 @@ local CANCELLED = {}
 local scopes = setmetatable({}, {__mode='k'})
 local request_revision=0
 function M.isCancelled(err) return err == CANCELLED end
+function M.checkpoint()
+    local co=coroutine.running()
+    local scope=co and scopes[co]
+    if scope and scope.valid and not scope.valid() then error(CANCELLED,0) end
+end
 function M.isDetached()
     local co=coroutine.running()
     local scope=co and scopes[co]
