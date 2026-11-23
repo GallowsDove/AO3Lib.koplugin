@@ -312,3 +312,21 @@ for _,entry in ipairs(single_session.entries) do if entry.work.id==single.id the
 assert(single_entry.status=='update' and not single_entry.selected)
 single_menu:onCloseWidget()
 print('PASS: single-work review auto-checks only the chosen work, preserves Wi-Fi continuation and never applies an update automatically')
+
+-- The visible review must update as soon as a rate limit pauses the queue.
+local original_remote,original_remote2=remote.ui1,remote.ui2
+remote.ui1={success=false,status=429,retry_later=true,error='Slow down',response_headers={['retry-after']='120'}}
+remote.ui2=copy(remote.ui1)
+local paused_session,paused_menu=Review.show({ui={}})
+paused_menu.review_model.buttons[1][1].callback()
+nextJob()
+assert(not paused_session.busy and paused_menu.review_model.buttons[1][1].text=='Continue checking',
+    'A rate-limited review must immediately offer Continue checking')
+assert(paused_menu.review_model.notice:find('Paused:',1,true))
+paused_menu:onCloseWidget()
+remote.ui1=original_remote
+remote.ui2=original_remote2
+paused_session.retry_at=nil
+require('ao3lib.updates.service').check(require('ao3lib.updates.service').pending())
+drain()
+print('PASS: review immediately reflects the paused state after a 429')

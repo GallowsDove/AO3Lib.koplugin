@@ -49,10 +49,14 @@ connected=true;fail_offline=false;S.resume();tick()
 assert(coroutine.resume(workers[4]))
 assert(#S.pending()==0 and session.entries[1].status=='current' and #notifications==2)
 S.add({{id='b',path='/b.epub'}})
+local observed_busy
+local unsubscribe=S.subscribe(function(current) if current.pause_reason then observed_busy=current.busy end end)
 assert(S.check(session.entries));tick();rate_limited=true
 assert(coroutine.resume(workers[5]))
 local done,total,limited=S.overlayState()
 assert(limited and done==1 and total==2 and not S.busy(),'A 429 must visibly pause the indicator')
+assert(observed_busy==false,'Subscribers must receive the final paused state')
+unsubscribe()
 S.stop();done,total,limited=S.overlayState()
 assert(done==nil,'An explicitly stopped queue must hide its indicator')
 -- A restored interrupted batch may retain an old pause message even after

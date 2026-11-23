@@ -167,8 +167,14 @@ local function startNext()
                 local headers=entry.failure.response_headers or {}
                 session.retry_at=os.time()+tonumber(headers["retry-after"] or headers["Retry-After"] or 60)
             end
+            if session.pause_reason then
+                running=false;session.busy=false
+                checkpoint();notify()
+                if #queue==0 then startNext() end
+                return
+            end
             checkpoint();notify()
-            if #queue>0 and not session.pause_reason then
+            if #queue>0 then
                 schedule(require("ao3lib.updates.pacing").delay(operation),function()
                     running=false;session.busy=false;startNext()
                 end)
