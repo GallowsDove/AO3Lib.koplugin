@@ -14,6 +14,16 @@ An unofficial plugin for browsing, downloading, and reading works from Archive o
 
 AO3 works are identified from metadata inside their EPUBs, including works downloaded outside this plugin. Local reading and library browsing remain available when AO3 is offline.
 
+## Screenshots
+
+| Main menu | Search filters | Work details |
+| :---: | :---: | :---: |
+| <img src="screenshots/main-menu.png" width="220" alt="AO3Lib main menu"> | <img src="screenshots/search-filters.png" width="220" alt="Search filters"> | <img src="screenshots/work-details.png" width="220" alt="Rendered AO3 work details"> |
+| **Author profile** | **Update review** | **Bookshelf AO3 details** |
+| <img src="screenshots/author-profile.png" width="220" alt="AO3 author profile"> | <img src="screenshots/update-review.png" width="220" alt="Downloaded work update review"> | <img src="screenshots/bookshelf-ao3-details.png" width="220" alt="AO3 metadata in Bookshelf book details"> |
+| **Bookshelf sources** | **Bookshelf filters** | **Reader actions** |
+| <img src="screenshots/bookshelf-sources.png" width="220" alt="AO3 grouping sources in Bookshelf"> | <img src="screenshots/bookshelf-filters.png" width="220" alt="AO3 filters in Bookshelf"> | <img src="screenshots/reader-actions.png" width="220" alt="AO3Lib actions in the reader menu"> |
+
 ## Install
 
 The preferred method is to install **AO3Lib** through [Storefront](https://github.com/ultimatejimmy/storefront.koplugin) directly in KOReader.
