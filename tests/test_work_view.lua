@@ -34,7 +34,6 @@ local series_dialog
 local UI=require('ui/uimanager');local original_show=UI.show
 UI.show=function(self,w) series_dialog=w;return original_show(self,w) end
 assert(#actions==3);actions[2]();actions[3]()
-series_dialog.buttons[1][1].callback()
 UI.show=original_show
 assert(authors==1 and series==1)
 -- Paging is lazy; closed or superseded views cannot consume a network result.

@@ -89,8 +89,33 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         }
 
         table.insert(kv_pairs, title_item)
+        local function authorActions()
+            local authors={}
+            for name in tostring(v.author or ''):gmatch('[^,]+') do
+                name=util.trim(name)
+                if name~='' and name:lower()~='anonymous' then
+                    local account=name:match('%(([%w_%-]+)%)$')
+                    local pseud=account and util.trim(name:match('^(.-)%s*%(')) or name
+                    local index=#authors+1
+                    authors[index]={username=(v.author_accounts or {})[index] or account or pseud,pseud=pseud}
+                end
+            end
+            local function show(user)
+                require('ao3lib.ui.user_actions').show(user,self.Fanfic)
+            end
+            if #authors==1 then show(authors[1]);return end
+            if #authors==0 then return end
+            local dialog,buttons
+            buttons={}
+            for __,user in ipairs(authors) do
+                buttons[#buttons+1]={{text=user.pseud,callback=function() UIManager:close(dialog);show(user) end}}
+            end
+            buttons[#buttons+1]={{text=_('Cancel'),callback=function() UIManager:close(dialog) end}}
+            dialog=ButtonDialog:new{title=_('Choose author'),buttons=buttons};UIManager:show(dialog)
+        end
         -- Add additional details about the fanfic
         table.insert(kv_pairs, { "     " .. "Author:", (v.author or "Anonymous") .. (v.gifted_to and (" (Gifted to: " .. v.gifted_to .. ")") or "") ,
+        hold_callback=authorActions,
         callback = function()
             local authors={}
             for author in tostring(v.author or ""):gmatch("([^,]+)") do
@@ -160,27 +185,30 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             end
         end
         if #memberships>0 then
-            local function openSeries(series)
-                require("ao3lib.ui.subscriptions").series(self.Fanfic,series.id,series.title)
+            local function chooseSeries(action)
+                if #memberships==1 then
+                    local series=memberships[1]
+                    if series.id then action(series) end
+                    return
+                end
+                local dialog,buttons
+                buttons={}
+                for i,series in ipairs(memberships) do
+                    buttons[#buttons+1]={{text=labels[i],enabled=series.id~=nil,callback=Network.wrap(function()
+                        UIManager:close(dialog);action(series)
+                    end)}}
+                end
+                buttons[#buttons+1]={{text=_("Close"),callback=function() UIManager:close(dialog) end}}
+                dialog=ButtonDialog:new{title=_("Series"),buttons=buttons};UIManager:show(dialog)
             end
             local row={"     " .. _("Series:"),table.concat(labels,"; ")}
-            if #memberships==1 then
-                if memberships[1].id then row.callback=Network.wrap(function() openSeries(memberships[1]) end) end
-            else
-                row.callback=function()
-                    local dialog
-                    local buttons={}
-                    for i,series in ipairs(memberships) do
-                        buttons[#buttons+1]={{text=labels[i],enabled=series.id~=nil,
-                            callback=Network.wrap(function()
-                                UIManager:close(dialog)
-                                openSeries(series)
-                            end)}}
-                    end
-                    buttons[#buttons+1]={{text=_("Close"),callback=function() UIManager:close(dialog) end}}
-                    dialog=ButtonDialog:new{title=_("Series"),buttons=buttons}
-                    UIManager:show(dialog)
-                end
+            if #memberships>1 or memberships[1].id then
+                row.callback=function() chooseSeries(Network.wrap(function(series)
+                    require('ao3lib.ui.subscriptions').openSeries(self.Fanfic,series.id,series.title)
+                end)) end
+                row.hold_callback=function() chooseSeries(function(series)
+                    require('ao3lib.ui.subscriptions').manage(self.Fanfic,'Series',series.id,series.title)
+                end) end
             end
             table.insert(kv_pairs,row)
         else

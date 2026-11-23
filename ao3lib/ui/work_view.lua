@@ -14,9 +14,8 @@ function M.bindTitleHold(scroll,callback)
     box.onHoldAO3Title=function(self,_,ges)
         local pos=self:getPosFromAbsPos(ges.pos)
         local link=pos and self:getLinkByPosition(pos)
-        if link and link.uri=='ao3-action:1' then
-            return callback() or false
-        end
+        local id=link and tonumber((link.uri or ''):match('^ao3%-action:(%d+)$'))
+        if id then return callback(id) or false end
         return false
     end
 end
@@ -42,10 +41,11 @@ function M.html(work,rows,options)
     if work.is_deleted or work.is_unavailable then
         return '<h2>'..escape(work.is_unavailable and _('Unavailable work') or _('Deleted work'))..'</h2>',{}
     end
-    local actions={}
-    local function link(label,callback)
+    local actions,holds={},{}
+    local function link(label,callback,hold)
         if not callback then return escape(label) end
         actions[#actions+1]=callback
+        holds[#actions]=hold
         return '<a href="ao3-action:'..#actions..'" style="color:#000000;text-decoration:none"><span style="color:#000000">'..escape(label)..'</span></a>'
     end
     local function tagLink(kind,name)
@@ -83,13 +83,13 @@ function M.html(work,rows,options)
         cells[i]=symbols[i] and '<img src="'..Badges.relativePath(symbols[i])..'"/>' or '&#160;'
     end
     local badge='<table class="badges"><tr><td>'..cells[1]..'</td><td>'..cells[2]..'</td></tr><tr><td>'..cells[3]..'</td><td>'..cells[4]..'</td></tr></table>'
-    local out={'<table class="heading" width="100%"><tr><td class="square">'..badge..'</td><td><h1>'..link(rows[1][1],rows[1].callback)..'</h1>',
-        '<p class="author">'..escape(_('by'))..' '..link(author and author[2] or work.author or _('Anonymous'),author and author.callback)..'</p>'}
+    local out={'<table class="heading" width="100%"><tr><td class="square">'..badge..'</td><td><h1>'..link(rows[1][1],rows[1].callback,rows[1].hold_callback)..'</h1>',
+        '<p class="author">'..escape(_('by'))..' '..link(author and author[2] or work.author or _('Anonymous'),author and author.callback,author and author.hold_callback)..'</p>'}
     local fandoms=tagList(work.fandoms,'Fandom',true)
     if fandoms~='' then out[#out+1]='<p class="fandom">'..fandoms..'</p>' end
     out[#out+1]='</td></tr></table>'
     if type(work.series)=='table' and #work.series>0 and series then
-        out[#out+1]='<p class="series">'..link(series[2],series.callback)..'</p>'
+        out[#out+1]='<p class="series">'..link(series[2],series.callback,series.hold_callback)..'</p>'
     end
     local completion=data.ao3_completion[1]
     local status=work.iswip or (completion=='complete' and _('Complete')
@@ -164,7 +164,7 @@ function M.html(work,rows,options)
         out[#out+1]='<div class="footnote">'..(#stats>0 and '<p>'..table.concat(stats,' &#183; ')..'</p>' or '')
             ..(date and '<p class="date">'..escape(date)..'</p>' or '')..'</div>'
     end
-    return table.concat(out,'\n'),actions
+    return table.concat(out,'\n'),actions,holds
 end
 
 -- Conservative HTML/CSS supported by KOReader's MuPDF renderer: tables for
@@ -236,7 +236,7 @@ function M.new(context)
             revealed=work and self.revealed[work.id or self.index],
         })
         local rows=work and not match and context.rows(work) or {}
-        local html,actions
+        local html,actions,holds
         if match then
             local function reveal() self.revealed[work.id or self.index]=true;self:render() end
             local label=_('Hidden because of:')
@@ -250,8 +250,8 @@ function M.new(context)
                 ..'<p class="hidden-label">'..escape(label)..'</p>'..table.concat(entries)
                 ..'<p class="hidden-action"><a href="ao3-action:1" style="color:#000000;text-decoration:none"><span style="color:#000000">'..escape(_('Show work'))..'</span></a></p></div>'
             actions={reveal}
-        elseif work then html,actions=M.html(work,rows,context) else html,actions='<p>'..escape(_('No works found.'))..'</p>',{} end
-        context.present(self,html,actions,rows)
+        elseif work then html,actions,holds=M.html(work,rows,context) else html,actions='<p>'..escape(_('No works found.'))..'</p>',{} end
+        context.present(self,html,actions,rows,holds)
     end
     function self:goTo(index,allow_unknown_next)
         local maximum=self.pager and self.pager.total or self.total or #self.works
@@ -400,9 +400,9 @@ function M.show(browser,context)
                 if id and self.actions[id] then self.actions[id]() end
             end}
         self.work_scroll=scroll
-        M.bindTitleHold(scroll,function()
-            local title=self.rows and self.rows[1]
-            if title and title.hold_callback then title.hold_callback();return true end
+        M.bindTitleHold(scroll,function(id)
+            local hold=self.holds and self.holds[id]
+            if hold then hold();return true end
             return false
         end)
         -- Page keys belong to work navigation. Remove only the scroller's
@@ -425,12 +425,12 @@ function M.show(browser,context)
     local favorites=require('ao3lib.ao3.favorite_cache')
     context.is_favorite=context.is_favorite or favorites.contains
     context.network=require('ao3lib.ao3.network').run
-    context.present=function(_,html,actions,rows)
+    context.present=function(_,html,actions,rows,holds)
         local previous=state.window
         local ratio=state._favorite_refresh and previous and previous.work_scroll
             and previous.work_scroll.getCurrentRatio and previous.work_scroll:getCurrentRatio()
         state._favorite_refresh=nil
-        local window=View:new{html=html,actions=actions,rows=rows}
+        local window=View:new{html=html,actions=actions,rows=rows,holds=holds}
         state.window=window;browser.browse_window=window
         require("ao3lib.ui.navigation").bind(context.plugin, window, {
             replace=previous or context.replacing, resume=function(resumed)
@@ -457,6 +457,7 @@ function M.show(browser,context)
         current._favorite_refresh=true;current:render()
     end)
     favorites.ensure()
+    require("ao3lib.ui.work_view_help").showIfNeeded()
     return state
 end
 return M

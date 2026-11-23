@@ -24,24 +24,13 @@ function M.manage(owner,kind,target,title)
     UI:show(dialog)
     return dialog
 end
-function M.series(owner,id,title,count)
-    local dialog
-    dialog=Buttons:new{title=title,buttons={
-        {{text=_("Browse works"),callback=Network.wrap(function()
-            UI:close(dialog)
-            local ok,works,next_page=owner:getWorksFromSeries(id)
-            if ok then
-                if count then works.total=count end
-                owner:onShowFanficBrowser(works,next_page,title)
-            end
-        end)}},
-        {{text=_("Manage subscription"),callback=Network.wrap(function()
-            UI:close(dialog);M.manage(owner,'Series',id,title)
-        end)}},
-        {{text=_("Cancel"),callback=function() UI:close(dialog) end}},
-    }}
-    UI:show(dialog)
-    return dialog
+function M.openSeries(owner,id,title,count)
+    if Network.defer(function() M.openSeries(owner,id,title,count) end) then return end
+    local ok,works,next_page=owner:getWorksFromSeries(id)
+    if ok then
+        if count then works.total=count end
+        owner:onShowFanficBrowser(works,next_page,title)
+    end
 end
 function M.show(owner)
     if Network.defer(function() M.show(owner) end) then return end
@@ -50,7 +39,7 @@ function M.show(owner)
     local load
     local function open(item)
         if item.kind=='User' then owner:showUserInfo(item.target,item.target)
-        elseif item.kind=='Series' then M.series(owner,item.target,item.title)
+        elseif item.kind=='Series' then M.openSeries(owner,item.target,item.title)
         elseif item.kind=='Work' then
             local result=Client:getWorkMetadata(item.target)
             if not failure(result) then owner:onShowFanficBrowser({result.work_metadata,total=1},nil,_("Subscribed work")) end

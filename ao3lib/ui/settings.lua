@@ -11,6 +11,7 @@ function M.show(owner,checkFilenameTemplate)
     local groups={
         {title=_('Reading and display'),options={
             {text=_('Work view'),key='formatted_work_view',type='Bool',on=_('Formatted'),off=_('Information list')},
+            {text=_('Work view controls…'),type='Action',callback=function() require('ao3lib.ui.work_view_help').show() end},
             {text=_('Downloaded works view'),key='downloaded_rendered_view',type='Bool',on=_('Rendered'),off=_('List'),
                 value=function()
                     local saved=Config:readSetting('downloaded_view') or {}
@@ -33,8 +34,26 @@ function M.show(owner,checkFilenameTemplate)
         }},
         {title=_('Downloads'),options={
             {text=_('Download folder'),key='fanfic_folder_path',type='Folder'},
-            {text=_('Download layout template'),key='download_layout_template',type='String',default='%A/%T',
-                description=_('Folders separated by /; .epub is added automatically.\n%A: first author (account when available); %B: all authors; %T: title; %I: work ID; %F: fandom (multiple fandoms: Crossover); %L: language; %Y: published year; %S: status; %R: series.\n%t: title with underscores; %a: all authors with underscores.'),check=checkFilenameTemplate},
+            {text=_('Download layout template'),key='download_layout_template',type='String',default='%A/%T',check=checkFilenameTemplate},
+            {text=_('Download layout tokens…'),type='Action',callback=function()
+                UI:show(require('ui/widget/textviewer'):new{title=_('Download layout tokens'),text=table.concat({
+                    _('Use / between folders. The .epub extension is added automatically.'),
+                    '',
+                    _('%A — First author (account when available)'),
+                    _('%B — All authors'),
+                    _('%T — Title'),
+                    _('%I — AO3 work ID'),
+                    _('%F — Fandom; multiple fandoms use Crossover'),
+                    _('%L — Language'),
+                    _('%Y — Published year'),
+                    _('%S — Work status'),
+                    _('%R — First listed series; No series when absent'),
+                    _('%t — Title with underscores'),
+                    _('%a — All authors with underscores'),
+                    '',
+                    _('Example: %F/%A/%T'),
+                },'\n')})
+            end},
             {text=_('HTML download fallback'),key='html_download_fallback',type='Bool'},
         }},
         {title=_('Update checks'),options={

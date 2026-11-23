@@ -24,9 +24,12 @@ local dialog
 local UI=require('ui/uimanager')
 local show=UI.show
 UI.show=function(self,w) dialog=w;return show(self,w) end
-window.kv_pairs[2].callback()
-assert(dialog.buttons[2][1].text=='Manage subscription')
-dialog.buttons[1][1].callback();assert(opened==1)
+window.kv_pairs[2].callback();assert(opened==1 and not dialog)
+local subscriptions=require('ao3lib.ui.subscriptions')
+local managed
+subscriptions.manage=function(_,kind,id,title) managed={kind,id,title} end
+window.kv_pairs[2].hold_callback()
+assert(managed[1]=='Series' and managed[2]==12 and managed[3]=='First series')
 -- Reduce row height while keeping the original text size and total space.
 window.item_height=80;window.items_per_page=10;window.items_font_size=22
 window:_populateItems()

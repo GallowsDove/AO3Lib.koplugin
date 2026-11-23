@@ -423,17 +423,14 @@ assert(#seriesCalls==0 and #seriesOpened==0 and pending)
 pending=nil -- Cancel Wi-Fi: no navigation and the original row can be retried.
 openSeriesLink(1)
 connect()
-lastShown().buttons[1][1].callback()
 assert(#seriesCalls==1 and seriesCalls[1].id==12)
 assert(#seriesOpened==1 and seriesOpened[1].title=='First series' and seriesOpened[1].works.total==3)
 seriesOpened[1].nextPage()
 assert(seriesCalls[2].id==12 and seriesCalls[2].page==2)
 openSeriesLink(2)
-lastShown().buttons[1][1].callback()
 assert(seriesCalls[3].id==34 and seriesOpened[2].title=='Second series')
 seriesFailure=true
 openSeriesLink(1)
-lastShown().buttons[1][1].callback()
 assert(#seriesOpened==2 and lastShown().text:find('maintenance',1,true))
 print('PASS: clickable work series; independent destinations; Wi-Fi cancel/retry; series title; pagination; failures preserve the current list; missing IDs stay plain text')
 

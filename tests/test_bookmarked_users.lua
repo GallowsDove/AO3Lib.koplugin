@@ -19,12 +19,10 @@ owner.item_table[3].callback()
 assert(#dialogs==0 and profiles[2][1]=='Account' and profiles[2][2]:match('^Pen Name%s*$'))
 owner.item_table[3].hold_callback()
 local menu=dialogs[#dialogs]
-assert(#profiles==2 and menu.buttons[1][1].text=='View user profile')
-assert(menu.buttons[1][2].text=='Unbookmark User')
-menu.buttons[1][1].callback()
-assert(closed[menu] and profiles[3][1]=='Account')
+assert(#profiles==2 and menu.buttons[1][1].text=='Unbookmark User')
+assert(menu.buttons[2][1].text=='Manage subscription')
 owner.item_table[2].hold_callback()
-menu=dialogs[#dialogs];menu.buttons[1][2].callback()
+menu=dialogs[#dialogs];menu.buttons[1][1].callback()
 assert(closed[menu] and saved==users and #users==1 and users[1]=='Pen Name (Account)')
 assert(#owner.item_table==2 and owner.item_table[2].text=='★ Pen Name (Account)')
 print('PASS: bookmarked-user tap opens profile directly; hold preserves profile/unbookmark menu; pseud parsing and list refresh')
@@ -61,11 +59,31 @@ local count=#profiles
 row.callback()
 assert(#profiles==count+1 and profiles[#profiles][1]=='Account' and profiles[#profiles][2]=='Pen Name')
 row.hold_callback();menu=dialogs[#dialogs]
-assert(menu.buttons[1][1].text=='View user profile' and menu.buttons[1][2].text=='Bookmark User')
-menu.buttons[1][2].callback()
+assert(menu.buttons[1][1].text=='Bookmark User' and menu.buttons[2][1].text=='Manage subscription')
+menu.buttons[1][1].callback()
 assert(Bookmarks.contains('ACCOUNT') and #owner.paths[#owner.paths].items==3)
 row.hold_callback();menu=dialogs[#dialogs]
-assert(menu.buttons[1][2].text=='Unbookmark User')
-menu.buttons[1][2].callback()
+assert(menu.buttons[1][1].text=='Unbookmark User')
+menu.buttons[1][1].callback()
 assert(not Bookmarks.contains('Account') and #owner.paths[#owner.paths].items==2)
 print('PASS: account-based deduplication and removal, profile pseud aliases, consistent search actions and parent refresh')
+-- Both user-list and work-author menus expose the same AO3 mute control.
+local Actions=require('ao3lib.ui.user_actions')
+local Network=require('ao3lib.ao3.network')
+Network.wrap=function(fn) return fn end
+local requested_mute
+package.loaded['ao3lib.ao3.client']={getMutedUsers=function() return {success=true,username='Me',users={{name='Account'}}} end}
+package.loaded['ao3lib.ao3.mute_cache']={remember=function(result) assert(result.success) end}
+package.loaded['ao3lib.ui.muted_users']={change=function(name,want) requested_mute={name,want} end}
+local managed
+package.loaded['ao3lib.ui.subscriptions']={manage=function(owner,kind,id,title) managed={owner,kind,id,title} end}
+local action_owner={}
+local action_menu=Actions.show({username='Account',pseud='Pen Name'},action_owner)
+assert(action_menu.buttons[2][1].text=='Manage subscription')
+action_menu.buttons[2][1].callback()
+assert(managed[1]==action_owner and managed[2]=='User' and managed[3]=='Account')
+action_menu=Actions.show({username='Account',pseud='Pen Name'},action_owner)
+assert(action_menu.buttons[3][1].text=='Manage AO3 mute')
+action_menu.buttons[3][1].callback()
+assert(requested_mute[1]=='Account' and requested_mute[2]==false)
+print('PASS: shared user action menu checks AO3 mute state before unmuting')

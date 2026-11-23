@@ -179,6 +179,8 @@ for _,bad in ipairs({'/absolute','../%T','%A//%T','%A/','%Z','%T%','a\\b','./%T'
     assert(not Layout.destination(example,'/books',{template=bad}))
 end
 assert(Layout.validate('%F/%A/%T [%I]'))
+assert(Layout.basePath({title='Story',series={{title='First'},{title='Second'}}},'/books',{template='%R/%T'})=='/books/First/Story.epub')
+assert(Layout.basePath({title='Story',series={}},'/books',{template='%R/%T'})=='/books/No series/Story.epub')
 assert(Layout.root('./more')=='/cwd/more')
 local a=work('1','Pseud (Writer)','Shared title',nil,true)
 local originalA=a.path
@@ -311,5 +313,53 @@ assert(#tasks==1 and disk[uiSource])
 table.remove(tasks,1)()
 assert(shown[#shown].title=='Organization results' and not disk[uiSource])
 assert(disk['/books/Writer/Preview book.epub'] and History.getAll()['13'].chapter_data[1].read)
+-- A real update uses the organizer to move the replacement and every sidecar.
+local updateWork=work('14','Writer','Updated story','/books/original.epub',true)
+updateWork.fandoms={'First'};updateWork.chapters='1/2';History.update(updateWork)
+local old_path=updateWork.path
+local updateSettings=require('ao3lib.core.config')
+updateSettings.readSetting=function(_,key,default)
+    if key=='fanfic_folder_path' then return '/books' end
+    if key=='download_layout_template' then return '%F/%S/%A/%T' end
+    return default
+end
+local cache_removed,indexed
+stub('ao3lib.library.local_cache',{removePath=function(path) cache_removed=path end,index=function(path) indexed=path end})
+stub('ao3lib.library.metadata_refresh',{notify=function() end})
+stub('ao3lib.ao3.client',{downloadEpub=function(_,url,path,replace,check)
+    assert(path==old_path and replace and check())
+    put(path,'EPUB:14 updated');return {success=true}
+end})
+local Updates=require('ao3lib.updates.checks')
+local current=disk[old_path]
+local entry={work=updateWork,local_work={id='14',chapters='1/2'},
+    fingerprint={size=current.size,mtime=current.modification,change=current.change},
+    remote={id='14',title='Updated story',author='Writer',fandoms={'First','Second'},iswip='Complete',
+        chapters='1/1',epub_link='https://example.test/a',chapterData={{id='chapter',name='First'}}}}
+local result=Updates.apply(entry)
+local target='/books/Crossover/Complete/Writer/Updated story.epub'
+assert(result.success and not result.move_error and result.work.path==target and disk[target] and not disk[old_path])
+assert(History.get('14').path==target and History.get('14').chapter_data[1].read)
+assert(disk[sidecar(target)..'/metadata.epub.lua'].data=='XP0INTER+ANNOTATIONS+BOOKMARKS')
+assert(disk[target..'.txt'].data=='NOTEBOOK' and history[target]=='last read page' and collections[target]=='Favorites')
+assert(cache_removed==old_path and indexed==target)
+-- A failed move retains the successful update and provides an actionable warning.
+local failWork=work('15','Writer','No move','/books/no-move.epub',true)
+failWork.chapters='1/2';History.update(failWork);old_path=failWork.path
+current=disk[old_path]
+entry={work=failWork,local_work={id='15',chapters='1/2'},
+    fingerprint={size=current.size,mtime=current.modification,change=current.change},
+    remote={id='15',title='No move',author='Writer',fandoms={'New'},iswip='Complete',
+        chapters='1/1',epub_link='https://example.test/b',chapterData={{id='chapter'}}}}
+package.loaded['ao3lib.ao3.client'].downloadEpub=function(_,url,path,replace,check)
+    assert(check());put(path,'EPUB:15 updated');return {success=true}
+end
+local originalFileOps=Organizer.fileOps
+Organizer.fileOps=function() return nil,'Bookshelf unavailable' end
+result=Updates.apply(entry);Organizer.fileOps=originalFileOps
+assert(result.success and result.move_error=='Bookshelf unavailable' and result.work.path==old_path)
+assert(disk[old_path].data=='EPUB:15 updated' and History.get('15').chapter_data[1].read)
+assert(disk[sidecar(old_path)..'/metadata.epub.lua'].data=='XP0INTER+ANNOTATIONS+BOOKMARKS')
+print('PASS: updated work automatically moves using organizer backups; progress, sidecars, notes, history and collections preserved; failed moves reported')
 io.open,os.rename,os.remove,os.tmpname=real_open,real_rename,real_remove,real_tmpname
 print('PASS: author/title layout; collision/idempotence/preview; native Bookshelf moves preserve sidecars, notes, history, collections and AO3 progress; backups/journal; changed/open sources; physical/sidecar/backup failures')

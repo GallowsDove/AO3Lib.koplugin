@@ -55,6 +55,7 @@ local function tokens(work)
     local authors=tostring(work.author or '')
     local series=type(work.series)=='table' and work.series[1]
     local series_name=type(series)=='table' and series.title or type(series)=='string' and series or nil
+    if type(series_name)~='string' or util.trim(series_name)=='' then series_name=nil end
     local date=tostring(work.published or ''):match('^(%d%d%d%d)')
     local status=tostring(work.iswip or '')
     if status=='' or status=='N/A' then status='Unknown status' end

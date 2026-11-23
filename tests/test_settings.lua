@@ -46,9 +46,13 @@ assert(find('Enable tag blacklist').mandatory=='On' and find('Manage tag blackli
 Menu:onOpenSettings();find('Downloads').callback()
 assert(find('Download layout template').mandatory=='%A/%T')
 find('Download layout template').callback()
-assert(shown.title:find('Crossover',1,true) and shown.title:find('%F',1,true))
+assert(shown.title=='Download layout template')
 shown.input='%F/%A/%T';shown.buttons[1][2].callback()
 assert(values.download_layout_template=='%F/%A/%T')
+package.loaded['ui/widget/textviewer']={new=function(_,args) return args end}
+find('Download layout tokens…').callback()
+assert(shown.title=='Download layout tokens' and shown.text:find('%F — Fandom; multiple fandoms use Crossover',1,true))
+assert(shown.text:find('\n%A —',1,true) and shown.text:find('\n%B —',1,true) and shown.text:find('\n%T —',1,true))
 find('HTML download fallback').callback()
 assert(shown.title=='HTML download fallback')
 local before_show=show_count

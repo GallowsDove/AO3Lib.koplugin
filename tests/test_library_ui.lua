@@ -156,7 +156,6 @@ local series_opened
 plugin.getWorksFromSeries=function(_,id) assert(id=='42');return true,{{id='member',title='Member'}} end
 plugin.onShowFanficBrowser=function(_,works,_,title) series_opened={works=works,title=title} end
 series_rows[3].callback()
-actions.buttons[1][1].callback()
 assert(series_opened.title=='Series title' and series_opened.works[1].id=='member')
 Network.run=run
 local html,links=WorkView.html(series_work,series_rows,{summary_html=true})

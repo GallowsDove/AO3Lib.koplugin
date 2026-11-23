@@ -12,6 +12,7 @@ local previous
 local previous_native
 local function eligible(entry) return entry.remote and (entry.status=="update" or entry.status=="review") end
 local function statusLabel(entry,details)
+    if entry.status=='updated' and entry.move_error then return _('Updated; move needs attention') end
     if entry.status=='updated' and (entry.missing_images or 0)>0 then
         return string.format(_("Updated; %d image(s) unavailable"),entry.missing_images)
     end
@@ -42,6 +43,7 @@ local function describe(entry)
         .. statusLabel(entry,true) .. "\n\n"
         .. table.concat(entry.changes or {},"\n")
         .. (entry.error and ("\n\n" .. entry.error) or "")
+        .. (entry.move_error and ("\n\n" .. _("Could not move updated work: ") .. entry.move_error) or "")
         .. "\n\n" .. tostring(work.path)
 end
 
@@ -165,7 +167,7 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
             if entry.status=="update" then available=available+1 end
             if retryable(entry) then failed=failed+1;retries[#retries+1]=entry end
             if entry.status=="state_error" then failed=failed+1;unsaved=unsaved+1 end
-            if entry.status=="review" or retryable(entry) or entry.status=="state_error" then review_count=review_count+1 end
+            if entry.status=="review" or retryable(entry) or entry.status=="state_error" or entry.move_error then review_count=review_count+1 end
             if entry.selected and eligible(entry) then selected=selected+1;selections[#selections+1]=entry end
         end
         local model={summary=string.format(_("%d of %d checked · %d updates found · %d failed"),checked,total,available,failed),
@@ -222,7 +224,7 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
         end
         local rows={}
         for __,entry in ipairs(scopeEntries()) do
-            local needs_review=entry.status=="review" or retryable(entry) or entry.status=="state_error"
+            local needs_review=entry.status=="review" or retryable(entry) or entry.status=="state_error" or entry.move_error
             if filter=="all" or (filter=="updates" and entry.status=="update") or (filter=="review" and needs_review)
                     or session.active_entry==entry then
                 local status=statusLabel(entry)

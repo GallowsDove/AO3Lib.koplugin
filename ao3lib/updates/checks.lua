@@ -117,6 +117,29 @@ local function sourceUnchanged(entry)
     return true
 end
 
+-- Reuse the organizer's preflight, backups and Bookshelf move so sidecars,
+-- reading progress, collections and history follow a newly updated work.
+local function organizeUpdated(work)
+    local root=require('ao3lib.core.config'):readSetting('fanfic_folder_path')
+    if not root or root=='' then return work,_('Download folder is not set.') end
+    local Layout=require('ao3lib.library.layout')
+    local destination,err=Layout.destination(work,root)
+    if not destination then return work,err end
+    if destination==work.path then return work end
+    local Organizer=require('ao3lib.library.organizer')
+    local plan,why=Organizer.plan({work},root)
+    if not plan then return work,why end
+    if #plan.moves==0 then return work,(plan.skipped[1] and plan.skipped[1].reason) or _('The move was skipped.') end
+    local summary,move_err=Organizer.execute(plan)
+    if not summary then return History.get(work.id) or work,move_err end
+    local latest=History.get(work.id) or work
+    local move=plan.moves[1]
+    if summary.failed>0 or summary.skipped>0 or #summary.errors>0 or move.status~='moved' then
+        return latest,summary.errors[1] or move.error or _('The move was not completed.')
+    end
+    return latest
+end
+
 function M.apply(entry)
     if not entry.remote or not entry.local_work then return failure(_("Check this work before updating it.")) end
     local unchanged, err = sourceUnchanged(entry)
@@ -141,8 +164,7 @@ function M.apply(entry)
         chapter.read = previous and previous.read or false
         if old.read and #(old.chapter_data or {})==0 and n and n==count(entry.local_work) then chapter.read=true end
     end
-    -- Keep the work at the same path: KOReader sidecars, annotations and
-    -- bookmarks stay attached. The client stages the EPUB and commits atomically.
+    -- Replace the EPUB atomically first; relocate it only after progress is saved.
     -- URL-only calls cannot invoke HTML fallback, even when globally enabled.
     local source=remote.epub_link
     if not entry.native_only and remote.html_link and require("ao3lib.core.config"):readSetting("html_download_fallback", false) then source=remote end
@@ -151,7 +173,7 @@ function M.apply(entry)
     if not response.success then return failure(response.error, response) end
     local updated = util.tableDeepCopy(old)
     for __, key in ipairs({"title","author","chapters","summary","fandoms","tags","relationships","characters",
-            "warnings","hits","kudos","bookmarks","comments","rating","category","iswip","updated","published","wordcount",
+            "warnings","hits","kudos","bookmarks","comments","rating","category","iswip","updated","published","wordcount","series","language",
             "markedForLater","subscriptionID","bookmarkID","bookmarkContent"}) do
         if key=="updated" or key=="published" then
             -- A real chapter/word change may still warrant an update when the
@@ -165,15 +187,25 @@ function M.apply(entry)
     if #chapters==0 and n==1 and #(old.chapter_data or {})==1 then updated.chapter_data=old.chapter_data end
     if #updated.chapter_data > 0 or (n and count(entry.local_work) and n>count(entry.local_work)) then updated.read=nil end
     local saved, save_err = History.update(updated)
-    pcall(function() require('ao3lib.library.local_cache').index(updated.path) end)
-    pcall(function() require("ao3lib.library.metadata_refresh").notify(updated.path) end)
     if not saved then
+        pcall(function() require('ao3lib.library.local_cache').index(updated.path) end)
+        pcall(function() require('ao3lib.library.metadata_refresh').notify(updated.path) end)
         local result=failure(_("The EPUB was updated, but its AO3 reading state could not be saved: ") .. tostring(save_err))
         result.downloaded=true
         result.work=updated
         return result
     end
-    return {success=true, work=updated, missing_images=response.missing_images}
+    local old_path=updated.path
+    local ok,moved,move_err=pcall(organizeUpdated,updated)
+    if ok then updated=moved else move_err=moved;updated=History.get(updated.id) or updated end
+    if updated.path~=old_path then
+        pcall(function() require('ao3lib.library.local_cache').removePath(old_path) end)
+        pcall(function() require('ao3lib.library.metadata_refresh').notify(old_path) end)
+    end
+    pcall(function() require('ao3lib.library.local_cache').index(updated.path) end)
+    pcall(function() require('ao3lib.library.metadata_refresh').notify(updated.path) end)
+    return {success=true, work=updated, missing_images=response.missing_images,move_error=move_err}
+
 end
 
 function M.retrySave(session)
@@ -249,7 +281,7 @@ function Session:run(operation, targets, changed, schedule)
             for key,value in pairs(result) do entry[key]=value end
         elseif operation=="update" and ok and result.success then
             entry.work=result.work; entry.status="updated"; entry.selected=false; entry.error=nil; entry.failure=nil
-            entry.missing_images=result.missing_images
+            entry.missing_images=result.missing_images;entry.move_error=result.move_error
             entry.fingerprint=fingerprint(result.work.path)
         else
             entry.error=result.error

@@ -293,6 +293,9 @@ function Fanfic:UpdateFanfic(fanfic)
     if ok and result.success and (result.missing_images or 0)>0 then
         message=message..'\n\n'..T(_("%1 image(s) could not be included. Links are preserved in the book."),result.missing_images)
     end
+    if ok and result.success and result.move_error then
+        message=message..'\n\n'.._('Could not move updated work: ')..tostring(result.move_error)
+    end
     UIManager:show(InfoMessage:new{text=message})
 end
 
