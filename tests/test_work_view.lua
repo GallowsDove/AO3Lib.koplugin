@@ -163,6 +163,35 @@ assert(#old.window.page_buttons==5 and #old.window.layout==1)
 assert(old.window.page_buttons[1].icon=='chevron.first' and old.window.page_buttons[2].icon=='chevron.left')
 assert(old.window.page_buttons[3].text=='Page 2 of 2' and old.window.page_buttons[3].text_font_face=='pgfont')
 assert(old.window.page_buttons[4].icon=='chevron.right' and old.window.page_buttons[5].icon=='chevron.last')
+-- KOReader stacks the non-modal input below its modal keyboard. Redrawing a
+-- work view while they are open must not cover the input and orphan the keyboard.
+local originalWindow=old.window
+local inputClosed=false
+local input={_input_widget={},onCloseWidget=function() inputClosed=true end}
+local keyboard={modal=true}
+UI._window_stack={{widget=originalWindow},{widget=input},{widget=keyboard}}
+local nextTick=UI.nextTick
+local resume
+UI.nextTick=function(_,fn) resume=fn end
+old:refreshWhenActive(true)
+assert(old.window==originalWindow and visible[originalWindow] and not resume)
+UI._window_stack={{widget=originalWindow}}
+input:onCloseWidget()
+assert(inputClosed and resume and old.window==originalWindow)
+resume()
+assert(old.window~=originalWindow and visible[old.window])
+-- A non-modal chooser gets the same protection and pending favorites apply
+-- when it closes, even without navigating to another page.
+originalWindow=old.window
+local chooser={onCloseWidget=function() end}
+UI._window_stack={{widget=originalWindow},{widget=chooser}}
+resume=nil
+old:refreshWhenActive(true);old:refreshWhenActive()
+assert(old.window==originalWindow and not resume)
+UI._window_stack={{widget=originalWindow}}
+chooser:onCloseWidget();assert(resume);resume()
+assert(old.window~=originalWindow and visible[old.window])
+UI._window_stack=nil;UI.nextTick=nextTick
 for _,button in ipairs(old.window.page_buttons) do assert(button.bordersize==0) end
 old.window.page_buttons[1].callback();assert(old.index==1)
 old.window.page_buttons[5].callback();assert(old.index==2)
@@ -179,18 +208,21 @@ local parentAuthor=Browser.showAuthorInfoCallback
 local child=Browser:show({},{{id='nested',title='Nested work'},total=1},nil,
     function() end,function() end,function() end,plugin,'Nested works')
 assert(#plugin._ao3_navigation==2 and visible[parentWindow])
+old:refreshWhenActive();old:refreshWhenActive(true);old:render()
+assert(old.window==parentWindow and Browser.browse_window==child.window and visible[child.window],
+    'Background refresh must not put a parent work view over its child')
 local topMenus=0
 plugin.ui={menu={onShowMenu=function() topMenus=topMenus+1 end}}
 assert(press(child.window,'Menu') and topMenus==1, 'PocketBook Menu did not open KOReader top menu')
 assert(not child.closed and visible[child.window] and #plugin._ao3_navigation==2)
 
 assert(press(child.window,'Back') and child.closed and not visible[child.window])
-assert(#plugin._ao3_navigation==1 and Browser.browse_window==parentWindow)
-assert(Browser.showAuthorInfoCallback==parentAuthor and visible[parentWindow])
+assert(#plugin._ao3_navigation==1 and Browser.browse_window==old.window)
+assert(old.window~=parentWindow and Browser.showAuthorInfoCallback==parentAuthor and visible[old.window])
 local homeChild=Browser:show({},{{id='home-key',title='Home key'},total=1},nil,
     function() end,function() end,function() end,plugin,'Home key test')
 assert(press(homeChild.window,'Home') and homeChild.closed and not visible[homeChild.window])
-assert(#plugin._ao3_navigation==1 and Browser.browse_window==parentWindow)
+assert(#plugin._ao3_navigation==1 and Browser.browse_window==old.window)
 
 -- The settings picker persists the chosen base size, with Reset to 20.
 local Menu=require('ao3lib.ui.menu')

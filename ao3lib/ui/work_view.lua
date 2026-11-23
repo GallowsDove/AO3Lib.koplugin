@@ -219,10 +219,30 @@ function M.new(context)
         while pager.works[pager.loaded+1] do pager.loaded=pager.loaded+1 end
         self.works=pager.works
     end
+    function self:refreshWhenActive(favorite)
+        local window=self.window
+        if self.closed or not window or window._ao3_closed then return end
+        local frame=window._ao3_navigation
+        local frames=context.plugin and context.plugin._ao3_navigation
+        if frame and frames and frames[#frames]~=frame then
+            self._background_refresh_pending=true
+            self._background_favorites_pending=self._background_favorites_pending or favorite
+            return
+        end
+        if favorite then self._favorite_refresh=true end
+        self:render()
+    end
+    function self:resumeBackgroundRefresh()
+        if not self._background_refresh_pending or self.closed then return end
+        self._background_refresh_pending=nil
+        self._favorite_refresh=self._background_favorites_pending or self._favorite_refresh
+        self._background_favorites_pending=nil
+        self:render()
+    end
     if context.mutes then
         local cache=require('ao3lib.ao3.mute_cache')
         cache.watch(self,function(owner)
-            if not owner.closed and owner.window and not owner.window._ao3_closed then owner:render() end
+            owner:refreshWhenActive()
         end)
         cache.ensure()
     end
@@ -230,6 +250,18 @@ function M.new(context)
     self.index=math.max(1,math.min(self.index,math.max(1,self:pageCount())))
     function self:render()
         if self.closed then return end
+        local frame=self.window and self.window._ao3_navigation
+        local frames=context.plugin and context.plugin._ao3_navigation
+        if frame and frames and frames[#frames]~=frame then
+            self._background_refresh_pending=true
+            return
+        end
+        if self.window and require('ao3lib.ui.redraw').defer(self.window,self,function(owner)
+            owner:resumeBackgroundRefresh()
+        end) then
+            self._background_refresh_pending=true
+            return
+        end
         local work=self.works[self.index]
         local match=require('ao3lib.ui.hidden_work').reasons(work,{
             blacklist=context.blacklist,mutes=context.mutes,
@@ -435,9 +467,7 @@ function M.show(browser,context)
         require("ao3lib.ui.navigation").bind(context.plugin, window, {
             replace=previous or context.replacing, identity=context.identity, resume=function(resumed)
                 if context.resume then context.resume(resumed) end
-                if state._favorites_dirty and not state.closed then
-                    state._favorites_dirty=nil;state._favorite_refresh=true;state:render()
-                end
+                state:resumeBackgroundRefresh()
             end,
             back=context.on_back,
         })
@@ -451,10 +481,7 @@ function M.show(browser,context)
     favorites.watch(state,function(current)
         local window=current.window
         if current.closed or not window or window._ao3_closed then return end
-        local top=UI.getTopmostVisibleWidget and UI:getTopmostVisibleWidget()
-        if top and top~=window and not top.modal then current._favorites_dirty=true;return end
-        current._favorites_dirty=nil
-        current._favorite_refresh=true;current:render()
+        current:refreshWhenActive(true)
     end)
     favorites.ensure()
     require("ao3lib.ui.work_view_help").showIfNeeded()

@@ -439,6 +439,31 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     end
     local BrowseWindow = KeyValuePage:extend({
     })
+    local function resumeLegacy(window)
+        resume(window)
+        if window._ao3_reload_pending and not window._ao3_closed then
+            window._ao3_reload_pending=nil
+            window:reload()
+        end
+    end
+    local function deferReload(window)
+        local frame=window._ao3_navigation
+        local frames=Fanfic._ao3_navigation
+        if frame and frames and frames[#frames]~=frame then
+            window._ao3_reload_pending=true
+            return true
+        end
+        if require('ao3lib.ui.redraw').defer(window,window,function(owner)
+            if not owner._ao3_closed and owner._ao3_reload_pending then
+                owner._ao3_reload_pending=nil
+                owner:reload()
+            end
+        end) then
+            window._ao3_reload_pending=true
+            return true
+        end
+        return false
+    end
     -- Override _populateItems to check if it's the last page and load more results
     BrowseWindow._populateItems = function(selfself)
         fitWorkPage(selfself)
@@ -464,7 +489,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
 
     local function watchMutes(window)
         require('ao3lib.ao3.mute_cache').watch(window,function(owner)
-            if self.browse_window==owner and not owner._ao3_closed then owner:reload() end
+            if not owner._ao3_closed then owner:reload() end
         end)
     end
 
@@ -477,26 +502,12 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             table.insert(fanfics_loaded, v)
         end
 
-        -- Update the total number of pages
-        selfself.pages = math.ceil(#selfself.kv_pairs / selfself.items_per_page)
-        self.browse_window = BrowseWindow:new({
-            title = selfself.title,
-            title_bar_left_icon = require("ao3lib.ui.icons").name,
-            title_bar_fm_style = true,
-            is_popout = false,
-            is_borderless = true,
-            kv_pairs = selfself.kv_pairs,
-            show_page = selfself.show_page,
-            value_overflow_align = "center",
-        })
-        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume, identity=view_options.identity})
-        watchMutes(self.browse_window)
-        self.browse_window:setMaximumPageValueCount(items_per_fic)
-        UIManager:show(self.browse_window)
-        UIManager:close(selfself)
+        selfself:reload()
     end
 
     BrowseWindow.reload = function(selfself)
+        if selfself._ao3_closed or deferReload(selfself) then return end
+        selfself._ao3_reload_pending=nil
         selfself.kv_pairs = legacyRows(fanfics_loaded)
 
         -- Update the total number of pages
@@ -515,7 +526,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
             value_overflow_align = "center",
         })
         self.Fanfic.menu_stack[self.browse_window] = true
-        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resume, identity=view_options.identity})
+        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resumeLegacy, identity=view_options.identity})
         watchMutes(self.browse_window)
         self.browse_window:setMaximumPageValueCount(items_per_fic)
         UIManager:show(self.browse_window)
@@ -534,6 +545,11 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         self.Fanfic.menu_stack[selfself] = nil
         return KeyValuePage.onClose(selfself)
     end
+    BrowseWindow.onCloseWidget = function(selfself,...)
+        selfself._ao3_closed=true
+        require('ao3lib.ao3.mute_cache').unwatch(selfself)
+        if KeyValuePage.onCloseWidget then return KeyValuePage.onCloseWidget(selfself,...) end
+    end
 
     -- Create the KeyValuePage
     self.browse_window = BrowseWindow:new({
@@ -547,7 +563,7 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
         show_page = view_options.index or 1,
     })
 
-    require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=view_options.replacing, resume=resume, identity=view_options.identity})
+    require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=view_options.replacing, resume=resumeLegacy, identity=view_options.identity})
 
     watchMutes(self.browse_window)
     self.browse_window:setMaximumPageValueCount(items_per_fic)

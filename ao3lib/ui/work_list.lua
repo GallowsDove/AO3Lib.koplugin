@@ -41,7 +41,10 @@ function M.show(browser,context)
         }
         state.window=window;browser.browse_window=window
         require("ao3lib.ui.navigation").bind(context.plugin, window, {
-            replace=previous or context.replacing, identity=context.identity, resume=context.resume,
+            replace=previous or context.replacing, identity=context.identity, resume=function(resumed)
+                if context.resume then context.resume(resumed) end
+                state:resumeBackgroundRefresh()
+            end,
         })
         context.replacing=nil
         UI:show(window)

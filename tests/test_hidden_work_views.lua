@@ -23,6 +23,28 @@ assert(window.kv_pairs[1][2]:find('First tag',1,true) and window.kv_pairs[1][2]:
     and window.kv_pairs[1][2]:find('Muted author: MutedWriter',1,true))
 window.kv_pairs[2].callback();window=shown
 assert(window.kv_pairs[1][1]=='Hidden' and #window.kv_pairs==30 and window.pages==2)
+-- A pending legacy-list refresh cannot cover an open chooser.
+local chooser={onCloseWidget=function() end}
+UI._window_stack={{widget=window},{widget=chooser}}
+local nextTick=UI.nextTick
+local pending
+UI.nextTick=function(_,fn) pending=fn end
+window:reload();window:reload()
+assert(shown==window and window._ao3_reload_pending and not pending)
+UI._window_stack={{widget=window}}
+chooser:onCloseWidget();assert(pending);pending()
+assert(shown~=window and not shown._ao3_reload_pending)
+window=shown
+UI._window_stack=nil;UI.nextTick=nextTick
+local frame=window._ao3_navigation
+local child={window={}}
+owner._ao3_navigation[#owner._ao3_navigation+1]=child
+window:reload()
+assert(shown==window and window._ao3_reload_pending,'A child view must not be covered by a parent refresh')
+table.remove(owner._ao3_navigation)
+frame.options.resume(window)
+assert(shown~=window and owner._ao3_navigation[#owner._ao3_navigation].window==shown)
+window=shown
 -- Disabling the blacklist for a query must leave author muting in effect.
 works={{id='1',title='Hidden',author='Writer'}}
 Browser:show({},works,nil,function() end,function() end,function() end,owner,nil,{blacklist=false})
