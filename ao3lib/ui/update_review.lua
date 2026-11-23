@@ -254,7 +254,8 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
                 local status=statusLabel(entry)
                 if session.active_entry==entry then status=session.operation=="check" and _("Checking…") or _("Downloading…") end
                 local prefix=eligible(entry) and (entry.selected and "☑ " or "☐ ") or ""
-                rows[#rows+1]={text=prefix..(entry.work.title or tostring(entry.work.id)).."\n"..(entry.work.author or "").."\n"..status,
+                rows[#rows+1]={text=prefix..(entry.work.title or tostring(entry.work.id))..'  —  '
+                    .._('by ')..(entry.work.author or _('Anonymous'))..' · '..status,
                     mandatory=retryable(entry) and _("Retry") or nil,entry=entry,
                     callback=function() details(entry) end,toggle_callback=function() toggle(entry) end,
                     retry_callback=retryable(entry) and function() run("check",{entry},true) end or nil,

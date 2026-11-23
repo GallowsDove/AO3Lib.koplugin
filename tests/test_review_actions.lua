@@ -19,6 +19,8 @@ local function filter(index) menu.review_model.filters[index].callback() end
 filter(1)
 assert(#menu.item_table==1 and menu.item_table[1].entry==changed)
 assert(menu.item_table[1].text:find('Text changed',1,true))
+assert(menu.item_table[1].text:find('Changed work  —  by First author · Text changed',1,true),
+    'Review entries should use the downloaded-works separators')
 assert(not menu.item_table[1].text:find('1/1 → 1/1',1,true))
 for _,row in ipairs(menu.item_table) do assert(row.entry,'Book list must not contain commands or status rows') end
 menu:onMenuSelect(menu.item_table[1],{x=0.5})
