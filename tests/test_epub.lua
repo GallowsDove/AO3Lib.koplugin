@@ -80,7 +80,7 @@ local function preface(id)
       <dt>Categories:</dt><dd><a href='/tags/fm'>F/M</a><a href='/tags/ff'>F/F</a></dd>
       <dt>Rating:</dt><dd><a href='/tags/rating'>Explicit</a></dd>
       <dt>Archive Warnings:</dt><dd><a href='/tags/warning'>No Archive Warnings Apply</a></dd>
-      <dt>Additional Tags:</dt><dd><a href='/tags/fluff'>Fluff, with a comma</a></dd>
+      <dt>Additional Tags:</dt><dd><a href='/tags/fluff'>Fluff, with a comma</a>, <a href='/tags/comfort'>Comfort</a></dd>
       <dt>Series:</dt><dd><span class="position">Part 2 of <a href="https://archiveofourown.org/series/3884635">The Harem's Kingdom</a></span>,
       <span class="position">Part 1.5 of <a href="/series/42">Other &amp; Series</a></span>
       <a href="https://evil.example/series/99">Wrong host</a><a href="/series/42">Duplicate</a></dd>
@@ -182,10 +182,13 @@ stub('device', {isAndroid=function() return false end})
 local History = require('ao3lib.library.history')
 local saves = 0
 History.save = function() saves = saves + 1 end
-History.add({id='123', path='/old/name.epub', title='Saved title', read=true, chapter_data={{id='chapter',read=true}}})
+History.add({id='123', path='/old/name.epub', title='Saved title', tags='Fluff, with a comma, Comfort', read=true, chapter_data={{id='chapter',read=true}}})
 assert(History.checkIfStored('123') == nil) -- history alone is insufficient
 local remembered = History.rememberLocal(Epub.read('/home/renamed.epub'))
 assert(remembered.path == '/home/renamed.epub' and remembered.read and remembered.chapter_data[1].read)
+assert(#remembered.tag_names==2 and remembered.tag_names[1]=='Fluff, with a comma' and remembered.tag_names[2]=='Comfort',
+    'Existing flattened history must recover exact tag boundaries from the EPUB')
+assert(History.get('123').tag_names[1]=='Fluff, with a comma')
 assert(History.checkIfStored('123').path == '/home/renamed.epub')
 History.add({id='wrong', path='/home/renamed.epub', title='Wrong identity'})
 assert(History.checkIfStored('wrong') == nil)

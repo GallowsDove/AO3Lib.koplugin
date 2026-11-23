@@ -232,6 +232,7 @@ function Fanfic:DownloadFanfic(id, done)
         language = request_result.work_metadata.language,
         series = request_result.work_metadata.series,
         tags = request_result.work_metadata.tags,
+        tag_names = request_result.work_metadata.tag_names,
         relationships = request_result.work_metadata.relationships,
         characters = request_result.work_metadata.characters,
         warnings = request_result.work_metadata.warnings,

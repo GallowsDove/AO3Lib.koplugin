@@ -236,6 +236,14 @@ function DownloadedFanfics.rememberLocal(work, defer_save)
             changed = true
         end
     end
+    -- Older downloads stored a comma-joined display string as one tag. The
+    -- EPUB's individual links preserve tag boundaries, including commas in a
+    -- tag's own name; use them when no exact online tag list was saved.
+    if type(work.tags)=='table' and #work.tags>0
+            and (type(merged.tag_names)~='table' or #merged.tag_names==0) then
+        merged.tag_names=deepcopy(work.tags)
+        changed=true
+    end
     merged.id, merged.path = id, work.path
     merged.chapter_data = merged.chapter_data or {}
     downloaded_fanfics[id] = merged

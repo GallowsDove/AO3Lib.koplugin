@@ -2612,6 +2612,7 @@ function AO3WebParser:parseWorkPage(root)
         series = self:parseWorkSeries(root),
         summary = summary,
         tags = #tags > 0 and table.concat(tags, ", ") or "No tags available",
+        tag_names = tags,
         relationships = relationships or {},
         characters = characters or {},
         warnings = warnings or {},

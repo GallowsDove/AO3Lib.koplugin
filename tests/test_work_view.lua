@@ -23,6 +23,15 @@ for _,action in ipairs(tag_actions) do action() end
 local found={};for _,entry in ipairs(tapped) do found[entry[1]..':'..entry[2]]=true end
 assert(found['Fandom:Fandom'] and found['Freeform:First tag'] and found['Rating:Explicit']
     and found['Category:M/M'] and found['Warning:No Archive Warnings Apply'])
+local local_work={id='local',title='Local work',tags={'Fluff, with a comma, Comfort'},
+    tag_names={'Fluff, with a comma','Comfort'}}
+local local_actions={}
+local _,local_links=WorkView.html(local_work,{{'Local work'}}, {tag_action=function(kind,name)
+    local_actions[#local_actions+1]={kind=kind,name=name}
+end})
+for _,action in ipairs(local_links) do action() end
+assert(#local_actions==2 and local_actions[1].name=='Fluff, with a comma' and local_actions[2].name=='Comfort',
+    'Local EPUB tags must remain separate click targets')
 authors,series=0,0
 assert(html:find('&lt;Story &amp; title&gt;',1,true) and not html:find('<script>',1,true))
 assert(html:find('</p><p>Second paragraph.',1,true))

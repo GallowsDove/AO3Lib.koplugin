@@ -172,7 +172,7 @@ function M.apply(entry)
         function() return sourceUnchanged(entry) end)
     if not response.success then return failure(response.error, response) end
     local updated = util.tableDeepCopy(old)
-    for __, key in ipairs({"title","author","chapters","summary","fandoms","tags","relationships","characters",
+    for __, key in ipairs({"title","author","chapters","summary","fandoms","tags","tag_names","relationships","characters",
             "warnings","hits","kudos","bookmarks","comments","rating","category","iswip","updated","published","wordcount","series","language",
             "markedForLater","subscriptionID","bookmarkID","bookmarkContent"}) do
         if key=="updated" or key=="published" then

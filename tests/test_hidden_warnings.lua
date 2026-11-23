@@ -27,6 +27,11 @@ assert(#warnings==1 and warnings[1]=='No Archive Warnings Apply','Visible tags t
 assert(#Parser:parseArchiveWarnings(node(),{toggle})==0,'Missing data must stay unknown rather than becoming a reveal label')
 local detail=node('',nil,{['#workskin .title']={title},['.title']={title},['.warning > ul a']={visible}})
 assert(Parser:parseWorkPage(detail).warnings[1]=='No Archive Warnings Apply')
+local tags=node('',nil,{a={node('Fluff, with a comma',{href='/tags/fluff'}),node('Comfort',{href='/tags/comfort'})}})
+local detail_tags=node('',nil,{['#workskin .title']={title},['.title']={title},['.freeform > ul']={tags}})
+local exact=Parser:parseWorkPage(detail_tags)
+assert(#exact.tag_names==2 and exact.tag_names[1]=='Fluff, with a comma' and exact.tag_names[2]=='Comfort',
+    'Work metadata must retain individual tags, including commas in a name')
 local freeform=node('Show additional tags',{href='/tags/show_hidden?creation_id=123&tag_type=freeforms'})
 local tagset=node('',nil,{a={freeform}})
 local both=node('',nil,{['h4.heading > a']={title},['.tags > .warnings strong > a']={toggle},['.tags > .freeforms']={tagset}})
