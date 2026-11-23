@@ -34,7 +34,11 @@ host._ordered_touch_zones={
     end),
     zone('filemanager_swipe',function() error('Must not page hidden file browser') end),
 }
-host[1]={_ordered_touch_zones={zone('filemanager_tap',function() matches[#matches+1]='menu';return true end)}}
+host[1]={_ordered_touch_zones={
+    zone('filemanager_tap',function() matches[#matches+1]='menu tap';return true end),
+    zone('filemanager_ext_tap',function() matches[#matches+1]='extended menu tap';return true end),
+    zone('filemanager_swipe',function() matches[#matches+1]='menu swipe';return true end),
+}}
 local owner={ui=host}
 local function window()
     return {handleEvent=function(_,event)
@@ -48,9 +52,14 @@ assert(matches[1]=='edge' and host_calls[1]=='onIncreaseFlIntensity' and #base_c
 assert(screen:handleEvent{handler='onGesture',args={{id='broadcast',ges='swipe'}}})
 assert(host_calls[2]=='onToggleNightMode' and #host_calls==2,'Broadcast action must reach the host exactly once')
 assert(screen:handleEvent{handler='onGesture',args={{id='local',ges='swipe'}}})
+assert(not screen:handleEvent{handler='onGesture',args={{id='filemanager_tap',ges='tap'}}})
+assert(not screen:handleEvent{handler='onGesture',args={{id='filemanager_ext_tap',ges='tap'}}})
+-- Hidden FileManager root swipes remain blocked; its menu's swipe is relayed.
+assert(screen:handleEvent{handler='onGesture',args={{id='filemanager_swipe',ges='swipe'}}})
+assert(matches[#matches]=='menu swipe')
+host.gestures.gestures.filemanager_tap=true
 assert(screen:handleEvent{handler='onGesture',args={{id='filemanager_tap',ges='tap'}}})
-assert(matches[#matches]=='menu')
-assert(not screen:handleEvent{handler='onGesture',args={{id='filemanager_swipe',ges='swipe'}}})
+assert(matches[#matches]=='menu tap','Explicitly configured gestures stay available')
 screen:handleEvent{handler='onCloseWidget'};assert(#host_calls==2)
 local dialog=window();dialog.buttons={};UI:show(dialog)
 assert(dialog._ao3_gesture_owner==owner)

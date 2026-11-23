@@ -61,8 +61,13 @@ local function tryZones(host,gesture,user_first)
                 local is_configured=configured(host,id)
                 local live_light=id:match('^livelight_')~=nil
                 local system_menu=not list.root and (id:match('^filemanager_') or id:match('^readermenu_'))
+                -- AO3 has its own header controls; a missed tap should not
+                -- activate the FileManager's large default menu tap zone.
+                -- Explicitly configured gestures and menu swipes still work.
+                local menu_tap=id=='filemanager_tap' or id=='filemanager_ext_tap'
+                    or id=='readermenu_tap' or id=='readermenu_ext_tap'
                 local allowed=user_first and (is_configured or live_light) or
-                    (not user_first and not is_configured and not live_light and system_menu)
+                    (not user_first and not is_configured and not live_light and system_menu and not menu_tap)
                 if allowed and zone.gs_range and zone.gs_range:match(gesture) and dispatchZone(zone,gesture) then return true end
             end
         end
