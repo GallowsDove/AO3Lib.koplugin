@@ -57,7 +57,7 @@ local keyboard={modal=true};UI:show(keyboard);UI:close(keyboard);drain();assert(
 UI:close(dialog);drain();assert(top().widget.toast and top().widget.label=='4/100')
 -- Unknown non-fullscreen popups also cover the indicator, without relying on widget type.
 local popup={};UI:show(popup);assert(top().widget==popup);UI:close(popup);drain();assert(top().widget.toast)
-paused=true;callback();assert(top().widget.label=='4/100')
+paused=true;callback();assert(top().widget.label=='Paused 4/100')
 values.update_progress_overlay=false;O.refresh();assert(#stack==1)
 values.update_progress_overlay=true;O.refresh();assert(top().widget.toast)
 done=nil;callback();assert(#stack==1,'Completed or stopped checks must remove the indicator')

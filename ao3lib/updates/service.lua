@@ -81,6 +81,7 @@ local function persistResumeState()
     end
     if #queue>0 then session.pause_reason="Update checks were interrupted and are ready to resume." end
     session.retry_at=state.retry_at
+    session.operation=state.operation or 'check'
     explicit_stop=state.explicit_stop or false
     session.done=state.done or 0;session.total=state.total or 0
     notification_sent=#queue==0
@@ -120,6 +121,10 @@ local function startNext()
     end
     local Network=require("ui/network/manager")
     if Network.runWhenConnected and not connected() then return end
+    -- A restored or reconnected queue can still carry its previous pause
+    -- message. Once a request starts it is no longer paused.
+    session.pause_reason=nil
+    session.retry_at=nil
     running=true;session.busy=true
     local token=generation
     local entry=table.remove(queue,1)
@@ -243,9 +248,9 @@ function M.pending() return queue end
 function M.get() return session end
 function M.busy() return running end
 function M.overlayState()
-    if suspended or session.operation~='check' then return end
-    if not explicit_stop and #queue>0 and session.pause_reason
-            and session.pause_reason:find('disconnected',1,true) then
+    if suspended or explicit_stop or session.operation~='check' then return end
+    if running and active_entry then return session.done or 0,session.total or 0,false end
+    if session.pause_reason and (#queue>0 or session.retry_at) then
         return session.done or 0,session.total or 0,true
     end
     if session.busy then return session.done or 0,session.total or 0,false end

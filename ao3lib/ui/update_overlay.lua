@@ -11,6 +11,7 @@ local Progress=require('ui/widget/progresswidget')
 local Font=require('ui/font')
 local Geom=require('ui/geometry')
 local Blitbuffer=require('ffi/blitbuffer')
+local _=require('gettext')
 local M={}
 local service,widget,signature,rect,scheduled
 local installed=false
@@ -57,12 +58,12 @@ local function remove()
 end
 function M.refresh()
     if not service then return end
-    local done,total=service.overlayState()
+    local done,total,paused=service.overlayState()
     if not Config:readSetting('update_progress_overlay',true) or done==nil or covered() then remove();return end
     local corner=Config:readSetting('update_progress_corner','top_right')
     if corner~='top_left' then corner='top_right' end
     done=math.max(0,tonumber(done) or 0);total=math.max(0,tonumber(total) or 0)
-    local text=string.format('%d/%d',done,total)
+    local text=(paused and (_('Paused')..' ') or '')..string.format('%d/%d',done,total)
     local key=corner..'|'..text..'|'..done..'|'..total..'|'..Screen:getWidth()..'|'..Screen:getHeight()
     if widget and key==signature then return end
     remove()

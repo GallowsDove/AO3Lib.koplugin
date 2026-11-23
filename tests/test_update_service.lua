@@ -85,7 +85,10 @@ S.resume();assert(check_count==before and not S.busy() and #S.pending()==2)
 -- a later NetworkConnected event resumes it, without running the old callback twice.
 connected=false;S.check(S.pending());local obsolete=pending_connection;pending_connection=nil
 assert(S.busy() and check_count==before)
-connected=true;S.resume();obsolete();drain()
+connected=true;S.resume();obsolete()
+local _,_,is_paused=S.overlayState()
+assert(not is_paused and not session.pause_reason,'Wi-Fi continuation must show active progress when checking starts')
+drain()
 assert(check_count==before+2 and not S.busy())
 -- Adding a one-work check while a library check runs extends the same queue.
 local d=fixture('d')
