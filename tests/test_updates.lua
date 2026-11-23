@@ -261,7 +261,7 @@ local function tap(text) menu:onMenuSelect(find(text)) end
 start_checks=checks; old_downloads=downloads
 assert(find('Update selected (0)').enabled==false)
 tap('Check for updates')
-assert(pending_connection and checks==start_checks and #jobs==0)
+assert(pending_connection and checks==start_checks, 'Wi-Fi prompt must preserve the check')
 connected=true
 local reconnect=pending_connection; pending_connection=nil; reconnect()
 nextJob()
@@ -284,10 +284,14 @@ connected=false
 tap('Recheck all')
 assert(pending_connection)
 menu:onCloseWidget()
-connected=true; reconnect=pending_connection; pending_connection=nil; reconnect(); drain()
+connected=true; reconnect=pending_connection; pending_connection=nil; reconnect()
+nextJob()
+local shared=require('ao3lib.updates.service').get()
+assert(shared.busy and shared.done==1,'Check must continue after closing the review')
+local reopened,reopened_menu=Review.show({ui={}})
+assert(reopened==shared and reopened.busy,'Reopening must attach to the running check')
+drain();menu=reopened_menu
 assert(checks==start_checks+4, 'Closing a review must leave background checks running')
-Review.show({ui={}})
-menu=shown[#shown]
 assert(find('2 of 2 checked') and find('Work ui1'))
 tap('Recheck all'); drain()
 assert(checks==start_checks+6 and find('Work ui1'))

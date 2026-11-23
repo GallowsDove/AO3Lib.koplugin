@@ -61,6 +61,7 @@ host.gestures.gestures.filemanager_tap=true
 assert(screen:handleEvent{handler='onGesture',args={{id='filemanager_tap',ges='tap'}}})
 assert(matches[#matches]=='menu tap','Explicitly configured gestures stay available')
 screen:handleEvent{handler='onCloseWidget'};assert(#host_calls==2)
+local overlay=window();overlay.toast=true;UI:show(overlay)
 local dialog=window();dialog.buttons={};UI:show(dialog)
 assert(dialog._ao3_gesture_owner==owner)
 assert(dialog:handleEvent{handler='onGesture',args={{id='corner',ges='tap'}}})

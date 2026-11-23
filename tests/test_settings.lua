@@ -30,6 +30,8 @@ assert(shown.value==9 and shown.value_min==1 and shown.value_max==120 and shown.
 local spin=shown
 spin.callback{value=15}
 assert(values.update_check_delay_seconds==15 and find('Delay between checks').mandatory=='15 s')
+assert(find('Show check progress overlay').mandatory=='On')
+assert(find('Progress overlay position').mandatory=='Top right')
 assert(show_count==1,'Saving an option must not show a success popup')
 local before=saves
 spin.callback{value=0};assert(saves==before)

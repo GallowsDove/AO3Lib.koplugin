@@ -59,6 +59,11 @@ function M.show(owner,checkFilenameTemplate)
         {title=_('Update checks'),options={
             {text=_('Delay between checks'),key=Pacing.key,type='Number',min=Pacing.min,max=Pacing.max,default=Pacing.default,
                 unit=_('s'),title=_('Delay between checks (seconds)'),value=function() return Pacing.delay('check') end},
+            {text=_('Show check progress overlay'),key='update_progress_overlay',type='Bool',default=true,
+                changed=function() local overlay=package.loaded['ao3lib.ui.update_overlay'];if overlay then overlay.refresh() end end},
+            {text=_('Progress overlay position'),key='update_progress_corner',type='Choice',default='top_right',
+                choices={{'top_left',_('Top left')},{'top_right',_('Top right')}},
+                changed=function() local overlay=package.loaded['ao3lib.ui.update_overlay'];if overlay then overlay.refresh() end end},
         }},
         {title=_('Advanced'),options={
             {text=_('AO3 URL'),key='AO3_domain',type='String',default='https://archiveofourown.org'},

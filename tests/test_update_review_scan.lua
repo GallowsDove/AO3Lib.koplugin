@@ -24,9 +24,9 @@ Client.getWorkMetadata=function(...) checks=checks+1;return original(...) end
 local session,menu=Review.show({ui={}})
 assert(menu.title=='Downloaded work updates' and not scan and worker,
     'Review must open without starting directory discovery')
-assert(#session.entries==0)
+assert(menu.review_model.total==0)
 worker.done({cache=work1})
-assert(#session.entries==1 and menu.review_model.summary:find('0 of 1 checked',1,true),
+assert(menu.review_model.total==1 and menu.review_model.summary:find('0 of 1 checked',1,true),
     'Cached works must become available during discovery')
 local check_row
 for _,row in ipairs(menu.review_model.buttons[1]) do if row.text=='Check for updates' then check_row=row end end

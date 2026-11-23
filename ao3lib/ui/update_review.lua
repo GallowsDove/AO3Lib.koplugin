@@ -50,7 +50,8 @@ end
 local function openReview(fanfic, works, check_now, focused_work, on_close, native_only, requested_scope)
     local prior=previous
     if native_only then prior=previous_native end
-    local session=Updates.new(works,prior)
+    local service=not native_only and require('ao3lib.updates.service') or nil
+    local session=service and service.add(works) or Updates.new(works,prior)
     session.native_only=native_only
     if native_only then previous_native=session else previous=session end
     local prior_entries={}
@@ -63,17 +64,26 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
         return Scope.matches(work,selected_scope)
     end
     local scope_revision=0
-    local scope={}
-    for __,entry in ipairs(session.entries) do if matches(entry.work) then scope[entry]=true end end
+    local scope,known={},{}
+    local supplied={}
+    for __,work in pairs(works or {}) do
+        if work.id and work.path then supplied[tostring(work.id).."\n"..work.path]=true end
+    end
+    for __,entry in ipairs(session.entries) do
+        if supplied[tostring(entry.work.id).."\n"..entry.work.path] then
+            known[entry]=true
+            if matches(entry.work) then scope[entry]=true end
+        end
+    end
     local function scopeEntries()
         local entries={};for __,entry in ipairs(session.entries) do if scope[entry] then entries[#entries+1]=entry end end
         return entries
     end
-    local menu, refresh, release_awake, header
+    local menu, refresh, release_awake, header, unsubscribe
     local filter="updates"
     local screen_closed=false
     local loading=false
-    local function run(operation, targets)
+    local function run(operation, targets, retry)
         if #targets==0 or screen_closed then return end
         local revision=scope_revision
         Network.run(function()
@@ -81,7 +91,10 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
             local scoped={}
             for __,entry in ipairs(targets) do if scope[entry] then scoped[#scoped+1]=entry end end
             if #scoped==0 then return end
-            local started, err=session:run(operation, scoped, refresh)
+            local started, err
+            if service and operation=='check' then
+                if retry then started,err=service.retry(scoped) else started,err=service.check(scoped) end
+            else started,err=session:run(operation, scoped, refresh) end
             if not started and err then UI:show(InfoMessage:new{text=err}) end
         end)
     end
@@ -98,7 +111,7 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
         end
         if retryable(entry) then
             buttons[#buttons+1]={text=_("Retry check"),enabled=not session.busy,
-                callback=function() UI:close(viewer);run("check",{entry}) end}
+                callback=function() UI:close(viewer);run("check",{entry},true) end}
         end
         viewer=TextViewer:new{title=_("Work update details"),text=describe(entry),buttons_table=#buttons>0 and {buttons} or nil}
         UI:show(require("ao3lib.ui.navigation").bind(fanfic,viewer))
@@ -123,7 +136,7 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
             selected_scope=value
             scope_revision=scope_revision+1
             for __,entry in ipairs(session.entries) do
-                scope[entry]=matches(entry.work) and true or nil
+                scope[entry]=known[entry] and matches(entry.work) and true or nil
                 entry.selected=false
             end
             menu.page=1;refresh()
@@ -131,8 +144,9 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
         local function chooseGroup(kind)
             UI:close(chooser)
             local picker
-            local rows={}
-            for __,group in ipairs(Scope.groups(session.entries,kind,selected_scope.incomplete_only)) do
+            local rows,entries={},{}
+            for _,entry in ipairs(session.entries) do if known[entry] then entries[#entries+1]=entry end end
+            for __,group in ipairs(Scope.groups(entries,kind,selected_scope.incomplete_only)) do
                 local value=group.name
                 rows[#rows+1]={text=string.format("%s (%d)",value,group.count),callback=function()
                     UI:close(picker);select({kind=kind,value=value})
@@ -175,20 +189,30 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
         model.scope_label=focused_work and (focused_work.title or _("This work")) or Scope.label(selected_scope)
         if not focused_work and selected_scope.kind~="selection" then model.scope={text=_("Scope: ")..model.scope_label,enabled=not session.busy,callback=chooseScope} end
         local check_targets=#pending>0 and pending or all_checks
+        if service and not session.busy and #service.pending()>0 then
+            local queued={}
+            for _,entry in ipairs(service.pending()) do if scope[entry] then queued[#queued+1]=entry end end
+            if #queued>0 then check_targets=queued end
+        end
         if session.busy then
             model.notice=string.format(_("%s %d of %d"),session.operation=="check" and _("Checking") or _("Downloading"),math.min((session.done or 0)+1,session.total),session.total)
         elseif loading then model.notice=_("Loading downloaded works…")
         elseif session.pause_reason then model.notice=_("Paused: ")..session.pause_reason end
         local primary={text=session.busy and (session.operation=="check" and _("Stop checking") or _("Stop downloads"))
-                or (#pending>0 and checked>0 and _("Continue checking") or (native_only and _("Check native availability") or _("Check for updates"))),
+                or ((service and #service.pending()>0 or #pending>0 and checked>0) and _("Continue checking") or (native_only and _("Check native availability") or _("Check for updates"))),
             enabled=session.busy or #check_targets>0,
-            callback=function() if session.busy then session:stop();refresh() else run("check",check_targets) end end}
+            callback=function()
+                if session.busy then
+                    if service and session.operation=='check' then service.stop() else session:stop() end
+                    refresh()
+                else run("check",check_targets) end
+            end}
         local apply={text=string.format(native_only and _("Replace selected (%d)") or _("Update selected (%d)"),selected),
             enabled=selected>0 and not session.busy,callback=function() run("update",selections) end}
         model.buttons={{primary,apply,{text=_("More…"),enabled=not session.busy,callback=function() moreActions(model) end}}}
         local function addMore(text,enabled,callback) model.more[#model.more+1]={text=text,enabled=enabled,callback=callback} end
         if #all_checks>0 then addMore(_("Recheck all"),true,function() run("check",all_checks) end) end
-        if #retries>0 then addMore(string.format(_("Retry failed checks (%d)"),#retries),true,function() run("check",retries) end) end
+        if #retries>0 then addMore(string.format(_("Retry failed checks (%d)"),#retries),true,function() run("check",retries,true) end) end
         if selected>0 then addMore(_("Clear selection"),true,function()
             for __,entry in ipairs(scopeEntries()) do entry.selected=false end;refresh()
         end) end
@@ -233,7 +257,7 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
                 rows[#rows+1]={text=prefix..(entry.work.title or tostring(entry.work.id)).."\n"..(entry.work.author or "").."\n"..status,
                     mandatory=retryable(entry) and _("Retry") or nil,entry=entry,
                     callback=function() details(entry) end,toggle_callback=function() toggle(entry) end,
-                    retry_callback=retryable(entry) and function() run("check",{entry}) end or nil,
+                    retry_callback=retryable(entry) and function() run("check",{entry},true) end or nil,
                     hold_callback=function() details(entry) end}
             end
         end
@@ -251,6 +275,7 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
     local function close()
         if screen_closed then return end
         screen_closed=true
+        if unsubscribe then unsubscribe();unsubscribe=nil end
         if release_awake then release_awake();release_awake=nil end
         if session.busy and session.operation=="update" then session:stop() end
         if native_only then session.closed=true;session:stop() end
@@ -279,6 +304,7 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
         if original_close then return original_close(self,...) end
     end
     require("ao3lib.ui.navigation").bind(fanfic, menu)
+    if service then unsubscribe=service.subscribe(function() refresh() end) end
     refresh()
     UI:show(menu)
     release_awake=require("ao3lib.ui.awake").acquire()
@@ -302,11 +328,11 @@ local function openReview(fanfic, works, check_now, focused_work, on_close, nati
                         or {work=work,status="unchecked",selected=false}
                     session.entries[#session.entries+1]=entry;byid[key]=entry
                 elseif entry.status=="unchecked" then entry.work=work end
-                scope[entry]=matches(work) and true or nil;seen[entry]=true
+                known[entry]=true;scope[entry]=matches(work) and true or nil;seen[entry]=true
             end
         end
         if authoritative then
-            for entry in pairs(scope) do if not seen[entry] then scope[entry]=nil end end
+            for entry in pairs(known) do if not seen[entry] then known[entry]=nil;scope[entry]=nil end end
         end
         table.sort(session.entries,function(a,b)
             if (a.work.title or "")~=(b.work.title or "") then return (a.work.title or "")<(b.work.title or "") end
@@ -325,7 +351,8 @@ function M.showWorks(fanfic, works, label)
         local key=tostring(work.id).."\n"..tostring(work.path)
         keys[key]=true;seen[key]=true;all[#all+1]=work
     end
-    for __,entry in ipairs(previous and previous.entries or {}) do
+    local existing=require('ao3lib.updates.service').get()
+    for __,entry in ipairs(existing and existing.entries or {}) do
         local key=tostring(entry.work.id).."\n"..tostring(entry.work.path)
         if not seen[key] then all[#all+1]=entry.work end
     end
@@ -334,7 +361,8 @@ end
 
 function M.showWork(fanfic, work)
     local works={}
-    for __,entry in ipairs(previous and previous.entries or {}) do works[#works+1]=entry.work end
+    local existing=require('ao3lib.updates.service').get()
+    for __,entry in ipairs(existing and existing.entries or {}) do works[#works+1]=entry.work end
     local found=false
     for __,item in ipairs(works) do if tostring(item.id)==tostring(work.id) and item.path==work.path then found=true end end
     if not found then works[#works+1]=work end

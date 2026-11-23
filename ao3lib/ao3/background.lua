@@ -131,7 +131,7 @@ function M.await(task,options)
     local UI=require('ui/uimanager')
     local anchor=not detached and UI.getTopmostVisibleWidget and UI:getTopmostVisibleWidget()
     local depth=1
-    while anchor and (anchor._ao3_background_info or anchor.timeout) do
+    while anchor and (anchor.toast or anchor._ao3_background_info or anchor.timeout) do
         depth=depth+1
         anchor=UI.getNthTopWidget and UI:getNthTopWidget(depth)
     end

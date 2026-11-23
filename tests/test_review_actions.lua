@@ -10,7 +10,7 @@ package.loaded['ao3lib.library.local_cache']={get=function() return {
 local session,menu=require('ao3lib.ui.update_review').show({ui={}})
 local changed,failed,current
 for _,e in ipairs(session.entries) do
-    if e.work.id=='changes' then changed=e elseif e.work.id=='failure' then failed=e else current=e end
+    if e.work.id=='changes' then changed=e elseif e.work.id=='failure' then failed=e elseif e.work.id=='same' then current=e end
 end
 changed.status='update';changed.remote={chapters='1/1'};changed.local_work={chapters='1/1'};changed.changes={'Words: 100 → 200'}
 failed.status='error';failed.error='Connection failed'
@@ -36,9 +36,16 @@ filter(2)
 assert(#menu.item_table==1 and menu.item_table[1].entry==failed and menu.item_table[1].mandatory=='Retry')
 assert(not menu.review_model.select_all)
 local retried=0
-session.run=function(_,operation,targets) assert(operation=='check' and targets[1]==failed);retried=retried+1;return true end
+require('ao3lib.updates.service').retry=function(targets)
+    assert(#targets==1 and targets[1]==failed);retried=retried+1;return true
+end
 menu:onMenuSelect(menu.item_table[1],{x=0.95})
 assert(retried==1)
+menu.review_model.buttons[1][3].callback()
+for _,row in ipairs(shown.buttons) do
+    if row[1].text:find('Retry failed checks',1,true) then row[1].callback();break end
+end
+assert(retried==2,'Retry failed must use the isolated retry operation')
 filter(3)
 assert(#menu.item_table==3)
 changed.local_work.chapters='7/10';changed.remote.chapters='8/10'

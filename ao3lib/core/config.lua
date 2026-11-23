@@ -40,6 +40,8 @@ local function createConfig()
         download_layout_template = "%A/%T",
         html_download_fallback = false,
         update_check_delay_seconds = 4,
+        update_progress_overlay = true,
+        update_progress_corner = 'top_right',
         fanfic_folder_path = Paths.getHomeDirectory() .. "/Downloads",
         show_current_chapter = true
     }

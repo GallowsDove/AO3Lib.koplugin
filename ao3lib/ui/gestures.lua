@@ -126,6 +126,12 @@ function M.installDialogs()
         if active==0 and suspended==0 and window and not window.toast
                 and (window.buttons or window.ok_callback or window._input_widget or window.value_min) then
             local top=self.getTopmostVisibleWidget and self:getTopmostVisibleWidget()
+            if top and top.toast and self._window_stack then
+                for i=#self._window_stack,1,-1 do
+                    local candidate=self._window_stack[i].widget
+                    if candidate and not candidate.toast and not candidate.invisible then top=candidate;break end
+                end
+            end
             local owner=top and top._ao3_gesture_owner
             local host=hostFor(owner)
             if owner and host and window~=host and window~=host.menu then M.attach(owner,window) end

@@ -22,6 +22,11 @@ local Review=require('ao3lib.ui.update_review')
 local session,menu=Review.show({ui={}},{kind='author',value='Writer'})
 assert(menu.review_model.total==2 and menu.review_model.scope_label=='Author: Writer')
 local calls={}
+require('ao3lib.updates.service').check=function(targets)
+    local ids={};for _,entry in ipairs(targets) do ids[#ids+1]=entry.work.id end
+    calls[#calls+1]={operation='check',ids=table.concat(ids,',')}
+    return true
+end
 session.run=function(_,operation,targets,refresh)
     local ids={};for _,entry in ipairs(targets) do ids[#ids+1]=entry.work.id end
     calls[#calls+1]={operation=operation,ids=table.concat(ids,',')}
@@ -115,8 +120,7 @@ assert(subset_menu.library_model==nil and subset_menu.review_model.total==2)
 assert(subset_menu.review_model.scope==nil and subset_menu.review_model.scope_label=='Writer · Unread')
 assert(subset_menu.title=='Updates: Writer · Unread')
 local subset_ids
-subset.run=function(_,operation,targets)
-    assert(operation=='check')
+require('ao3lib.updates.service').check=function(targets)
     local ids={};for _,entry in ipairs(targets) do ids[#ids+1]=entry.work.id end
     subset_ids=table.concat(ids,',');return true
 end

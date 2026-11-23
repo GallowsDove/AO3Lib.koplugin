@@ -99,3 +99,41 @@ S.flush();jobs={};fs[a.path].size=101;package.loaded["ao3lib.updates.service"]=n
 S=require('ao3lib.updates.service');session=S.get()
 assert(session.entries[1].status=='unchecked' and not session.entries[1].remote)
 print('PASS: detached queue; one completion notice; durable results/remaining rechecks; restart without downloads; suspend/resume; offline pause/reconnect; explicit Stop; canceled Wi-Fi prompts; shared batch queue; EPUB invalidation')
+-- Retrying a subset must not consume or restart a stopped library queue.
+fail_id='a';S.check(session.entries);tick();S.stop();drain()
+local stopped_done,stopped_total=session.done,session.total
+local function ids(entries)
+    local values={};for _,entry in ipairs(entries) do values[#values+1]=entry.work.id end
+    return table.concat(values,',')
+end
+local original_queue=ids(S.pending())
+local entry_a,entry_b,entry_c
+for _,entry in ipairs(session.entries) do
+    if entry.work.id=='a' then entry_a=entry elseif entry.work.id=='b' then entry_b=entry elseif entry.work.id=='c' then entry_c=entry end
+end
+assert(entry_a.status=='unavailable' and original_queue~='')
+fail_id=nil;local retry_start=check_count
+assert(S.retry({entry_a}));drain()
+assert(check_count==retry_start+1 and entry_a.status=='update')
+assert(ids(S.pending())==original_queue and session.done==stopped_done and session.total==stopped_total)
+S.resume();drain();assert(check_count==retry_start+1,'A retry must leave the original batch paused')
+-- Failed works can also be members of the paused batch. Retry them without
+-- changing that batch's order or progress, even across a KOReader restart.
+entry_b.status='error';entry_c.status='error'
+retry_start=check_count
+assert(S.retry({entry_b,entry_c}));S.flush()
+assert(persisted.parked and #persisted.parked.pending>0 and #persisted.pending==2)
+jobs={};package.loaded['ao3lib.updates.service']=nil
+S=require('ao3lib.updates.service');session=S.get()
+assert(S.check(S.pending()));drain()
+assert(check_count==retry_start+2 and ids(S.pending())==original_queue)
+assert(session.done==stopped_done and session.total==stopped_total)
+retry_start=check_count;S.resume();drain();assert(check_count==retry_start)
+assert(S.check(S.pending()));drain()
+assert(check_count==retry_start+3 and #S.pending()==0,'Continue must resume only the original batch')
+-- Retry-After applies to retry controls as well as the main check button.
+persisted.retry_at=os.time()+60;persisted.pause_reason='Rate limited';persisted.pending={}
+package.loaded['ao3lib.updates.service']=nil
+S=require('ao3lib.updates.service');local ok,why=S.retry({S.get().entries[1]})
+assert(not ok and why:find('seconds',1,true),'Retry must explain the remaining wait')
+print('PASS: single and multiple retries isolate the paused queue, preserve progress through restart, and honor Retry-After')
