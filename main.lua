@@ -85,7 +85,7 @@ function Fanfic:registerWorkDetailsAction()
                 -- Building a Bookshelf menu is read-only. Register the local
                 -- work only after the user actually chooses to open it.
                 local work=DownloadedFanfics.rememberLocal(epub)
-                self:onShowFanficBrowser({work,total=1},nil,_("AO3 work details"))
+                self:onShowFanficBrowser({work,total=1},nil,_("AO3 work details"),{summary_html=true})
             end,
         }}
     end

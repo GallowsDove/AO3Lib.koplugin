@@ -25,6 +25,10 @@ assert(found['Fandom:Fandom'] and found['Freeform:First tag'] and found['Rating:
     and found['Category:M/M'] and found['Warning:No Archive Warnings Apply'])
 local local_work={id='local',title='Local work',tags={'Fluff, with a comma, Comfort'},
     tag_names={'Fluff, with a comma','Comfort'}}
+local_work.summary='<p>First &amp; second</p><p>Another paragraph</p>'
+local local_html=WorkView.html(local_work,{{'Local work'}},{summary_html=true})
+assert(local_html:find('<p>First &amp; second</p><p>Another paragraph</p>',1,true),
+    'EPUB summary markup must be converted to paragraphs without showing tags')
 local local_actions={}
 local _,local_links=WorkView.html(local_work,{{'Local work'}}, {tag_action=function(kind,name)
     local_actions[#local_actions+1]={kind=kind,name=name}

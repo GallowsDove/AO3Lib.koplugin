@@ -41,8 +41,8 @@ assert(not FileManager.file_dialog_added_buttons[1](work.path,false))
 FileManager.instance=setmetatable({file_dialog_added_buttons={index={}}},{__index=FileManager})
 local current=Fanfic:extend{ui=FileManager.instance}
 local opened
-current.onShowFanficBrowser=function(_,works,fetch,title)
-    opened={works=works,title=title};assert(fetch==nil)
+current.onShowFanficBrowser=function(_,works,fetch,title,options)
+    opened={works=works,title=title,options=options};assert(fetch==nil)
 end
 current:registerWorkDetailsAction();current:registerWorkDetailsAction()
 assert(#FileManager.file_dialog_added_buttons==1 and #FileManager.instance.file_dialog_added_buttons==1)
@@ -50,5 +50,6 @@ rows=assert(collector({},work.path))
 History.rememberLocal=function(epub) remembered=remembered+1;return epub end
 rows[1][1].callback()
 assert(remembered==1 and opened.works[1].id==work.id and opened.title=='AO3 work details')
+assert(opened.options.summary_html, 'Bookshelf work details must identify EPUB summaries as HTML')
 assert(#FileManager.file_dialog_added_buttons==1,'The action identity must stay stable for Bookshelf action layouts')
 print('PASS: actual Bookshelf action collection; reader-first startup; class/instance registries; stable ID; read-only menu building; current-owner callback; ordinary/corrupt books excluded')
