@@ -13,6 +13,9 @@ function Class:getHeight() return self:getSize().h end
 for _,name in ipairs({'ui/geometry','ui/widget/container/framecontainer','ui/widget/verticalgroup',
     'ui/widget/container/centercontainer','ui/widget/titlebar','ui/widget/focusmanager',
     'ui/widget/button','ui/widget/horizontalgroup'}) do package.loaded[name]=Class end
+package.loaded['ui/widget/horizontalspan']={new=function(_,fields) return fields end}
+package.loaded['ui/gesturerange']=Class
+package.loaded['ui/bidi']={flipDirectionIfMirroredUILayout=function(direction) return direction end,mirroredUILayout=function() return false end}
 local can_scroll_down,can_scroll_up=false,false
 package.loaded['ui/widget/scrollhtmlwidget']={new=function(_,fields)
     assert(fields.width>0 and fields.height>0)
@@ -42,7 +45,7 @@ Client.getComments=function(_,work_id,chapter,page,thread)
         {id='60',heading='Reply author',text='Reply in the same conversation',can_reply=true,depth=1},
         {id='57',heading='Deleted comment',text='(Deleted)',can_reply=false,depth=0}}
         or {{id='80',heading='Another reader',text='Second AO3 batch',can_reply=true}}
-    return {success=true,comments=comments,next_page=page==1 and 2 or nil}
+    return {success=true,comments=comments,next_page=page==1 and 2 or nil,total_pages=2}
 end
 Client.commentOnWork=function(_,content,id,chapter,parent)
     posts[#posts+1]={text=content,id=id,chapter=chapter,parent=parent}
@@ -51,11 +54,19 @@ end
 local profile
 local owner={menu_stack={},showUserInfo=function(_,user,pseud) profile={user,pseud} end}
 local state=Comments.show(owner,work)
+assert(state.window:onConsumeReaderTouch())
+local blocked=state.window.ges_events.ConsumeReaderTouch
+assert(blocked[1].ges=='tap' and blocked[2].ges=='hold' and blocked[3].ges=='hold_release')
+assert(state.window.ges_events.SwipeReader[1].ges=='swipe')
+assert(state.window:onSwipeReader(nil,{direction='west'}) and state.index==2)
+assert(state.window:onSwipeReader(nil,{direction='east'}) and state.index==1)
+assert(not state.window:onSwipeReader(nil,{direction='north'}))
+assert(state.window.page_buttons[1].icon=='chevron.first' and state.window.page_buttons[5].icon=='chevron.last')
 assert(#requests==1 and state:current().id=='56')
 assert(state.window.scroll.html_body:find('Very long comment',1,true))
 assert(not state.window.scroll.html_body:find('(Deleted)',1,true),'Only one thread may render at a time')
 assert(state.window.scroll.html_body:find('&lt;script&gt;',1,true) and not state.window.scroll.html_body:find('<script>',1,true))
-assert(state.window.page_buttons[2].text=='Thread 1/2 · Page 1')
+assert(state.window.page_buttons[3].text=='Thread 1/2 · Page 1')
 assert(state.window.scroll.html_body:find('Reply in the same conversation',1,true))
 assert(state.window.scroll.html_body:find('21 Nov 2026 · 21:22 UTC',1,true))
 state.window.scroll.html_link_tapped_callback{uri='ao3-comment:1'}
@@ -69,9 +80,9 @@ assert(not state.window.scroll.key_events.ScrollDown and state.window.key_events
 can_scroll_down=true;state.window:onNextComment();assert(state.index==1)
 can_scroll_down=false;state.window:onNextComment();assert(state.index==2 and #requests==fetched)
 assert(state.window.scroll.html_body:find('(Deleted)',1,true) and not state.window.action_buttons[2].enabled)
-state.window.page_buttons[3].callback();assert(state.page==2 and state.index==1 and #requests==fetched+1)
+state.window.page_buttons[4].callback();assert(state.page==2 and state.index==1 and #requests==fetched+1)
 assert(state.window.scroll.html_body:find('Second AO3 batch',1,true))
-state.window.page_buttons[1].callback();assert(state.page==1 and state.index==2 and #requests==fetched+1)
+state.window.page_buttons[2].callback();assert(state.page==1 and state.index==2 and #requests==fetched+1)
 state:next();assert(state.page==2 and #requests==fetched+1,'Revisiting a fetched batch must use its cache')
 state:previous();state:previous();assert(state:current().id=='56')
 -- Reply directly from the reading page, retaining text on failure.
@@ -133,6 +144,8 @@ shown.buttons[2][1].callback();composer=shown
 assert(composer.input=='Pick a chapter' and composer.description:find('First chapter',1,true))
 composer.buttons[1][1].callback()
 -- Once Back closes the reader, late navigation cannot fetch or display data.
+state.window.page_buttons[3].hold_input.callback('2');assert(state.page==2)
+state.window.page_buttons[1].callback();assert(state.page==1)
 state.window:onCloseWithKey()
 local before=#requests;state:next();state:refresh();assert(#requests==before and state.closed)
 print('PASS: rendered comment threads; long text; narrow widths; lazy batches/cache; hardware scrolling; threads/Back; chapter scope; failures; composer drafts and cancellation')

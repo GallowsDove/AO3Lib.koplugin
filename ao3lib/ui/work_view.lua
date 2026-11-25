@@ -102,7 +102,7 @@ function M.html(work,rows,options)
         cells[i]=symbols[i] and '<img src="'..Badges.relativePath(symbols[i])..'"/>' or '&#160;'
     end
     local badge='<table class="badges"><tr><td>'..cells[1]..'</td><td>'..cells[2]..'</td></tr><tr><td>'..cells[3]..'</td><td>'..cells[4]..'</td></tr></table>'
-    local out={'<table class="heading" width="100%"><tr><td class="square" width="1%">'..badge..'</td><td class="heading-text" width="99%"><h1>'..link(rows[1][1],rows[1].callback,rows[1].hold_callback)..'</h1>',
+    local out={'<table class="heading"><tr><td class="square">'..badge..'</td><td class="heading-text"><h1>'..link(rows[1][1],rows[1].callback,rows[1].hold_callback)..'</h1>',
         '<p class="author">'..escape(_('by'))..' '..link(author and author[2] or work.author or _('Anonymous'),author and author.callback,author and author.hold_callback)..'</p>'}
     local fandoms=tagList(work.fandoms,'Fandom',true)
     if fandoms~='' then out[#out+1]='<p class="fandom">'..fandoms..'</p>' end
@@ -176,7 +176,11 @@ function M.html(work,rows,options)
     for __,field in ipairs({{'hits',_('Hits')},{'kudos',_('Kudos')},{'bookmarks',_('Bookmarks')},{'comments',_('Comments')}}) do
         local value=work[field[1]]
         if value~=nil and tostring(value)~='' then
-            stats[#stats+1]='<b>'..escape(require('ao3lib.core.format').integer(value))..'</b> '..escape(field[2])
+            local label=require('ao3lib.core.format').integer(value)..' '..field[2]
+            local callback=options and options.stat_action and (field[1]=='comments' or field[1]=='bookmarks')
+                and work.id and function() options.stat_action(field[1],work) end
+            stats[#stats+1]=callback and '<b>'..link(label,callback)..'</b>'
+                or '<b>'..escape(require('ao3lib.core.format').integer(value))..'</b> '..escape(field[2])
         end
     end
     local date=work.date or work.updated or work.published
@@ -187,18 +191,28 @@ function M.html(work,rows,options)
     return table.concat(out,'\n'),actions,holds
 end
 
-function M.seriesRows(info)
+local function seriesStatus(value)
+    if value==nil or value=='' then return nil end
+    local normalized=tostring(value):lower():match('^%s*(.-)%s*$')
+    if normalized=='yes' then return _('Complete') end
+    if normalized=='no' then return _('In progress') end
+    return tostring(value)
+end
+function M.seriesRows(info,open_bookmarks)
     local rows={{info.title or _('Series'),''}}
     if type(info.fandoms)=='table' and #info.fandoms>0 then rows[#rows+1]={_('Fandoms:'),table.concat(info.fandoms,', ')} end
     for _,field in ipairs({{'author',_('Author:')},{'begun',_('Begun:')},{'updated',_('Updated:')},
             {'summary',_('Summary:')},{'notes',_('Notes:')},{'work_count',_('Works:')},
-            {'words',_('Words:')},{'complete',_('Complete:')}}) do
+            {'words',_('Words:')}}) do
         local value=info[field[1]]
         if value and tostring(value)~='' then rows[#rows+1]={field[2],tostring(value)} end
     end
+    if info.id and open_bookmarks then rows[#rows+1]={_('Bookmarks:'),tostring(info.bookmarks or ''),callback=open_bookmarks} end
+    local status=seriesStatus(info.complete)
+    if status then rows[#rows+1]={_('Status:'),status} end
     return rows
 end
-function M.seriesHTML(info)
+function M.seriesHTML(info,open_bookmarks)
     local out={'<h1>'..escape(info.title or _('Series'))..'</h1>'}
     if info.author and info.author~='' then out[#out+1]='<p class="author">'..escape(_('by'))..' '..escape(info.author)..'</p>' end
     if type(info.fandoms)=='table' and #info.fandoms>0 then
@@ -211,13 +225,20 @@ function M.seriesHTML(info)
     for _,field in ipairs({{'work_count',_('works')},{'words',_('words')}}) do
         if info[field[1]] and tostring(info[field[1]])~='' then stats[#stats+1]='<b>'..escape(info[field[1]])..'</b> '..escape(field[2]) end
     end
-    if info.complete and info.complete~='' then stats[#stats+1]=escape(_('Complete:'))..' '..escape(info.complete) end
+    local actions={}
+    if info.id and open_bookmarks then
+        actions[1]=open_bookmarks
+        local label=info.bookmarks and (tostring(info.bookmarks)..' '.._('Bookmarks')) or _('Bookmarks')
+        stats[#stats+1]='<b><a href="ao3-action:1" style="color:#000000;text-decoration:none">'..escape(label)..'</a></b>'
+    end
+    local status=seriesStatus(info.complete)
+    if status then stats[#stats+1]=escape(status) end
     local dates={}
     if info.begun and info.begun~='' then dates[#dates+1]=escape(_('Begun:'))..' '..escape(info.begun) end
     if info.updated and info.updated~='' then dates[#dates+1]=escape(_('Updated:'))..' '..escape(info.updated) end
     if #stats>0 or #dates>0 then out[#out+1]='<div class="footnote">'..(#stats>0 and '<p>'..table.concat(stats,' &#183; ')..'</p>' or '')
         ..(#dates>0 and '<p>'..table.concat(dates,' &#183; ')..'</p>' or '')..'</div>' end
-    return table.concat(out,'\n'),{}
+    return table.concat(out,'\n'),actions
 end
 
 -- Conservative HTML/CSS supported by KOReader's MuPDF renderer: tables for
@@ -230,10 +251,10 @@ p { margin: .25em 0; }
 h1 { font-size: 1.25em; font-weight: bold; line-height: 1.1; margin: 0 0 .12em; }
 h1, h1 a, h1 a:link, h1 a:visited, h1 a:active { color: #000; }
 .tag-group .tag-heading { font-size: .72em; font-weight: bold; color: #000; }
-table.heading { width: 100%; border-spacing: 0; margin: 0 0 .3em; }
+table.heading { border-spacing: 0; margin: 0 0 .3em; }
 table.heading td { vertical-align: top; padding: 0; }
-table.heading td.square { width: 1%; padding-right: .5em; }
-table.heading td.heading-text { width: 99%; }
+table.heading td.square { width: 4em; padding-right: .5em; }
+table.heading td.heading-text { text-align: left; }
 table.badges { border-spacing: .1em; width: 3.6em; }
 table.badges td { width: 1.7em; height: 1.7em; }
 table.badges img { width: 1.7em; height: 1.7em; }
@@ -325,8 +346,11 @@ function M.new(context)
             return
         end
         if offset==1 and self.index==1 then
-            local rows=M.seriesRows(context.series_info)
-            local html,actions=M.seriesHTML(context.series_info)
+            local open_bookmarks=context.plugin and function()
+                require('ao3lib.ui.work_bookmarks').show(context.plugin,context.series_info,'series')
+            end
+            local rows=M.seriesRows(context.series_info,open_bookmarks)
+            local html,actions=M.seriesHTML(context.series_info,open_bookmarks)
             context.present(self,html,actions,rows,{})
             return
         end
@@ -410,7 +434,6 @@ function M.show(browser,context)
     local TitleBar=require('ui/widget/titlebar')
     local Button=require('ui/widget/button')
     local Horizontal=require('ui/widget/horizontalgroup')
-    local Span=require('ui/widget/horizontalspan')
     local T=require('ffi/util').template
     local Scroll=require('ui/widget/scrollhtmlwidget')
     local View=require('ui/widget/focusmanager'):extend{covers_fullscreen=true,is_always_active=true}
@@ -419,6 +442,12 @@ function M.show(browser,context)
     local state
     if not context.tag_action and context.plugin then
         context.tag_action=function(kind,name) require('ao3lib.ui.tag_actions').show(context.plugin,kind,name) end
+    end
+    if not context.stat_action and context.plugin then
+        context.stat_action=function(kind,work)
+            if kind=='comments' then require('ao3lib.ui.comments').show(context.plugin,work)
+            elseif kind=='bookmarks' then require('ao3lib.ui.work_bookmarks').show(context.plugin,work) end
+        end
     end
     function View:onClose() UI:close(self);return true end
     function View:onCloseWidget()
@@ -470,29 +499,17 @@ function M.show(browser,context)
         -- Match KeyValuePage's borderless first/previous/page/next/last bar.
         -- The full result count includes works not downloaded into the UI
         -- cache yet; a jump fetches only its AO3 result batch.
-        local mirrored=require('ui/bidi').mirroredUILayout()
-        local previous=Button:new{icon=mirrored and 'chevron.right' or 'chevron.left',bordersize=0,
-            show_parent=self,enabled=state.index>1,callback=function() state:previous() end}
-        local following=Button:new{icon=mirrored and 'chevron.left' or 'chevron.right',bordersize=0,
-            show_parent=self,enabled=state.index<state:pageCount() or (context.fetch~=nil and (not state.total or state.index<state.total)),
-            callback=function() state:next() end}
-        local first=Button:new{icon=mirrored and 'chevron.last' or 'chevron.first',bordersize=0,
-            show_parent=self,enabled=state.index>1,callback=function() state:goTo(1) end}
-        local last=Button:new{icon=mirrored and 'chevron.first' or 'chevron.last',bordersize=0,
-            show_parent=self,enabled=state.index<state:pageCount(),callback=function() state:goTo(state:pageCount()) end}
-        local page=Button:new{text=state:pageCount()>0 and T(_('Page %1 of %2'),state.index,state:pageCount()) or _('No items'),
-            bordersize=0,text_font_face='pgfont',text_font_bold=false,enabled=state:pageCount()>1,
-            show_parent=self,call_hold_input_on_tap=true,hold_input={
-                title=_('Enter page number'),input_type='number',
-                hint_func=function() return T('(1 - %1)',state:pageCount()) end,
-                ok_text=_('Go to page'),callback=function(input) state:goTo(tonumber(input)) end,
-            }}
-        self.page_buttons={first,previous,page,following,last}
-        local used=0
-        for __,button in ipairs(self.page_buttons) do used=used+button:getSize().w end
-        local gap=math.max(0,math.min(Screen:scaleBySize(32),math.floor((width-used)/4)))
-        local controls=Horizontal:new{first,Span:new{width=gap},previous,Span:new{width=gap},page,
-            Span:new{width=gap},following,Span:new{width=gap},last}
+        local controls
+        controls,self.page_buttons=require('ao3lib.ui.rendered_pager').new(self,{
+            width=width,total=state:pageCount(),
+            label=state:pageCount()>0 and T(_('Page %1 of %2'),state.index,state:pageCount()) or _('No items'),
+            has_previous=state.index>1,
+            has_next=state.index<state:pageCount() or (context.fetch~=nil and (not state.total or state.index<state.total)),
+            has_last=state.index<state:pageCount(),
+            first=function() state:goTo(1) end,previous=function() state:previous() end,
+            next=function() state:next() end,last=function() state:goTo(state:pageCount()) end,
+            go_to=function(index) state:goTo(index) end,
+        })
         local scroll=Scroll:new{width=width-2*padding,
             height=math.max(1,height-title:getHeight()-options_height-controls:getSize().h-2*padding),
             html_body=self.html,css=M.css,html_resource_directory=require('ao3lib.ui.icons').file:match('^(.*[/\\])'),

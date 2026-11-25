@@ -84,6 +84,12 @@ function M.list(root,decode,page,thread)
         local n=tonumber((attr(link,'href') or ''):match('[?&]page=(%d+)'))
         if n and n>page then next_page=n;break end
     end
-    return {success=true,comments=items,next_page=next_page}
+    local total_pages=page
+    for _,link in ipairs(scope:select('ol.pagination a')) do
+        local n=tonumber((attr(link,'href') or ''):match('[?&]page=(%d+)'))
+        if n and n>total_pages then total_pages=n end
+    end
+    if next_page and total_pages<=page then total_pages=nil end
+    return {success=true,comments=items,next_page=next_page,total_pages=total_pages}
 end
 return M

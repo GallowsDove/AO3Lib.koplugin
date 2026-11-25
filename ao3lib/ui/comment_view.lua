@@ -61,10 +61,12 @@ function M.new(context)
     function state:current() return self.comments[self.index] end
     function state:hasPrevious() return self.index>1 or self.page>1 end
     function state:hasNext() return self.index<#self.comments or self.next_page~=nil end
-    function state:render() if not self.closed then context.present(self,M.html(self:current())) end end
+    function state:render() if not self.closed then context.present(self,(context.html or M.html)(self:current())) end end
     function state:enter(page,chapter,result,index)
         if chapter~=self.chapter then self.cache={} end
-        self.page,self.chapter,self.comments,self.next_page=page,chapter,threads(result.comments),result.next_page
+        self.page,self.chapter,self.comments,self.next_page=page,chapter,
+            context.prepare and context.prepare(result) or threads(result.comments),result.next_page
+        self.total_pages=result.total_pages
         self.cache[page]=result
         self.index=math.max(1,math.min(index or 1,math.max(1,#self.comments)))
         self:render()
@@ -104,6 +106,12 @@ function M.new(context)
             else self:load(page,self.chapter,math.huge) end
         end
     end
+    function state:goToPage(page)
+        if self.closed or self.loading or not page or page%1~=0 or page<1
+                or (self.total_pages and page>self.total_pages) then return end
+        if self.cache[page] then self:enter(page,self.chapter,self.cache[page],1)
+        else self:load(page,self.chapter,1) end
+    end
     function state:refresh() self:load(self.page,self.chapter,self.index,true) end
     return state
 end
@@ -131,6 +139,10 @@ function M.show(owner,context)
         UI:setDirty(nil,'ui')
     end
     function Window:onShow() UI:setDirty(self,'ui');return true end
+    -- Fullscreen readers sit above the work view, which remains active for
+    -- navigation. Consume otherwise unhandled taps and holds so they cannot
+    -- activate the work underneath; child controls receive gestures first.
+    function Window:onConsumeReaderTouch() return true end
     function Window:onNextComment()
         if not self._ao3_closed and not self.scroll:onScrollDown() then state:next() end
         return true
@@ -139,8 +151,26 @@ function M.show(owner,context)
         if not self._ao3_closed and not self.scroll:onScrollUp() then state:previous() end
         return true
     end
+    function Window:onSwipeReader(_,gesture)
+        local direction=require('ui/bidi').flipDirectionIfMirroredUILayout(gesture.direction)
+        if direction=='west' then
+            if not self._ao3_closed then state:next() end
+            return true
+        elseif direction=='east' then
+            if not self._ao3_closed then state:previous() end
+            return true
+        end
+        return false
+    end
     function Window:init()
         self.key_events={Close={{'Back'}}}
+        local GestureRange=require('ui/gesturerange')
+        local screen=Geom:new{x=0,y=0,w=width,h=height}
+        self.ges_events={ConsumeReaderTouch={
+            GestureRange:new{ges='tap',range=screen},
+            GestureRange:new{ges='hold',range=screen},
+            GestureRange:new{ges='hold_release',range=screen},
+        },SwipeReader={GestureRange:new{ges='swipe',range=screen}}}
         if Device:hasKeys() then
             self.key_events.NextComment={{Device.input.group.PgFwd}}
             self.key_events.PreviousComment={{Device.input.group.PgBack}}
@@ -161,36 +191,39 @@ function M.show(owner,context)
             options.bordersize=0;options.show_parent=self
             self.action_buttons[i]=Button:new(options);actions[#actions+1]=self.action_buttons[i]
         end
-        local side=math.max(1,math.floor(content_width*.2))
-        local previous=Button:new{icon='chevron.left',width=side,bordersize=0,enabled=state:hasPrevious(),
-            show_parent=self,callback=function() state:previous() end}
-        local count=Button:new{width=math.max(1,content_width-2*side),bordersize=0,show_parent=self,
-            text=string.format(_("Thread %d/%d · Page %d"),#state.comments>0 and state.index or 0,#state.comments,state.page)}
-        local following=Button:new{icon='chevron.right',width=side,bordersize=0,enabled=state:hasNext(),
-            show_parent=self,callback=function() state:next() end}
-        self.page_buttons={previous,count,following}
-        local pager=Horizontal:new{previous,count,following}
+        local pager
+        pager,self.page_buttons=require('ao3lib.ui.rendered_pager').new(self,{
+            width=width,total=state.total_pages,
+            label=context.page_label and context.page_label(state) or string.format(_("Thread %d/%d · Page %d"),#state.comments>0 and state.index or 0,#state.comments,state.page),
+            has_previous=state:hasPrevious(),has_next=state:hasNext(),
+            has_last=state.total_pages and state.page<state.total_pages or false,
+            first=function() state:goToPage(1) end,previous=function() state:previous() end,
+            next=function() state:next() end,last=function() state:goToPage(state.total_pages) end,
+            go_to=function(page) state:goToPage(page) end,
+        })
+        local action_height=context.hide_actions and 0 or actions:getSize().h
         self.scroll=Scroll:new{width=content_width,
-            height=math.max(1,height-self.titlebar:getHeight()-actions:getSize().h-pager:getSize().h-2*padding),
-            html_body=self.html,css=M.css,default_font_size=Screen:scaleBySize(require('ao3lib.ui.work_view').baseTextSize()),dialog=self,
+            height=math.max(1,height-self.titlebar:getHeight()-action_height-pager:getSize().h-2*padding),
+            html_body=self.html,css=context.css or M.css,default_font_size=Screen:scaleBySize(require('ao3lib.ui.work_view').baseTextSize()),dialog=self,
             html_link_tapped_callback=function(link)
                 local id=tonumber((link.uri or ''):match('^ao3%-comment:(%d+)$'))
                 local action=id and self.links[id]
                 if not action then return end
-                if action.kind=='reply' then context.compose(state,action.comment)
+                if context.link_action then context.link_action(action,state)
+                elseif action.kind=='reply' then context.compose(state,action.comment)
                 elseif action.kind=='author' then context.author(action.comment)
                 elseif action.kind=='thread' then context.thread(action.comment,state) end
             end}
         -- Hardware page turns scroll a long thread before advancing to the
         -- next one. Touch arrows always move directly between threads.
         if self.scroll.key_events then self.scroll.key_events.ScrollDown=nil;self.scroll.key_events.ScrollUp=nil end
-        local content=Vertical:new{self.titlebar,
-            Center:new{dimen=Geom:new{w=width,h=actions:getSize().h},actions},
-            Frame:new{padding=padding,margin=0,bordersize=0,self.scroll},
-            Center:new{dimen=Geom:new{w=width,h=pager:getSize().h},pager}}
+        local content=Vertical:new{self.titlebar}
+        if not context.hide_actions then content[#content+1]=Center:new{dimen=Geom:new{w=width,h=action_height},actions} end
+        content[#content+1]=Frame:new{padding=padding,margin=0,bordersize=0,self.scroll}
+        content[#content+1]=Center:new{dimen=Geom:new{w=width,h=pager:getSize().h},pager}
         self[1]=Frame:new{padding=0,margin=0,bordersize=0,background=require('ffi/blitbuffer').COLOR_WHITE,
             dimen=Geom:new{w=width,h=height},content}
-        self.layout={self.action_buttons,self.page_buttons}
+        self.layout=context.hide_actions and {self.page_buttons} or {self.action_buttons,self.page_buttons}
     end
     context.present=function(controller,html,links)
         local previous=controller.window

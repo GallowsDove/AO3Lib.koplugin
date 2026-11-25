@@ -315,7 +315,16 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             v.bookmarks or "0",
             v.comments or "0"
         )
-        table.insert(kv_pairs, { "     " .. "Stats:", stats, separator = true })
+        table.insert(kv_pairs, { "     " .. "Stats:", stats, separator = true,
+            callback=v.id and function()
+                local dialog
+                dialog=ButtonDialog:new{title=_('Stats'),buttons={
+                    {{text=_('Comments'),callback=function() UIManager:close(dialog);require('ao3lib.ui.comments').show(self.Fanfic,v) end},
+                     {text=_('Bookmarks'),callback=function() UIManager:close(dialog);require('ao3lib.ui.work_bookmarks').show(self.Fanfic,v) end}},
+                    {{text=_('Cancel'),callback=function() UIManager:close(dialog) end}},
+                }}
+                UIManager:show(dialog)
+            end or nil })
         ::continue::
     end
 

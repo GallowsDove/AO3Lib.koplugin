@@ -1679,6 +1679,21 @@ function AO3LibClient:deleteSubscription(subscription_id)
     return self:setSubscription("Work", nil, subscription_id)
 end
 
+local function getBookmarkEntries(kind,id,page)
+    if not tostring(id or ''):match('^%d+$') then return {success=false,error='Invalid '..kind..' ID.'} end
+    page=tonumber(page) or 1
+    if page<1 or page%1~=0 then return {success=false,error='Invalid page.'} end
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..'/'..(kind=='work' and 'works' or 'series')..'/'..id..'/bookmarks?page='..page,
+        method='GET',sink=ltn12.sink.table(body)}
+    if not result.success then return {success=false,error=result.error} end
+    local parsed=require('ao3lib.ao3.bookmark_entries').parse(htmlparser.parse(table.concat(body)),
+        function(value) return encodeHelper:parseFromHTML(value) end,page)
+    return parsed or {success=false,error='AO3 returned an unexpected bookmark page.'}
+end
+function AO3LibClient:getWorkBookmarks(id,page) return getBookmarkEntries('work',id,page) end
+function AO3LibClient:getSeriesBookmarks(id,page) return getBookmarkEntries('series',id,page) end
+
 function AO3LibClient:getUsersWorkBookmark(work_id)
     logger.dbg("AO3Lib.koplugin: Fetching bookmark for work. Work ID: " .. tostring(work_id))
 
@@ -2094,8 +2109,11 @@ function AO3WebParser:parseSeriesDetails(root,id)
     if stats then
         local ds,vs=stats:select('dt'),stats:select('dd')
         for index,label in ipairs(ds) do
-            if encodeHelper:parseFromHTML(label:getcontent()):gsub('%s*:%s*$',''):lower()=='complete' and vs[index] then
+            local name=encodeHelper:parseFromHTML(label:getcontent()):gsub('%s*:%s*$',''):lower()
+            if name=='complete' and vs[index] then
                 info.complete=encodeHelper:parseFromHTML(vs[index]:getcontent())
+            elseif name=='bookmarks' and vs[index] then
+                info.bookmarks=encodeHelper:parseFromHTML(vs[index]:getcontent())
             end
         end
     end
@@ -3074,7 +3092,7 @@ end
 local payloads = {
     getFavoriteTags = 'tags', getMutedUsers = 'users',
     getHiddenTags = "tags",
-    getComments = "comments",
+    getComments = "comments", getWorkBookmarks = "bookmarks", getSeriesBookmarks = "bookmarks",
     getSubscriptions = "subscriptions",
     getUserData = "user_data", getWorkMetadata = "work_metadata", searchByParameters = "works",
     searchByTag = "result_works", searchForTags = "result_tags", getWorksFromSeries = "works",

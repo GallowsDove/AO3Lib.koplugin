@@ -14,14 +14,15 @@ local function node(content,attrs,selectors)
     return {attributes=attrs or {},getcontent=function() return content or '' end,
         select=function(_,selector) return (selectors or {})[selector] or {} end}
 end
-local stats=node('',nil,{dt={node('Words:'),node('Works:'),node('Complete:')},
-    dd={node('1,234'),node('2'),node('Yes')}})
+local stats=node('',nil,{dt={node('Words:'),node('Works:'),node('Complete:'),node('Bookmarks:')},
+    dd={node('1,234'),node('2'),node('Yes'),node('42')}})
 local meta=node('',nil,{dt={node('Creator:'),node('Series Begun:'),node('Series Updated:'),node('Description:'),node('Stats:')},
     dd={node('Writer'),node('2026-01-01'),node('2026-02-01'),node('<p>Series summary</p>'),node('stats')},
     ['dd.words']={node('1,234')},['dd.works']={node('2')},['dl.stats']={stats}})
 local series_info=Parser:parseSeriesDetails(node('',nil,{['h2.heading']={node('A &amp; B')},['dl.series.meta']={meta}}),12)
 assert(series_info.title=='A & B' and series_info.author=='Writer' and series_info.summary:find('Series summary',1,true))
 assert(series_info.work_count=='2' and series_info.words=='1,234' and series_info.complete=='Yes' and series_info.begun=='2026-01-01')
+assert(series_info.bookmarks=='42')
 local function membership(id,title,position)
     local link=node(title,{href='/series/'..id})
     return node((position and 'Part <strong>'..position..'</strong> of ' or '')..'<a href="/series/'..id..'">'..title..'</a>',nil,{a={link}})
