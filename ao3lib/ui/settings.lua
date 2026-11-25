@@ -10,14 +10,13 @@ function M.show(owner,checkFilenameTemplate)
     local Pacing=require('ao3lib.updates.pacing')
     local groups={
         {title=_('Reading and display'),options={
-            {text=_('Work view'),key='formatted_work_view',type='Bool',on=_('Formatted'),off=_('Information list')},
             {text=_('Work view controls…'),type='Action',callback=function() require('ao3lib.ui.work_view_help').show() end},
             {text=_('Downloaded works view'),key='downloaded_rendered_view',type='Bool',on=_('Rendered'),off=_('List'),
                 value=function()
                     local saved=Config:readSetting('downloaded_view') or {}
                     return Config:readSetting('downloaded_rendered_view',saved.display=='rendered')
                 end},
-            {text=_('Formatted view text size'),key='work_view_font_size',type='Number',min=12,max=32,default=20,
+            {text=_('Work view text size'),key='work_view_font_size',type='Number',min=12,max=32,default=20,
                 value=function() return require('ao3lib.ui.work_view').baseTextSize() end},
             {text=_('AO3 symbols'),key='ao3_symbol_style',type='Choice',
                 choices={{'original',_('Original')},{'eink',_('E-reader')},

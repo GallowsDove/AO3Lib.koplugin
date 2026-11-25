@@ -66,8 +66,7 @@ function M.show(owner,work,kind)
             if action.kind=='author' then
                 owner:showUserInfo(action.entry.username,action.entry.pseud)
             elseif action.kind=='collection' then
-                local success,works,next_page=owner:getWorksFromCollection(action.id)
-                if success then owner:onShowFanficBrowser(works,next_page,action.name) end
+                require('ao3lib.ui.collection_list').open(owner,action.id,action.name)
             end
         end),
         page_label=function(state)

@@ -178,6 +178,7 @@ function M.html(work,rows,options)
         if value~=nil and tostring(value)~='' then
             local label=require('ao3lib.core.format').integer(value)..' '..field[2]
             local callback=options and options.stat_action and (field[1]=='comments' or field[1]=='bookmarks')
+                and not require('ao3lib.core.format').isZero(value)
                 and work.id and function() options.stat_action(field[1],work) end
             stats[#stats+1]=callback and '<b>'..link(label,callback)..'</b>'
                 or '<b>'..escape(require('ao3lib.core.format').integer(value))..'</b> '..escape(field[2])
@@ -207,7 +208,9 @@ function M.seriesRows(info,open_bookmarks)
         local value=info[field[1]]
         if value and tostring(value)~='' then rows[#rows+1]={field[2],tostring(value)} end
     end
-    if info.id and open_bookmarks then rows[#rows+1]={_('Bookmarks:'),tostring(info.bookmarks or ''),callback=open_bookmarks} end
+    local bookmark_count=info.bookmarks or info.bookmark_count
+    if info.id and open_bookmarks then rows[#rows+1]={_('Bookmarks:'),tostring(bookmark_count or ''),
+        callback=not require('ao3lib.core.format').isZero(bookmark_count) and open_bookmarks or nil} end
     local status=seriesStatus(info.complete)
     if status then rows[#rows+1]={_('Status:'),status} end
     return rows
@@ -221,7 +224,7 @@ function M.seriesHTML(info,open_bookmarks,options)
         return '<a href="ao3-action:'..#actions..'" style="color:#000000;text-decoration:none">'..escape(label)..'</a>'
     end
     local out={'<h1>'..link(info.title or _('Series'),options.open,options.hold)..'</h1>'}
-    if info.author and info.author~='' then out[#out+1]='<p class="author">'..escape(_('by'))..' '..link(info.author,options.author)..'</p>' end
+    if info.author and info.author~='' then out[#out+1]='<p class="author">'..escape(_('by'))..' '..link(info.author,options.author,options.author_hold)..'</p>' end
     local function tagLinks(values,kind)
         local result={}
         for _,name in ipairs(type(values)=='table' and values or {}) do
@@ -237,21 +240,28 @@ function M.seriesHTML(info,open_bookmarks,options)
     if info.summary and info.summary~='' then out[#out+1]='<div class="summary">'..paragraphs(info.summary)..'</div>' end
     if info.notes and info.notes~='' then out[#out+1]='<div class="summary"><p><b>'..escape(_('Notes'))..'</b></p>'..paragraphs(info.notes)..'</div>' end
     for __,field in ipairs({{'warnings','Warning',_('Warnings')},{'relationships','Relationship',_('Relationships')},
-            {'characters','Character',_('Characters')},{'tags','Freeform',_('Additional tags')}}) do
-        local tags=tagLinks(info[field[1]],field[2])
+            {'characters','Character',_('Characters')},{'tags',options.tag_kind or 'Freeform',options.tag_label or _('Additional tags')}}) do
+        local kind=field[2]
+        if field[1]=='tags' and options.generic_tags then kind=nil end
+        local tags=tagLinks(info[field[1]],kind)
         if tags~='' then out[#out+1]='<div class="tag-group"><p><span class="tag-heading">'..escape(field[3])..'</span> '..tags..'</p></div>' end
     end
     local stats={}
     local format=require('ao3lib.core.format').integer
     for _,field in ipairs({{'work_count',_('works')},{'words',_('words')}}) do
-        if info[field[1]] and tostring(info[field[1]])~='' then stats[#stats+1]='<b>'..escape(format(info[field[1]]))..'</b> '..escape(field[2]) end
+        if info[field[1]] and tostring(info[field[1]])~='' then
+            local value=escape(format(info[field[1]]))
+            if field[1]=='work_count' and options.works then value=link(format(info[field[1]]),options.works) end
+            stats[#stats+1]='<b>'..value..'</b> '..escape(field[2])
+        end
     end
     if info.id and open_bookmarks then
         local count=info.bookmarks or info.bookmark_count
         local label=count and (format(count)..' '.._('Bookmarks')) or _('Bookmarks')
-        stats[#stats+1]='<b>'..link(label,open_bookmarks)..'</b>'
+        stats[#stats+1]='<b>'..link(label,not require('ao3lib.core.format').isZero(count) and open_bookmarks or nil)..'</b>'
     end
-    local status=seriesStatus(info.complete)
+    for _,extra in ipairs(options.extra_stats or {}) do stats[#stats+1]=escape(extra) end
+    local status=options.status or seriesStatus(info.complete)
     if status then stats[#stats+1]=escape(status) end
     local dates={}
     if info.begun and info.begun~='' then dates[#dates+1]=escape(_('Begun:'))..' '..escape(info.begun) end
@@ -311,7 +321,7 @@ table.badges img { width: 1.7em; height: 1.7em; }
 -- be tested without a device or a MuPDF renderer.
 function M.new(context)
     local pager=require('ao3lib.ao3.work_paging').get(context.fetch)
-    local offset=context.series_info and 1 or 0
+    local offset=(context.series_info or context.collection_info) and 1 or 0
     local self={context=context,works={},index=context.index or 1,closed=false,pager=pager,revealed={}}
     for i,work in ipairs(context.works) do self.works[i]=work end
     self.total=tonumber(context.works.total)
@@ -366,6 +376,26 @@ function M.new(context)
             return
         end
         if offset==1 and self.index==1 then
+            if context.collection_info then
+                local collection=context.collection_info
+                local List=require('ao3lib.ui.collection_list')
+                local open_bookmarks=context.plugin and function() List.openBookmarks(context.plugin,collection) end
+                local html,links=List.html(collection,{
+                    works=function() self:next() end,bookmarks=open_bookmarks,
+                    tag=context.plugin and function(name) require('ao3lib.ui.tag_actions').show(context.plugin,nil,name) end or nil,
+                })
+                local actions,holds={},{}
+                for i,link in ipairs(links) do actions[i]=link.tap;holds[i]=link.hold end
+                local rows={{collection.title or _('Collection'),''}}
+                if collection.summary and collection.summary~='' then rows[#rows+1]={_('Summary:'),collection.summary} end
+                rows[#rows+1]={_('Works:'),tostring(collection.work_count or ''),callback=function() self:next() end}
+                local count=collection.bookmark_count
+                rows[#rows+1]={_('Bookmarks:'),tostring(count or ''),
+                    callback=not require('ao3lib.core.format').isZero(count) and open_bookmarks or nil}
+                if collection.type and collection.type~='' then rows[#rows+1]={_('Status:'),collection.type} end
+                context.present(self,html:gsub('ao3%-comment:', 'ao3-action:'),actions,rows,holds)
+                return
+            end
             local open_bookmarks=context.plugin and function()
                 require('ao3lib.ui.work_bookmarks').show(context.plugin,context.series_info,'series')
             end

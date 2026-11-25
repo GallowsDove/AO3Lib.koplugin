@@ -1,7 +1,6 @@
 local Fields = require("ao3lib.library.fields")
 local Network = require("ao3lib.ao3.network")
 local ButtonDialog = require("ui/widget/buttondialog")
-local KeyValuePage = require("ui/widget/keyvaluepage")
 local UIManager = require("ui/uimanager")
 local DownloadedFanfics = require("ao3lib.library.history")
 local InfoMessage = require("ui/widget/infomessage")
@@ -315,12 +314,15 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
             v.bookmarks or "0",
             v.comments or "0"
         )
+        local isZero=require('ao3lib.core.format').isZero
+        local has_comments=not isZero(v.comments or '0')
+        local has_bookmarks=not isZero(v.bookmarks or '0')
         table.insert(kv_pairs, { "     " .. "Stats:", stats, separator = true,
-            callback=v.id and function()
+            callback=v.id and (has_comments or has_bookmarks) and function()
                 local dialog
                 dialog=ButtonDialog:new{title=_('Stats'),buttons={
-                    {{text=_('Comments'),callback=function() UIManager:close(dialog);require('ao3lib.ui.comments').show(self.Fanfic,v) end},
-                     {text=_('Bookmarks'),callback=function() UIManager:close(dialog);require('ao3lib.ui.work_bookmarks').show(self.Fanfic,v) end}},
+                    {{text=_('Comments'),enabled=has_comments,callback=function() UIManager:close(dialog);require('ao3lib.ui.comments').show(self.Fanfic,v) end},
+                     {text=_('Bookmarks'),enabled=has_bookmarks,callback=function() UIManager:close(dialog);require('ao3lib.ui.work_bookmarks').show(self.Fanfic,v) end}},
                     {{text=_('Cancel'),callback=function() UIManager:close(dialog) end}},
                 }}
                 UIManager:show(dialog)
@@ -414,190 +416,11 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     local total_fic_count=ficResults.total
     local pager=require("ao3lib.ao3.work_paging").get(fetchNextPage)
     if pager then pager:setTotal(total_fic_count) end
-    if not Config:readSetting("formatted_work_view",true) and pager and (pager.total or view_options.series_info) then
-        return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
-            update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
-            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,summary_html=view_options.summary_html,series_info=view_options.series_info,
-            replacing=view_options.replacing,resume=resume})
-    end
-    if Config:readSetting("formatted_work_view",true) then
-        return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
-            update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
-            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,summary_html=view_options.summary_html,series_info=view_options.series_info,
-            replacing=view_options.replacing,resume=resume})
-    end
-    require("ao3lib.ao3.mute_cache").ensure()
-    local revealed={}
-    local function legacyRows(works)
-        local rows={}
-        for __,work in ipairs(works) do
-            local key=work.id or work
-            local match=require('ao3lib.ui.hidden_work').reasons(work,{
-                blacklist=view_options.blacklist~=false,mutes=true,revealed=revealed[key],
-            })
-            if match and #match>0 then
-                rows[#rows+1]={_('Hidden work'),_('Hidden because of: ')..table.concat(match,', '),callback=function()
-                    revealed[key]=true
-                    if self.browse_window and not self.browse_window._ao3_closed then self.browse_window:reload() end
-                end}
-                rows[#rows+1]={_('Tap to show work'),'',callback=rows[#rows].callback}
-                for i=3,15 do rows[#rows+1]={'',''} end
-            else
-                self:generateTable(rows,{work},updateFanficCallback,downloadFanficCallback)
-            end
-        end
-        return rows
-    end
-    local kv_pairs = legacyRows(ficResults)
-    ficResults.total = nil
-    local fanfics_loaded = ficResults
+    return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
+        update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
+        plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,summary_html=view_options.summary_html,series_info=view_options.series_info,collection_info=view_options.collection_info,
+        replacing=view_options.replacing,resume=resume})
 
-    local items_per_fic = 15
-
-    local function fitWorkPage(window)
-        local count=window.items_per_page
-        if count~=items_per_fic then
-            if window.item_height and count then
-                window.item_height=math.floor(window.item_height*count/items_per_fic)
-                window.items_font_size=math.min(require("ui/widget/textboxwidget"):getFontSizeToFitHeight(
-                    window.item_height,1,1.0),22)
-            end
-            window.items_per_page=items_per_fic
-        end
-        window.pages=math.ceil(#window.kv_pairs/window.items_per_page)
-    end
-    local BrowseWindow = KeyValuePage:extend({
-    })
-    local function resumeLegacy(window)
-        resume(window)
-        if window._ao3_reload_pending and not window._ao3_closed then
-            window._ao3_reload_pending=nil
-            window:reload()
-        end
-    end
-    local function deferReload(window)
-        local frame=window._ao3_navigation
-        local frames=Fanfic._ao3_navigation
-        if frame and frames and frames[#frames]~=frame then
-            window._ao3_reload_pending=true
-            return true
-        end
-        if require('ao3lib.ui.redraw').defer(window,window,function(owner)
-            if not owner._ao3_closed and owner._ao3_reload_pending then
-                owner._ao3_reload_pending=nil
-                owner:reload()
-            end
-        end) then
-            window._ao3_reload_pending=true
-            return true
-        end
-        return false
-    end
-    -- Override _populateItems to check if it's the last page and load more results
-    BrowseWindow._populateItems = function(selfself)
-        fitWorkPage(selfself)
-        if fetchNextPage and selfself.show_page == selfself.pages then
-            Network.run(function()
-                -- The user may have left this window while connecting.
-                if selfself._ao3_closed or selfself.show_page ~= selfself.pages or selfself._ao3_page_loading then return end
-                local page=selfself.show_page
-                selfself._ao3_page_loading=true
-                local ok,newFics=pcall(fetchNextPage)
-                selfself._ao3_page_loading=false
-                if not ok then error(newFics,0) end
-                if selfself._ao3_closed or selfself.show_page~=page then return end
-                if newFics and #newFics > 0 then
-                    selfself:addNewFanfics(newFics)
-                end
-            end)
-        end
-
-        -- Call the original _populateItems function
-        KeyValuePage._populateItems(selfself)
-    end
-
-    local function watchMutes(window)
-        require('ao3lib.ao3.mute_cache').watch(window,function(owner)
-            if not owner._ao3_closed then owner:reload() end
-        end)
-    end
-
-    BrowseWindow.addNewFanfics = function(selfself, newFics)
-        for _,row in ipairs(legacyRows(newFics)) do selfself.kv_pairs[#selfself.kv_pairs+1]=row end
-
-        newFics.total = nil
-        -- Add new works to loaded fanfics table
-        for k, v in pairs(newFics) do
-            table.insert(fanfics_loaded, v)
-        end
-
-        selfself:reload()
-    end
-
-    BrowseWindow.reload = function(selfself)
-        if selfself._ao3_closed or deferReload(selfself) then return end
-        selfself._ao3_reload_pending=nil
-        selfself.kv_pairs = legacyRows(fanfics_loaded)
-
-        -- Update the total number of pages
-        selfself.pages = math.ceil(#selfself.kv_pairs / selfself.items_per_page)
-        if (self.browse_window) then
-            self.Fanfic.menu_stack[self.browse_window] = nil
-        end
-        self.browse_window = BrowseWindow:new({
-            title = selfself.title,
-            title_bar_left_icon = require("ao3lib.ui.icons").name,
-            title_bar_fm_style = true,
-            is_popout = false,
-            is_borderless = true,
-            kv_pairs = selfself.kv_pairs,
-            show_page = selfself.show_page,
-            value_overflow_align = "center",
-        })
-        self.Fanfic.menu_stack[self.browse_window] = true
-        require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=selfself, resume=resumeLegacy, identity=view_options.identity})
-        watchMutes(self.browse_window)
-        self.browse_window:setMaximumPageValueCount(items_per_fic)
-        UIManager:show(self.browse_window)
-        UIManager:close(selfself)
-    end
-
-
-    BrowseWindow.setMaximumPageValueCount = function(selfself)
-        fitWorkPage(selfself)
-        selfself:_populateItems()
-    end
-
-    BrowseWindow.onClose = function(selfself)
-        selfself._ao3_closed = true
-        require("ao3lib.ao3.mute_cache").unwatch(selfself)
-        self.Fanfic.menu_stack[selfself] = nil
-        return KeyValuePage.onClose(selfself)
-    end
-    BrowseWindow.onCloseWidget = function(selfself,...)
-        selfself._ao3_closed=true
-        require('ao3lib.ao3.mute_cache').unwatch(selfself)
-        if KeyValuePage.onCloseWidget then return KeyValuePage.onCloseWidget(selfself,...) end
-    end
-
-    -- Create the KeyValuePage
-    self.browse_window = BrowseWindow:new({
-        title = title or T("(%1) Tap work title to download", total_fic_count or "ERROR"),
-        title_bar_left_icon = require("ao3lib.ui.icons").name,
-        title_bar_fm_style = true,
-        is_popout = false,
-        is_borderless = true,
-        kv_pairs = kv_pairs,
-        value_overflow_align = "center",
-        show_page = view_options.index or 1,
-    })
-
-    require("ao3lib.ui.navigation").bind(Fanfic, self.browse_window, {replace=view_options.replacing, resume=resumeLegacy, identity=view_options.identity})
-
-    watchMutes(self.browse_window)
-    self.browse_window:setMaximumPageValueCount(items_per_fic)
-
-    UIManager:show(self.browse_window)
 end
 
 return FanficBrowser

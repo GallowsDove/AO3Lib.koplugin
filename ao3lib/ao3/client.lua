@@ -876,6 +876,47 @@ function AO3LibClient:getWorksFromCollection(collection_id, page_no)
     }
 end
 
+function AO3LibClient:getBookmarksFromCollection(collection_id,page_no)
+    if not tostring(collection_id or ''):match('^[%w_%-]+$') then return {success=false,error='Invalid collection ID.'} end
+    page_no=tonumber(page_no) or 1
+    if page_no<1 or page_no%1~=0 then return {success=false,error='Invalid page.'} end
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..'/collections/'..collection_id..'/bookmarks?page='..page_no,
+        method='GET',sink=ltn12.sink.table(body)}
+    if not result.success then return {success=false,error=result.error} end
+    return {success=true,works=AO3WebParser:parseUserBookmarks(htmlparser.parse(table.concat(body)))}
+end
+
+function AO3LibClient:getCollectionInfo(collection_id)
+    if not tostring(collection_id or ''):match('^[%w_%-]+$') then return {success=false,error='Invalid collection ID.'} end
+    local body={}
+    local response=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..'/collections/'..collection_id,
+        method='GET',sink=ltn12.sink.table(body)}
+    if not response.success then return {success=false,error=response.error} end
+    local root=htmlparser.parse(table.concat(body))
+    local header=root:select('div.primary.header.module')[1]
+    local heading=header and header:select('h2.heading')[1]
+    if not heading then return {success=false,error='AO3 returned an unexpected collection page.'} end
+    local info={id=collection_id,title=encodeHelper:parseFromHTML(heading:getcontent())}
+    local description=header:select('blockquote.userstuff')[1]
+    if description then
+        info.summary=encodeHelper:parseFromHTML(description:getcontent():gsub('<[bB][rR]%s*/?>','\n'):gsub('</[pP]%s*>','\n\n'))
+    end
+    local status=header:select('p.type')[1]
+    if status then info.type=encodeHelper:parseFromHTML(status:getcontent()) end
+    for _,link in ipairs(root:select('#dashboard a')) do
+        local href=(link.attributes or {}).href or ''
+        local name=href:match('^/collections/[^/]+/(works)[/?#]?')
+            or href:match('^/collections/[^/]+/(bookmarks)[/?#]?')
+        if name then
+            local text=encodeHelper:parseFromHTML(link:getcontent())
+            local count=text:match('%(([%d,]+)%)')
+            if count then info[name=='works' and 'work_count' or 'bookmark_count']=tonumber((count:gsub(',',''))) end
+        end
+    end
+    return {success=true,collection=info}
+end
+
 function AO3LibClient:getWorksFromUserPage(username, pseud, catagory, fandom_id, page_no)
     local url
     if catagory == "gifts" then
@@ -1011,6 +1052,37 @@ function AO3LibClient:getWorksFromAccountHistory(marked_for_later, page_no)
 
 end
 
+local function listingPagination(root,page_no,label)
+    local total_items
+    for _,selector in ipairs({'#main > h2','#main > h3'}) do
+        for _,heading in ipairs(root:select(selector)) do
+            local text=encodeHelper:parseFromHTML(heading:getcontent())
+            local count=text:match('of%s+([%d,]+)%s+'..label) or text:match('([%d,]+)%s+'..label)
+            if count then total_items=tonumber((count:gsub(',','')));break end
+        end
+        if total_items then break end
+    end
+
+    local total_pages,next_page=page_no,nil
+    for _,selector in ipairs({'ol.pagination a','div.pagination a'}) do
+        for _,link in ipairs(root:select(selector)) do
+            local n=tonumber(((link.attributes or {}).href or ''):match('[?&]page=(%d+)'))
+            if n and n>total_pages then total_pages=n end
+        end
+    end
+    for _,selector in ipairs({'ol.pagination li.next a','div.pagination a.next','a[rel="next"]'}) do
+        for _,link in ipairs(root:select(selector)) do
+            local n=tonumber(((link.attributes or {}).href or ''):match('[?&]page=(%d+)'))
+            if n and n>page_no then next_page=n;break end
+        end
+        if next_page then break end
+    end
+    if not next_page and total_pages>page_no then next_page=page_no+1 end
+    if next_page and total_pages<=page_no then total_pages=nil end
+
+    return total_items,total_pages,next_page
+end
+
 function AO3LibClient:getUserSeries(username, pseud, page_no)
     page_no = page_no or 1
     logger.dbg("AO3Lib.koplugin: Fetching series for user: " .. tostring(username) .. ", page no: " .. tostring(page_no))
@@ -1037,32 +1109,7 @@ function AO3LibClient:getUserSeries(username, pseud, page_no)
     local root = htmlparser.parse(html_body)
 
     local series = AO3WebParser:parseUserSeriesPage(root)
-    local total_items
-    for _,selector in ipairs({'#main > h2','#main > h3'}) do
-        for _,heading in ipairs(root:select(selector)) do
-            local text=encodeHelper:parseFromHTML(heading:getcontent())
-            local count=text:match('of%s+([%d,]+)%s+[Ss]eries') or text:match('([%d,]+)%s+[Ss]eries')
-            if count then total_items=tonumber((count:gsub(',','')));break end
-        end
-        if total_items then break end
-    end
-
-    local total_pages,next_page=page_no,nil
-    for _,selector in ipairs({'ol.pagination a','div.pagination a'}) do
-        for _,link in ipairs(root:select(selector)) do
-            local n=tonumber(((link.attributes or {}).href or ''):match('[?&]page=(%d+)'))
-            if n and n>total_pages then total_pages=n end
-        end
-    end
-    for _,selector in ipairs({'ol.pagination li.next a','div.pagination a.next','a[rel="next"]'}) do
-        for _,link in ipairs(root:select(selector)) do
-            local n=tonumber(((link.attributes or {}).href or ''):match('[?&]page=(%d+)'))
-            if n and n>page_no then next_page=n;break end
-        end
-        if next_page then break end
-    end
-    if not next_page and total_pages>page_no then next_page=page_no+1 end
-    if next_page and total_pages<=page_no then total_pages=nil end
+    local total_items,total_pages,next_page=listingPagination(root,page_no,'[Ss]eries')
 
     return {
         success = true,
@@ -1097,10 +1144,12 @@ function AO3LibClient:getUserCollections(username, page_no)
     local root = htmlparser.parse(html_body)
 
     local collections = AO3WebParser:parseUserCollectionsPage(root)
+    local total_items,total_pages,next_page=listingPagination(root,page_no,'[Cc]ollections')
 
     return {
         success = true,
         collections = collections,
+        total_items=total_items,total_pages=total_pages,next_page=next_page,
     }
 end
 
@@ -2285,16 +2334,24 @@ function AO3WebParser:parseUserCollectionsPage(root)
 
             local href = titleElement.attributes.href
             local id = href:match("/collections/([%w_-]+)")
-            local title = titleElement:getcontent()
+            local title = encodeHelper:parseFromHTML(titleElement:getcontent())
 
             local authorElements = element:select(".heading > a.owner")
-            local author_table = {}
+            local author_table,authors = {},{}
             for _, author in ipairs(authorElements) do
                 table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
+                local username,pseud=((author.attributes or {}).href or ''):match('/users/([%w_%-]+)/pseuds/([%w_%-]+)')
+                username=username or ((author.attributes or {}).href or ''):match('^/users/([%w_%-]+)/?$')
+                pseud=pseud or username
+                if username then authors[#authors+1]={name=encodeHelper:parseFromHTML(author:getcontent()),username=username,pseud=pseud} end
             end
             authorElements = element:select(".heading > a.mod")
             for _, author in ipairs(authorElements) do
                 table.insert(author_table, encodeHelper:parseToCodepoints(author:getcontent()))
+                local username,pseud=((author.attributes or {}).href or ''):match('/users/([%w_%-]+)/pseuds/([%w_%-]+)')
+                username=username or ((author.attributes or {}).href or ''):match('^/users/([%w_%-]+)/?$')
+                pseud=pseud or username
+                if username then authors[#authors+1]={name=encodeHelper:parseFromHTML(author:getcontent()),username=username,pseud=pseud} end
             end
             local author = #author_table > 0 and table.concat(author_table, ", ") or nil
 
@@ -2313,27 +2370,36 @@ function AO3WebParser:parseUserCollectionsPage(root)
             end
 
             local typeElement = element:select("p.type")[1]
-            local type = typeElement:getcontent():gsub("^%s*(.-)%s*$", "%1")
+            local type = typeElement and encodeHelper:parseFromHTML(typeElement:getcontent()):gsub("^%s*(.-)%s*$", "%1") or nil
 
             local summaryElement = element:select(".summary")[1]
-            local summary = (type and (type.." ") or "") .. (summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
+            local summary = summaryElement and encodeHelper:parseToCodepoints(summaryElement:getcontent()
                 :gsub("<br%s*/?>", "\n") -- Replace <br> tags with new lines
                 :gsub("</p>", "\n\n") -- Add double new lines for paragraph breaks
                 :gsub("<[^>]+>", "") -- Remove other HTML tags
                 :gsub("^%s*(.-)%s*$", "%1") -- Trim whitespace) or ""
-            ))
+            ) or ''
 
             local workCountElement = element:select("dd.works > a")[1]
             local work_count = workCountElement and tonumber(workCountElement:getcontent():gsub(",", ""), 10) or 0
+            local bookmarkCountElement=element:select('dd.bookmarks > a')[1]
+            local bookmark_count=bookmarkCountElement and tonumber((encodeHelper:parseFromHTML(bookmarkCountElement:getcontent()):gsub(',',''))) or nil
+            local subcollectionsElement=element:select('dd.collections > a')[1]
+            local promptElement=element:select('dd.prompts > a')[1]
 
             local collection = {
                 id = id,
                 title = title,
                 author = author,
+                authors = authors,
+                type = type,
                 date_posted = date_posted,
                 tags = tags,
                 summary = summary,
                 work_count = work_count,
+                bookmark_count = bookmark_count,
+                subcollection_count=subcollectionsElement and tonumber((encodeHelper:parseFromHTML(subcollectionsElement:getcontent()):gsub(',',''))) or nil,
+                prompt_count=promptElement and tonumber((encodeHelper:parseFromHTML(promptElement:getcontent()):gsub(',',''))) or nil,
             }
 
             table.insert(collection_list, count, collection)
@@ -3147,7 +3213,7 @@ local payloads = {
     getSubscriptions = "subscriptions",
     getUserData = "user_data", getWorkMetadata = "work_metadata", searchByParameters = "works",
     searchByTag = "result_works", searchForTags = "result_tags", getWorksFromSeries = "works",
-    getWorksFromCollection = "works", getWorksFromUserPage = "works", getWorksFromAccountHistory = "works",
+    getWorksFromCollection = "works", getBookmarksFromCollection = "works", getCollectionInfo = "collection", getWorksFromUserPage = "works", getWorksFromAccountHistory = "works",
     getUserSeries = "series", getUserCollections = "collections", getUserPseuds = "pseuds",
     searchForUsers = "result_users", searchForCollections = "collections", getUsersWorkBookmark = "bookmark_data",
     getUsersSeriesBookmark = "bookmark_data",

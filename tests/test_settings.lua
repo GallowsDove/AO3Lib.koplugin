@@ -38,8 +38,11 @@ spin.callback{value=0};assert(saves==before)
 spin.callback{value=121};assert(saves==before)
 spin.callback{value=1.5};assert(saves==before)
 Menu:onOpenSettings();find('Reading and display').callback()
-for _,row in ipairs(owner.item_table) do assert(row.text~='Enable tag blacklist' and row.text~='Manage tag blacklist…') end
-find('Formatted view text size').callback()
+for _,row in ipairs(owner.item_table) do
+    assert(row.text~='Enable tag blacklist' and row.text~='Manage tag blacklist…')
+    assert(row.text~='Work view','The removed view selector must not be shown')
+end
+find('Work view text size').callback()
 assert(shown.value==22 and shown.value_min==12 and shown.value_max==32,'Numeric settings must use their own values and bounds')
 shown.callback{value=24}
 assert(values.work_view_font_size==24 and values.update_check_delay_seconds==15)

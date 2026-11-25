@@ -33,7 +33,6 @@ local function createConfig()
     config.default_settings = {
         AO3_domain = "https://archiveofourown.org",
         show_adult_warning = true,
-        formatted_work_view = true,
         work_view_font_size = 20,
         ao3_eink_symbols = false,
         version = 1,

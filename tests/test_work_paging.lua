@@ -39,6 +39,15 @@ overview:goTo(248);assert(overview.index==248 and overview_requests[2]==13)
 overview:goTo(1);assert(overview.index==1)
 local empty_overview=View.new{works={total=0},series_info={title='Empty'},rows=ctx.rows,present=function() end}
 assert(empty_overview:pageCount()==1);empty_overview:next();assert(empty_overview.index==1)
+local bookmark_opened
+local collection_plugin={getBookmarksFromCollection=function(_,id) assert(id=='example');return true,{},nil end,
+    onShowFanficBrowser=function() bookmark_opened=true end}
+local collection_actions
+local collection_view=View.new{works={total=0},collection_info={id='example',title='Collection',work_count=0,bookmark_count=9},
+    plugin=collection_plugin,rows=ctx.rows,network=function(fn) fn() end,
+    present=function(_,html,actions,rows) collection_actions=actions;assert(html:find('9 Bookmarks',1,true) and rows[1][1]=='Collection') end}
+collection_view:render();assert(collection_view:pageCount()==1 and #collection_actions>=1)
+collection_actions[#collection_actions]();assert(bookmark_opened)
 state:goTo(123)
 assert(state.index==1 and #requested==0 and pending,'Jump must retain the current work while connecting')
 pending();pending=nil
@@ -70,25 +79,19 @@ Base.new=function(class,args)
     if class.goToPage then window:_populateItems() end
     return window
 end
--- Both actual work views share the numbered cache, total, and current index.
-Config.readSetting=function(_,key,default) if key=='formatted_work_view' then return true end;return default end
-local plugin={menu_stack={}}
-local formatted=Browser:show({},first,nextBatch,function() end,function() end,function() end,plugin)
-assert(formatted.window.page_buttons[3].text=='Page 1 of 247')
-formatted.window.page_buttons[3].hold_input.callback('123')
-assert(formatted.index==123 and #requested==before,'Formatted picker did not reuse the cached numbered batch')
+-- A saved legacy view preference must still use the rendered browser and
+-- retain direct jumps and the numbered cache.
 Config.readSetting=function(_,key,default) if key=='formatted_work_view' then return false end;return default end
-local listed=Browser:show({},first,nextBatch,function() end,function() end,function() end,plugin,nil,{index=123})
-assert(listed.index==123 and listed.window.pages==247 and listed.window.show_page==123)
-assert(listed.window.kv_pairs[(123-1)*15+1][1]=='Work 123')
-listed.window:goToPage(247)
-assert(listed.index==247 and listed.window.show_page==247 and #requested==before)
-assert(listed.window.kv_pairs[(247-1)*15+1][1]=='Work 247')
-local series_listed=Browser:show({},overview_first,overview_fetch,function() end,function() end,function() end,
+local plugin={menu_stack={}}
+local formatted=Browser:show({},first,nextBatch,function() end,function() end,function() end,plugin,nil,{index=123})
+assert(formatted.index==123 and formatted.window.page_buttons[3].text=='Page 123 of 247')
+formatted.window.page_buttons[3].hold_input.callback('247')
+assert(formatted.index==247 and #requested==before)
+local series_view=Browser:show({},overview_first,overview_fetch,function() end,function() end,function() end,
     plugin,'Series',{series_info={title='Series',summary='Series summary'}})
-assert(series_listed.index==1 and series_listed.window.pages==248 and series_listed.window.kv_pairs[1][1]=='Series')
-series_listed:next()
-assert(series_listed.index==2 and series_listed.window.kv_pairs[16][1]=='Work 1')
+assert(series_view.index==1 and series_view:pageCount()==248 and series_view.window.rows[1][1]=='Series')
+series_view:next()
+assert(series_view.index==2 and series_view.window.rows[1][1]=='Work 1')
 -- Snapshot query parameters when registering a native search fetcher.
 local Fanfic=require('main')
 local client=package.loaded["ao3lib.ao3.client"]
@@ -118,39 +121,3 @@ end)
 local unknown=View.new{works=unknownFirst,fetch=unknownFetch,index=20,rows=ctx.rows,
     present=function() end,network=function(fn) fn() end}
 unknown:next();assert(unknown.index==21 and unknown:pageCount()==35 and unknownCalls==1)
--- Exercise KOReader's actual row population and footer, not just the host
--- window adapter, with a sparse page far beyond the initial result batch.
-local input=assert(io.open('../koreader/frontend/ui/widget/keyvaluepage.lua'))
-local source=input:read('*a');input:close()
-local body=assert(source:match('function KeyValuePage:_populateItems%(%)\n(.-)\nend\n'))
-local rendered={}
-local Text={new=function(_,args)
-    return {text=args.text,setText=function(self,t) self.text=t end,
-        getWidth=function(self) return #self.text*8 end,free=function() end}
-end}
-local env=setmetatable({_=function(s) return s end,
-    TextWidget=Text,Font={getFace=function() return {} end},
-    KeyValueItem={frame_padding=2,middle_padding=4,new=function(_,args)
-        rendered[#rendered+1]=args;return args
-    end},
-    Size={line={thick=1}},LineWidget={new=function(_,args) return args end},
-    Geom={new=function(_,args) return args end},Blitbuffer={COLOR_LIGHT_GRAY=0},
-    FocusManager={FOCUS_ONLY_ON_NT=1,NOT_UNFOCUS=2},bit=require('bit'),
-    UIManager={setDirty=function() end},T=package.loaded['ffi/util'].template,
-},{__index=_G})
-local load=assert(loadstring('return function(self)\n'..body..'\nend'));setfenv(load,env)
-local window=listed.window
-window.item_width=600;window.item_height=36;window.items_font_size=18;window.dimen={w=600,h=800}
-local function button()
-    return {resetLayout=function() end,show=function() end,hide=function() end,
-        setText=function(self,t) self.text=t end,enable=function() end,
-        disableWithoutDimming=function() end,enableDisable=function(self,v) self.enabled=v end}
-end
-window.page_info=button();window.return_button=button();window.page_info_text=button()
-for _,key in ipairs({'left','right','first','last'}) do window['page_info_'..key..'_chev']=button() end
-window.main_content={clear=function(t) for i=#t,1,-1 do t[i]=nil end end}
-window.moveFocusTo=function() end
-load()(window)
-assert(#rendered==15 and rendered[1].key=='Work 247')
-assert(window.page_info_text.text=='Page 247 of 247' and not window.page_info_right_chev.enabled)
-print('PASS: native KOReader sparse information rows and full-count footer at the last remote work')

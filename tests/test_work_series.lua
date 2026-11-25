@@ -90,4 +90,10 @@ Browser:generateTable(mixed,{work},function() end,function() end)
 assert(#mixed==60 and mixed[46][1]=='Story' and mixed[60].separator)
 local one=Browser:generateTable({}, {work},function() end,function() end)
 assert(#one==15 and one[3][1]=='     Series:' and one[15].separator)
+work.comments='0';work.bookmarks='0'
+local zero=Browser:generateTable({}, {work},function() end,function() end)
+assert(not zero[15].callback, 'Zero comments and bookmarks must not open the stats actions')
+work.comments='1'
+local nonzero=Browser:generateTable({}, {work},function() end,function() end)
+assert(nonzero[15].callback, 'A nonzero comment count must remain accessible')
 print('PASS: fixed 15-row layout for no/single/multiple series and deleted works; words/language preserved; append and reload boundaries')

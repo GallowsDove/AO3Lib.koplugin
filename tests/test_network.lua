@@ -152,28 +152,18 @@ login.buttons[1][2].callback()
 assert(not closed[login])
 connect()
 assert(closed[login] and Menu.logged_in and Menu.username == 'Writer')
--- Cached details must stay entirely offline (including automatic pagination).
+-- Cached details stay offline and open the rendered work browser.
 offline()
 plugin:registerWorkDetailsAction()
 assert(fm.row_builder('/other/test.epub', true) == nil)
 assert(fm.row_builder(work.path, false) == nil)
+local rendered=require('ao3lib.ui.work_view')
+local original_render=rendered.show
+local details_context
+rendered.show=function(_,context) details_context=context end
 fm.row_builder(work.path, true)[1].callback()
-assert(not pending and lastShown().title == 'AO3 work details')
-local details = lastShown()
-assert(details.kv_pairs[6][2] == '2026-01-01')
--- Pagination resumes the fetch, but must not revive a closed window.
-local fetched = 0
-local function nextPage() fetched = fetched + 1; return {} end
-Browser:show(fm, {work, total=1}, nextPage, function() end, function() end, function() end, plugin)
-assert(pending and fetched == 0)
-connect()
-assert(fetched == 1)
-offline()
-Browser:show(fm, {work, total=1}, nextPage, function() end, function() end, function() end, plugin)
-local window = lastShown()
-window:onClose()
-connect()
-assert(fetched == 1)
+assert(not pending and details_context.title=='AO3 work details' and details_context.works[1].updated=='2026-01-01')
+rendered.show=original_render
 -- Reader inputs survive Wi-Fi cancellation, and submitting after connection
 -- performs the action and closes the input dialog exactly once.
 package.loaded["ao3lib.ui.reader"] = nil

@@ -255,7 +255,7 @@ package.loaded['ui/widget/spinwidget']={new=function(_,args) spin=args;return ar
 Menu:onOpenSettings()
 for _,item in ipairs(settings) do if item.text=='Reading and display' then item.callback();break end end
 for _,item in ipairs(settings) do
-    if item.text=='Formatted view text size' then item.callback() end
+    if item.text=='Work view text size' then item.callback() end
 end
 assert(spin and spin.value==20 and spin.default_value==20 and spin.value_min==12 and spin.value_max==32)
 spin.callback{value=22}

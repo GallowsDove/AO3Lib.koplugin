@@ -55,6 +55,13 @@ local html,actions=View.html(work,{{'Story'}},{stat_action=function(kind,w) call
 assert(html:find('3 Comments',1,true) and html:find('4 Bookmarks',1,true))
 for _,action in ipairs(actions) do action() end
 assert(#calls==2 and calls[1][1]=='bookmarks' and calls[2][1]=='comments' and calls[1][2]==work)
+local zero_html,zero_actions=View.html({id='9',title='Empty',comments='0',bookmarks='0'},{{'Empty'}},
+    {stat_action=function() error('zero counts must not be clickable') end})
+assert(#zero_actions==0 and zero_html:find('<b>0</b> Bookmarks',1,true) and zero_html:find('<b>0</b> Comments',1,true))
+local zero_series,zero_series_actions=View.seriesHTML({id=42,title='Empty',bookmarks='0'},function() error('zero bookmarks') end)
+assert(zero_series:find('0 Bookmarks',1,true) and #zero_series_actions==0)
+local zero_rows=View.seriesRows({id=42,bookmarks='0'},function() error('zero bookmarks') end)
+assert(not zero_rows[#zero_rows].callback)
 local plain,no_actions=View.html({title='Unavailable',comments='2',bookmarks='3'},{{'Unavailable'}},
     {stat_action=function() error('missing ID must not be clickable') end})
 assert(#no_actions==0 and plain:find('Comments',1,true))
@@ -84,7 +91,8 @@ assert(Context.hide_actions and Context.page_label({page=2})=='Page 2'
     and Context.page_label({page=2,total_pages=10})=='Page 2 of 10')
 assert(#links==2 and formatted:find('ao3%-comment:1') and formatted:find('ao3%-comment:2'))
 Context.link_action(links[1]);assert(opened.author[1]=='reader' and opened.author[2]=='Reader')
-Context.link_action(links[2]);assert(opened.collection=='example' and opened.result[2]=='next' and opened.result[3]=='Collection')
+package.loaded['ao3lib.ui.collection_list']={open=function(_,id,name) opened.collection={id,name} end}
+Context.link_action(links[2]);assert(opened.collection[1]=='example' and opened.collection[2]=='Collection')
 BookmarkView.show(owner,{id=42,title='Series'},'series')
 Context.fetch(3);assert(series_request[1]==42 and series_request[2]==3)
 BookmarkView.show(owner,work)

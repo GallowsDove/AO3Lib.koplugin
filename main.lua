@@ -435,6 +435,8 @@ local result_pages = {
         error="Error: Failed to fetch works from series: "},
     getWorksFromCollection = {method="getWorksFromCollection", arguments=1, field="works", numbered=true,
         error="Error: Failed to fetch works from collection: "},
+    getBookmarksFromCollection = {method="getBookmarksFromCollection", arguments=1, field="works", numbered=true,
+        error="Error: Failed to fetch collection bookmarks: "},
 }
 for name, spec in pairs(result_pages) do
     Fanfic[name] = function(self, ...)

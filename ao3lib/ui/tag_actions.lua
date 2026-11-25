@@ -6,7 +6,7 @@ local M={}
 function M.show(plugin,kind,name)
     if not name or name=='' then return end
     local blacklist=require('ao3lib.library.blacklist')
-    local exists=blacklist.contains(kind,name)
+    local exists=kind and blacklist.contains(kind,name)
     local dialog
     local buttons={}
     if plugin and plugin.fetchFanficsByTag then
@@ -22,7 +22,7 @@ function M.show(plugin,kind,name)
             end)
         end}}
     end
-    if kind then
+    do
         buttons[#buttons+1]={{text=_('AO3 favorite…'),callback=function()
             UI:close(dialog)
             require('ao3lib.ao3.network').run(function()
@@ -48,11 +48,11 @@ function M.show(plugin,kind,name)
             end)
         end}}
     end
-    buttons[#buttons+1]={{text=exists and _('Already on blacklist') or _('Add to blacklist'),enabled=not exists,
+    if kind then buttons[#buttons+1]={{text=exists and _('Already on blacklist') or _('Add to blacklist'),enabled=not exists,
         callback=function()
             blacklist.add(kind,name);UI:close(dialog)
             UI:show(require('ui/widget/infomessage'):new{text=_('Added to blacklist: ')..name,timeout=2})
-        end}}
+        end}} end
     buttons[#buttons+1]={{text=_('Cancel'),callback=function() UI:close(dialog) end}}
     dialog=ButtonDialog:new{title=name,buttons=buttons};UI:show(dialog)
     return dialog
