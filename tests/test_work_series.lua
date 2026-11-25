@@ -23,6 +23,12 @@ local series_info=Parser:parseSeriesDetails(node('',nil,{['h2.heading']={node('A
 assert(series_info.title=='A & B' and series_info.author=='Writer' and series_info.summary:find('Series summary',1,true))
 assert(series_info.work_count=='2' and series_info.words=='1,234' and series_info.complete=='Yes' and series_info.begun=='2026-01-01')
 assert(series_info.bookmarks=='42')
+local empty_stats=node('',nil,{dt={node('Works:'),node('Complete:')},dd={node('2'),node('No')}})
+local empty_meta=node('',nil,{['dl.stats']={empty_stats}})
+local no_bookmarks=Parser:parseSeriesDetails(node('',nil,{['h2.heading']={node('Empty')},['dl.series.meta']={empty_meta}}),13)
+assert(no_bookmarks.bookmarks=='0')
+local unknown=Parser:parseSeriesDetails(node('',nil,{['h2.heading']={node('Unknown')},['dl.series.meta']={node()}}),14)
+assert(unknown.bookmarks==nil, 'Missing stats must not be treated as zero')
 local function membership(id,title,position)
     local link=node(title,{href='/series/'..id})
     return node((position and 'Part <strong>'..position..'</strong> of ' or '')..'<a href="/series/'..id..'">'..title..'</a>',nil,{a={link}})
@@ -59,6 +65,8 @@ assert(#slots==2 and slots[1].is_unavailable and slots[2].id==123)
 -- Render through the real work browser, including older records with no series.
 dofile('tests/test_network.lua')
 local Browser=require('ao3lib.ui.work_browser')
+local no_bookmark_html,no_bookmark_actions=require('ao3lib.ui.work_view').seriesHTML(no_bookmarks,function() error('zero bookmarks') end)
+assert(no_bookmark_html:find('0 Bookmarks',1,true) and #no_bookmark_actions==0)
 local function seriesRows(record)
     local out={}
     for _,row in ipairs(Browser:generateTable({}, {record},function() end,function() end)) do

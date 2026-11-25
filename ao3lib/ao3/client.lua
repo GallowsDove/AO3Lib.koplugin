@@ -2203,6 +2203,8 @@ function AO3WebParser:parseSeriesDetails(root,id)
     -- Completion has no class in AO3's series stats; read the nested pairs.
     local stats=meta:select('dl.stats')[1]
     if stats then
+        -- AO3 omits the bookmarks row when there are no public bookmarks.
+        info.bookmarks='0'
         local ds,vs=stats:select('dt'),stats:select('dd')
         for index,label in ipairs(ds) do
             local name=encodeHelper:parseFromHTML(label:getcontent()):gsub('%s*:%s*$',''):lower()
