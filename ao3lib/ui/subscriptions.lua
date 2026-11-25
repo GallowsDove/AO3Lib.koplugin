@@ -24,15 +24,24 @@ function M.manage(owner,kind,target,title)
     UI:show(dialog)
     return dialog
 end
-function M.openSeries(owner,id,title,count)
+function M.openSeries(owner,id,title,count,known)
     local Nav=require('ao3lib.ui.navigation')
     local identity=Nav.key('series',id)
     if Nav.isCurrent(owner,identity) then return end
-    if Network.defer(function() M.openSeries(owner,id,title,count) end) then return end
+    if Network.defer(function() M.openSeries(owner,id,title,count,known) end) then return end
     local ok,works,next_page=owner:getWorksFromSeries(id)
     if ok and not Nav.isCurrent(owner,identity) then
-        if count then works.total=count end
-        owner:onShowFanficBrowser(works,next_page,title,{identity=identity})
+        local info=works.series_info or {id=id,title=title}
+        info.title=info.title or title
+        if known then
+            for _,field in ipairs({'author','summary','fandoms','word_count','work_count'}) do
+                if info[field]==nil then info[field]=known[field] end
+            end
+            info.words=info.words or info.word_count
+        end
+        local total=tonumber((tostring(info.work_count or ''):gsub(',','')))
+        if total or count then works.total=total or count end
+        owner:onShowFanficBrowser(works,next_page,title,{identity=identity,series_info=info})
     end
 end
 function M.show(owner)

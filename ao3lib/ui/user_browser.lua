@@ -254,7 +254,7 @@ function AO3UserBrowser:openUserSeriesList()
                 series.title,
                 "",
                 callback = function()
-                    require("ao3lib.ui.subscriptions").openSeries(self.Fanfic,series.id,series.title,series.work_count)
+                    require("ao3lib.ui.subscriptions").openSeries(self.Fanfic,series.id,series.title,series.work_count,series)
                 end,
                 hold_callback = function()
                     require("ao3lib.ui.subscriptions").manage(self.Fanfic,'Series',series.id,series.title)

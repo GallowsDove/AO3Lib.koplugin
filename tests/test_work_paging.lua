@@ -24,6 +24,21 @@ local ctx={works=first,fetch=nextBatch,index=1,network=function(fn) pending=fn e
     present=function(state) presented[#presented+1]=state.index end}
 local state=View.new(ctx);state:render()
 assert(state:pageCount()==247)
+local overview_first=batch(1,247)
+local overview_fetch=function() end
+local overview_requests={}
+Paging.attach(overview_first,overview_fetch,function(page) overview_requests[#overview_requests+1]=page;return batch(page,247) end)
+local overview=View.new{works=overview_first,fetch=overview_fetch,series_info={title='Series',summary='Overview'},
+    network=function(fn) fn() end,rows=ctx.rows,present=function(_,html,_,rows)
+        if rows[1][1]=='Series' then assert(html:find('Overview',1,true)) end
+    end}
+overview:render();assert(overview:pageCount()==248 and overview.index==1)
+overview:next();assert(overview.index==2 and overview.works[1].id==1)
+overview:goTo(22);assert(overview.index==22 and overview_requests[1]==2 and overview.works[21].id==21)
+overview:goTo(248);assert(overview.index==248 and overview_requests[2]==13)
+overview:goTo(1);assert(overview.index==1)
+local empty_overview=View.new{works={total=0},series_info={title='Empty'},rows=ctx.rows,present=function() end}
+assert(empty_overview:pageCount()==1);empty_overview:next();assert(empty_overview.index==1)
 state:goTo(123)
 assert(state.index==1 and #requested==0 and pending,'Jump must retain the current work while connecting')
 pending();pending=nil
@@ -69,6 +84,11 @@ assert(listed.window.kv_pairs[(123-1)*15+1][1]=='Work 123')
 listed.window:goToPage(247)
 assert(listed.index==247 and listed.window.show_page==247 and #requested==before)
 assert(listed.window.kv_pairs[(247-1)*15+1][1]=='Work 247')
+local series_listed=Browser:show({},overview_first,overview_fetch,function() end,function() end,function() end,
+    plugin,'Series',{series_info={title='Series',summary='Series summary'}})
+assert(series_listed.index==1 and series_listed.window.pages==248 and series_listed.window.kv_pairs[1][1]=='Series')
+series_listed:next()
+assert(series_listed.index==2 and series_listed.window.kv_pairs[16][1]=='Work 1')
 -- Snapshot query parameters when registering a native search fetcher.
 local Fanfic=require('main')
 local client=package.loaded["ao3lib.ao3.client"]

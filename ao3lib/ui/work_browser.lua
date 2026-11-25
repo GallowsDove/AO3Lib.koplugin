@@ -405,16 +405,16 @@ function FanficBrowser:show(ui, ficResults, fetchNextPage, updateFanficCallback,
     local total_fic_count=ficResults.total
     local pager=require("ao3lib.ao3.work_paging").get(fetchNextPage)
     if pager then pager:setTotal(total_fic_count) end
-    if not Config:readSetting("formatted_work_view",true) and pager and pager.total then
+    if not Config:readSetting("formatted_work_view",true) and pager and (pager.total or view_options.series_info) then
         return require("ao3lib.ui.work_list").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
-            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,summary_html=view_options.summary_html,
+            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,summary_html=view_options.summary_html,series_info=view_options.series_info,
             replacing=view_options.replacing,resume=resume})
     end
     if Config:readSetting("formatted_work_view",true) then
         return require("ao3lib.ui.work_view").show(self,{ui=ui,works=ficResults,fetch=fetchNextPage,blacklist=view_options.blacklist~=false,mutes=true,
             update=updateFanficCallback,download=downloadFanficCallback,author=showAuthorInfoCallback,
-            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,summary_html=view_options.summary_html,
+            plugin=Fanfic,title=title,index=view_options.index,identity=view_options.identity,summary_html=view_options.summary_html,series_info=view_options.series_info,
             replacing=view_options.replacing,resume=resume})
     end
     require("ao3lib.ao3.mute_cache").ensure()

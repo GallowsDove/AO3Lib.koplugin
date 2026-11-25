@@ -187,6 +187,39 @@ function M.html(work,rows,options)
     return table.concat(out,'\n'),actions,holds
 end
 
+function M.seriesRows(info)
+    local rows={{info.title or _('Series'),''}}
+    if type(info.fandoms)=='table' and #info.fandoms>0 then rows[#rows+1]={_('Fandoms:'),table.concat(info.fandoms,', ')} end
+    for _,field in ipairs({{'author',_('Author:')},{'begun',_('Begun:')},{'updated',_('Updated:')},
+            {'summary',_('Summary:')},{'notes',_('Notes:')},{'work_count',_('Works:')},
+            {'words',_('Words:')},{'complete',_('Complete:')}}) do
+        local value=info[field[1]]
+        if value and tostring(value)~='' then rows[#rows+1]={field[2],tostring(value)} end
+    end
+    return rows
+end
+function M.seriesHTML(info)
+    local out={'<h1>'..escape(info.title or _('Series'))..'</h1>'}
+    if info.author and info.author~='' then out[#out+1]='<p class="author">'..escape(_('by'))..' '..escape(info.author)..'</p>' end
+    if type(info.fandoms)=='table' and #info.fandoms>0 then
+        local fandoms={};for _,name in ipairs(info.fandoms) do fandoms[#fandoms+1]=escape(name) end
+        out[#out+1]='<p class="fandom">'..table.concat(fandoms,' &#183; ')..'</p>'
+    end
+    if info.summary and info.summary~='' then out[#out+1]='<div class="summary">'..paragraphs(info.summary)..'</div>' end
+    if info.notes and info.notes~='' then out[#out+1]='<div class="summary"><p><b>'..escape(_('Notes'))..'</b></p>'..paragraphs(info.notes)..'</div>' end
+    local stats={}
+    for _,field in ipairs({{'work_count',_('works')},{'words',_('words')}}) do
+        if info[field[1]] and tostring(info[field[1]])~='' then stats[#stats+1]='<b>'..escape(info[field[1]])..'</b> '..escape(field[2]) end
+    end
+    if info.complete and info.complete~='' then stats[#stats+1]=escape(_('Complete:'))..' '..escape(info.complete) end
+    local dates={}
+    if info.begun and info.begun~='' then dates[#dates+1]=escape(_('Begun:'))..' '..escape(info.begun) end
+    if info.updated and info.updated~='' then dates[#dates+1]=escape(_('Updated:'))..' '..escape(info.updated) end
+    if #stats>0 or #dates>0 then out[#out+1]='<div class="footnote">'..(#stats>0 and '<p>'..table.concat(stats,' &#183; ')..'</p>' or '')
+        ..(#dates>0 and '<p>'..table.concat(dates,' &#183; ')..'</p>' or '')..'</div>' end
+    return table.concat(out,'\n'),{}
+end
+
 -- Conservative HTML/CSS supported by KOReader's MuPDF renderer: tables for
 -- alignment, relative sizes for device scaling, no browser-only layout rules.
 M.css=[[
@@ -236,6 +269,7 @@ table.badges img { width: 1.7em; height: 1.7em; }
 -- be tested without a device or a MuPDF renderer.
 function M.new(context)
     local pager=require('ao3lib.ao3.work_paging').get(context.fetch)
+    local offset=context.series_info and 1 or 0
     local self={context=context,works={},index=context.index or 1,closed=false,pager=pager,revealed={}}
     for i,work in ipairs(context.works) do self.works[i]=work end
     self.total=tonumber(context.works.total)
@@ -273,7 +307,7 @@ function M.new(context)
         end)
         cache.ensure()
     end
-    function self:pageCount() return (self.pager and (self.pager.total or self.pager.loaded)) or self.total or #self.works end
+    function self:pageCount() return ((self.pager and (self.pager.total or self.pager.loaded)) or self.total or #self.works)+offset end
     self.index=math.max(1,math.min(self.index,math.max(1,self:pageCount())))
     function self:render()
         if self.closed then return end
@@ -289,7 +323,13 @@ function M.new(context)
             self._background_refresh_pending=true
             return
         end
-        local work=self.works[self.index]
+        if offset==1 and self.index==1 then
+            local rows=M.seriesRows(context.series_info)
+            local html,actions=M.seriesHTML(context.series_info)
+            context.present(self,html,actions,rows,{})
+            return
+        end
+        local work=self.works[self.index-offset]
         local match=require('ao3lib.ui.hidden_work').reasons(work,{
             blacklist=context.blacklist,mutes=context.mutes,
             revealed=work and self.revealed[work.id or self.index],
@@ -313,18 +353,20 @@ function M.new(context)
         context.present(self,html,actions,rows,holds)
     end
     function self:goTo(index,allow_unknown_next)
-        local maximum=self.pager and self.pager.total or self.total or #self.works
+        local maximum=(self.pager and self.pager.total or self.total or #self.works)+offset
         if self.closed or self.loading or type(index)~='number' or index%1~=0
             or index<1 or (maximum and index>maximum and not (allow_unknown_next and self.pager and not self.pager.total))
             or index==self.index then return end
         self.request=(self.request or 0)+1
         local request=self.request
-        if self.works[index] then self.index=index;self:render();return end
+        if offset==1 and index==1 then self.index=index;self:render();return end
+        local work_index=index-offset
+        if self.works[work_index] then self.index=index;self:render();return end
         if not self.pager then return end
         context.network(function()
             if self.closed or self.loading or self.request~=request then return end
             self.loading=true
-            local ok,work=pcall(self.pager.load,self.pager,index)
+            local ok,work=pcall(self.pager.load,self.pager,work_index)
             self.loading=false
             if not ok then error(work,0) end
             if self.closed or self.request~=request then return end
@@ -337,8 +379,8 @@ function M.new(context)
     function self:next()
         if self.closed or self.loading then return end
         if self.pager then self:goTo(self.index+1,true);return end
-        if self.index<#self.works then self.index=self.index+1;self:render();return end
-        if not context.fetch or (self.total and self.index>=self.total) then return end
+        if self.index<#self.works+offset then self.index=self.index+1;self:render();return end
+        if not context.fetch or (self.total and self.index>=self.total+offset) then return end
         local index=self.index
         context.network(function()
             if self.closed or self.loading or self.index~=index then return end

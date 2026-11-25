@@ -591,6 +591,7 @@ function AO3LibClient:searchByParameters(parameters, page_no)
     local root = htmlparser.parse(html_body)
     local works = AO3WebParser:parseWorkSearchResults(root)
 
+
     return {
         success = true,
         works = works,
@@ -834,6 +835,7 @@ function AO3LibClient:getWorksFromSeries(series_id, page_no)
     local root = htmlparser.parse(html_body)
 
     local works = AO3WebParser:parseWorkSearchResults(root)
+    if page_no==1 then works.series_info=AO3WebParser:parseSeriesDetails(root,series_id) end
 
     return {
         success = true,
@@ -2062,6 +2064,42 @@ function AO3WebParser:parseArchiveWarnings(root, links)
         end
     end
     return out,false
+end
+
+function AO3WebParser:parseSeriesDetails(root,id)
+    local heading=root:select('h2.heading')[1]
+    local meta=root:select('dl.series.meta')[1]
+    local info={id=id,title=heading and encodeHelper:parseFromHTML(heading:getcontent()) or nil}
+    if not meta then return info end
+    local labels=meta:select('dt')
+    local values=meta:select('dd')
+    for index,label in ipairs(labels) do
+        local name=encodeHelper:parseFromHTML(label:getcontent()):gsub('%s*:%s*$',''):lower()
+        local value=values[index]
+        if value then
+            local text=encodeHelper:parseFromHTML(value:getcontent())
+            if name=='creator' or name=='creators' then info.author=text
+            elseif name=='series begun' then info.begun=text
+            elseif name=='series updated' then info.updated=text
+            elseif name=='description' then info.summary=text
+            elseif name=='notes' then info.notes=text end
+        end
+    end
+    local words=meta:select('dd.words')[1]
+    local count=meta:select('dd.works')[1]
+    info.words=words and encodeHelper:parseFromHTML(words:getcontent()) or nil
+    info.work_count=count and encodeHelper:parseFromHTML(count:getcontent()) or nil
+    -- Completion has no class in AO3's series stats; read the nested pairs.
+    local stats=meta:select('dl.stats')[1]
+    if stats then
+        local ds,vs=stats:select('dt'),stats:select('dd')
+        for index,label in ipairs(ds) do
+            if encodeHelper:parseFromHTML(label:getcontent()):gsub('%s*:%s*$',''):lower()=='complete' and vs[index] then
+                info.complete=encodeHelper:parseFromHTML(vs[index]:getcontent())
+            end
+        end
+    end
+    return info
 end
 
 function AO3WebParser:parseUserSeriesPage(root)
