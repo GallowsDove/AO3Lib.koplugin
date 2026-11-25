@@ -64,6 +64,9 @@ screen:handleEvent{handler='onCloseWidget'};assert(#host_calls==2)
 local overlay=window();overlay.toast=true;UI:show(overlay)
 local dialog=window();dialog.buttons={};UI:show(dialog)
 assert(dialog._ao3_gesture_owner==owner)
+local calls_before=#base_calls
+assert(screen:handleEvent{handler='onGesture',args={{id='local',ges='tap'}}})
+assert(#base_calls==calls_before,'A covered AO3 screen must not receive taps intended for its child')
 assert(dialog:handleEvent{handler='onGesture',args={{id='corner',ges='tap'}}})
 assert(matches[#matches]=='corner')
 local builtin=window();builtin.buttons={}

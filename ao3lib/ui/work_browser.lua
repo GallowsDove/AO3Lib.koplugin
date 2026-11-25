@@ -223,7 +223,7 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
                     require('ao3lib.ui.subscriptions').openSeries(self.Fanfic,series.id,series.title)
                 end) end
                 row.hold_callback=function() chooseSeries(function(series)
-                    require('ao3lib.ui.subscriptions').manage(self.Fanfic,'Series',series.id,series.title)
+                    require('ao3lib.ui.series_actions').show(self.Fanfic,series)
                 end) end
             end
             table.insert(kv_pairs,row)

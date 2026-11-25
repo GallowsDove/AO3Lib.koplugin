@@ -4,7 +4,7 @@ local _=require('gettext')
 local M={}
 -- HtmlBoxWidget exposes link hit-testing but has no held-link callback.
 -- Bind only this widget instance, using its current page and coordinates.
-function M.bindTitleHold(scroll,callback)
+function M.bindTitleHold(scroll,callback,link_prefix)
     local box=scroll.htmlbox_widget
     if not box then return end
     box.ges_events=require('ao3lib.core.table').shallowCopy(box.ges_events)
@@ -14,7 +14,7 @@ function M.bindTitleHold(scroll,callback)
     box.onHoldAO3Title=function(self,_,ges)
         local pos=self:getPosFromAbsPos(ges.pos)
         local link=pos and self:getLinkByPosition(pos)
-        local id=link and tonumber((link.uri or ''):match('^ao3%-action:(%d+)$'))
+        local id=link and tonumber((link.uri or ''):match('^'..(link_prefix or 'ao3%-action')..':(%d+)$'))
         if id then return callback(id) or false end
         return false
     end
@@ -212,24 +212,44 @@ function M.seriesRows(info,open_bookmarks)
     if status then rows[#rows+1]={_('Status:'),status} end
     return rows
 end
-function M.seriesHTML(info,open_bookmarks)
-    local out={'<h1>'..escape(info.title or _('Series'))..'</h1>'}
-    if info.author and info.author~='' then out[#out+1]='<p class="author">'..escape(_('by'))..' '..escape(info.author)..'</p>' end
-    if type(info.fandoms)=='table' and #info.fandoms>0 then
-        local fandoms={};for _,name in ipairs(info.fandoms) do fandoms[#fandoms+1]=escape(name) end
-        out[#out+1]='<p class="fandom">'..table.concat(fandoms,' &#183; ')..'</p>'
+function M.seriesHTML(info,open_bookmarks,options)
+    options=options or {}
+    local actions,holds={},{}
+    local function link(label,callback,hold)
+        if not callback then return escape(label) end
+        actions[#actions+1]=callback;holds[#actions]=hold
+        return '<a href="ao3-action:'..#actions..'" style="color:#000000;text-decoration:none">'..escape(label)..'</a>'
     end
+    local out={'<h1>'..link(info.title or _('Series'),options.open,options.hold)..'</h1>'}
+    if info.author and info.author~='' then out[#out+1]='<p class="author">'..escape(_('by'))..' '..link(info.author,options.author)..'</p>' end
+    local function tagLinks(values,kind)
+        local result={}
+        for _,name in ipairs(type(values)=='table' and values or {}) do
+            if type(name)=='string' and name~='' then
+                local callback=options.tag and function() options.tag(kind,name) end
+                result[#result+1]=link(name,callback)
+            end
+        end
+        return table.concat(result,' &#183; ')
+    end
+    local fandoms=tagLinks(info.fandoms,'Fandom')
+    if fandoms~='' then out[#out+1]='<p class="fandom">'..fandoms..'</p>' end
     if info.summary and info.summary~='' then out[#out+1]='<div class="summary">'..paragraphs(info.summary)..'</div>' end
     if info.notes and info.notes~='' then out[#out+1]='<div class="summary"><p><b>'..escape(_('Notes'))..'</b></p>'..paragraphs(info.notes)..'</div>' end
-    local stats={}
-    for _,field in ipairs({{'work_count',_('works')},{'words',_('words')}}) do
-        if info[field[1]] and tostring(info[field[1]])~='' then stats[#stats+1]='<b>'..escape(info[field[1]])..'</b> '..escape(field[2]) end
+    for __,field in ipairs({{'warnings','Warning',_('Warnings')},{'relationships','Relationship',_('Relationships')},
+            {'characters','Character',_('Characters')},{'tags','Freeform',_('Additional tags')}}) do
+        local tags=tagLinks(info[field[1]],field[2])
+        if tags~='' then out[#out+1]='<div class="tag-group"><p><span class="tag-heading">'..escape(field[3])..'</span> '..tags..'</p></div>' end
     end
-    local actions={}
+    local stats={}
+    local format=require('ao3lib.core.format').integer
+    for _,field in ipairs({{'work_count',_('works')},{'words',_('words')}}) do
+        if info[field[1]] and tostring(info[field[1]])~='' then stats[#stats+1]='<b>'..escape(format(info[field[1]]))..'</b> '..escape(field[2]) end
+    end
     if info.id and open_bookmarks then
-        actions[1]=open_bookmarks
-        local label=info.bookmarks and (tostring(info.bookmarks)..' '.._('Bookmarks')) or _('Bookmarks')
-        stats[#stats+1]='<b><a href="ao3-action:1" style="color:#000000;text-decoration:none">'..escape(label)..'</a></b>'
+        local count=info.bookmarks or info.bookmark_count
+        local label=count and (format(count)..' '.._('Bookmarks')) or _('Bookmarks')
+        stats[#stats+1]='<b>'..link(label,open_bookmarks)..'</b>'
     end
     local status=seriesStatus(info.complete)
     if status then stats[#stats+1]=escape(status) end
@@ -238,7 +258,7 @@ function M.seriesHTML(info,open_bookmarks)
     if info.updated and info.updated~='' then dates[#dates+1]=escape(_('Updated:'))..' '..escape(info.updated) end
     if #stats>0 or #dates>0 then out[#out+1]='<div class="footnote">'..(#stats>0 and '<p>'..table.concat(stats,' &#183; ')..'</p>' or '')
         ..(#dates>0 and '<p>'..table.concat(dates,' &#183; ')..'</p>' or '')..'</div>' end
-    return table.concat(out,'\n'),actions
+    return table.concat(out,'\n'),actions,holds
 end
 
 -- Conservative HTML/CSS supported by KOReader's MuPDF renderer: tables for
@@ -350,8 +370,12 @@ function M.new(context)
                 require('ao3lib.ui.work_bookmarks').show(context.plugin,context.series_info,'series')
             end
             local rows=M.seriesRows(context.series_info,open_bookmarks)
-            local html,actions=M.seriesHTML(context.series_info,open_bookmarks)
-            context.present(self,html,actions,rows,{})
+            local html,actions,holds=M.seriesHTML(context.series_info,open_bookmarks,{
+                tag=context.tag_action,
+                open=context.plugin and function() end or nil,
+                hold=context.plugin and function() require('ao3lib.ui.series_actions').show(context.plugin,context.series_info) end or nil,
+            })
+            context.present(self,html,actions,rows,holds)
             return
         end
         local work=self.works[self.index-offset]

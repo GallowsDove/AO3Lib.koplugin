@@ -1037,10 +1037,37 @@ function AO3LibClient:getUserSeries(username, pseud, page_no)
     local root = htmlparser.parse(html_body)
 
     local series = AO3WebParser:parseUserSeriesPage(root)
+    local total_items
+    for _,selector in ipairs({'#main > h2','#main > h3'}) do
+        for _,heading in ipairs(root:select(selector)) do
+            local text=encodeHelper:parseFromHTML(heading:getcontent())
+            local count=text:match('of%s+([%d,]+)%s+[Ss]eries') or text:match('([%d,]+)%s+[Ss]eries')
+            if count then total_items=tonumber((count:gsub(',','')));break end
+        end
+        if total_items then break end
+    end
+
+    local total_pages,next_page=page_no,nil
+    for _,selector in ipairs({'ol.pagination a','div.pagination a'}) do
+        for _,link in ipairs(root:select(selector)) do
+            local n=tonumber(((link.attributes or {}).href or ''):match('[?&]page=(%d+)'))
+            if n and n>total_pages then total_pages=n end
+        end
+    end
+    for _,selector in ipairs({'ol.pagination li.next a','div.pagination a.next','a[rel="next"]'}) do
+        for _,link in ipairs(root:select(selector)) do
+            local n=tonumber(((link.attributes or {}).href or ''):match('[?&]page=(%d+)'))
+            if n and n>page_no then next_page=n;break end
+        end
+        if next_page then break end
+    end
+    if not next_page and total_pages>page_no then next_page=page_no+1 end
+    if next_page and total_pages<=page_no then total_pages=nil end
 
     return {
         success = true,
         series = series,
+        next_page=next_page,total_pages=total_pages,total_items=total_items,
     }
 end
 
@@ -1777,7 +1804,27 @@ function AO3LibClient:getUsersWorkBookmark(work_id)
     }
 end
 
-function AO3LibClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec)
+function AO3LibClient:getUsersSeriesBookmark(series_id)
+    if not tostring(series_id or ''):match('^%d+$') then return {success=false,error='Invalid series ID.'} end
+    local status=self:GetSessionStatus()
+    if not status.success then return status end
+    if not status.logged_in then return {success=false,auth_required=true,error='Please sign in to manage bookmarks.'} end
+    local body={}
+    local result=HTTPQueryHandler:performHTTPRequest{url=getAO3URL()..'/series/'..series_id,
+        method='GET',sink=ltn12.sink.table(body)}
+    if not result.success then return {success=false,error=result.error} end
+    local root=htmlparser.parse(table.concat(body))
+    local form=root:select('#bookmark-form > form')[1]
+    local action=form and form.attributes and form.attributes.action or ''
+    local bookmark_id=action:match('^/bookmarks/(%d+)/?$')
+    local create_path='/series/'..series_id..'/bookmarks'
+    if not bookmark_id and action~=create_path and action~=create_path..'/' then
+        return {success=false,error='AO3 did not return a valid series bookmark form.'}
+    end
+    return {success=true,bookmark_id=bookmark_id,bookmark_data=AO3WebParser:parseUsersWorkBookmark(root)}
+end
+
+function AO3LibClient:updateBookmark(work_id, bookmark_id, notes, tags, collections, private, rec, kind)
     logger.dbg("AO3Lib.koplugin: Updating bookmark. Work ID: " .. tostring(work_id))
 
     local login_status = self:GetSessionStatus()
@@ -1821,7 +1868,7 @@ function AO3LibClient:updateBookmark(work_id, bookmark_id, notes, tags, collecti
         form_data["_method"] = "put"
         form_data["commit"] = "Update"
     else
-        url = T("%1/works/%2/bookmarks", getAO3URL(), work_id)
+        url = T("%1/%2/%3/bookmarks", getAO3URL(), kind=='series' and 'series' or 'works', work_id)
         form_data["commit"] = "Create"
 
         local pseud_result = AO3LibClient:getAccountPseudID(login_status.username)
@@ -2131,10 +2178,12 @@ function AO3WebParser:parseUserSeriesPage(root)
         if titleElement then
             local href = titleElement.attributes.href
             local id = tonumber(href:match("/series/(%d+)"))
-            local title = titleElement:getcontent()
+            local title = encodeHelper:parseFromHTML(titleElement:getcontent())
 
             local authorElement = element:select(".heading > a[rel='author']")[1]
             local author = authorElement and encodeHelper:parseToCodepoints(authorElement:getcontent()) or nil
+            local author_href=authorElement and authorElement.attributes and authorElement.attributes.href or ''
+            local author_username,author_pseud=author_href:match('^/users/([%w_%-]+)/pseuds/([%w_%-]+)')
 
             local dateElement = element:select(".datetime")[1]
 
@@ -2197,6 +2246,8 @@ function AO3WebParser:parseUserSeriesPage(root)
                 id = id,
                 title = title,
                 author = author,
+                author_username = author_username,
+                author_pseud = author_pseud,
                 date_posted = date_posted,
                 fandoms = fandoms,
                 warnings = warnings,
@@ -3099,6 +3150,7 @@ local payloads = {
     getWorksFromCollection = "works", getWorksFromUserPage = "works", getWorksFromAccountHistory = "works",
     getUserSeries = "series", getUserCollections = "collections", getUserPseuds = "pseuds",
     searchForUsers = "result_users", searchForCollections = "collections", getUsersWorkBookmark = "bookmark_data",
+    getUsersSeriesBookmark = "bookmark_data",
 }
 
 -- Every public operation has the same failure contract, including malformed

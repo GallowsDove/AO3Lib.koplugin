@@ -46,6 +46,7 @@ Network.wrap=function(fn) return fn end
 local selected_series,managed_series
 package.loaded['ao3lib.ui.subscriptions']={openSeries=function(_,id,title) selected_series={id,title} end,
     manage=function(_,kind,id,title) managed_series={kind,id,title} end}
+package.loaded['ao3lib.ui.series_actions']={show=function(_,series) managed_series={'Series',series.id,series.title} end}
 local single={id='5',title='Story',series={{id=12,title='Only',position=2}}}
 local series_row=Browser:generateTable({}, {single},function() end,function() end)[3]
 local before=#shown

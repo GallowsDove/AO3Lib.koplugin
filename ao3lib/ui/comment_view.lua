@@ -61,12 +61,31 @@ function M.new(context)
     function state:current() return self.comments[self.index] end
     function state:hasPrevious() return self.index>1 or self.page>1 end
     function state:hasNext() return self.index<#self.comments or self.next_page~=nil end
-    function state:render() if not self.closed then context.present(self,(context.html or M.html)(self:current())) end end
+    function state:render()
+        if self.closed then return end
+        local item=self:current()
+        if context.enrich and item and not item._ao3_enriched then
+            if self.enriching then return end
+            self.enriching=true
+            context.network(function()
+                if self.closed then self.enriching=false;return end
+                local ok,result=pcall(context.enrich,item)
+                self.enriching=false
+                if not ok then error(result,0) end
+                item._ao3_enriched=true
+                if result and not result.success then context.error(result) end
+                if not self.closed then self:render() end
+            end)
+            return
+        end
+        context.present(self,(context.html or M.html)(item))
+    end
     function state:enter(page,chapter,result,index)
         if chapter~=self.chapter then self.cache={} end
         self.page,self.chapter,self.comments,self.next_page=page,chapter,
             context.prepare and context.prepare(result) or threads(result.comments),result.next_page
         self.total_pages=result.total_pages
+        self.total_items=result.total_items or self.total_items
         self.cache[page]=result
         self.index=math.max(1,math.min(index or 1,math.max(1,#self.comments)))
         self:render()
@@ -112,6 +131,15 @@ function M.new(context)
         if self.cache[page] then self:enter(page,self.chapter,self.cache[page],1)
         else self:load(page,self.chapter,1) end
     end
+    function state:goToItem(index)
+        if self.closed or self.loading or type(index)~='number' or index%1~=0 or index<1
+                or (self.total_items and index>self.total_items) then return end
+        local size=context.items_per_batch or 20
+        local page=math.floor((index-1)/size)+1
+        local within=(index-1)%size+1
+        if self.cache[page] then self:enter(page,self.chapter,self.cache[page],within)
+        else self:load(page,self.chapter,within) end
+    end
     function state:refresh() self:load(self.page,self.chapter,self.index,true) end
     return state
 end
@@ -144,11 +172,11 @@ function M.show(owner,context)
     -- activate the work underneath; child controls receive gestures first.
     function Window:onConsumeReaderTouch() return true end
     function Window:onNextComment()
-        if not self._ao3_closed and not self.scroll:onScrollDown() then state:next() end
+        if not self._ao3_closed and (context.item_pages or not self.scroll:onScrollDown()) then state:next() end
         return true
     end
     function Window:onPreviousComment()
-        if not self._ao3_closed and not self.scroll:onScrollUp() then state:previous() end
+        if not self._ao3_closed and (context.item_pages or not self.scroll:onScrollUp()) then state:previous() end
         return true
     end
     function Window:onSwipeReader(_,gesture)
@@ -192,14 +220,17 @@ function M.show(owner,context)
             self.action_buttons[i]=Button:new(options);actions[#actions+1]=self.action_buttons[i]
         end
         local pager
+        local total=context.item_pages and state.total_items or state.total_pages
+        local goto_page=context.item_pages and function(page) state:goToItem(page) end or function(page) state:goToPage(page) end
+        local current=context.item_pages and ((state.page-1)*(context.items_per_batch or 20)+state.index) or state.page
         pager,self.page_buttons=require('ao3lib.ui.rendered_pager').new(self,{
-            width=width,total=state.total_pages,
+            width=width,total=total,
             label=context.page_label and context.page_label(state) or string.format(_("Thread %d/%d · Page %d"),#state.comments>0 and state.index or 0,#state.comments,state.page),
             has_previous=state:hasPrevious(),has_next=state:hasNext(),
-            has_last=state.total_pages and state.page<state.total_pages or false,
-            first=function() state:goToPage(1) end,previous=function() state:previous() end,
-            next=function() state:next() end,last=function() state:goToPage(state.total_pages) end,
-            go_to=function(page) state:goToPage(page) end,
+            has_last=total and current<total or false,
+            first=function() goto_page(1) end,previous=function() state:previous() end,
+            next=function() state:next() end,last=function() goto_page(total) end,
+            go_to=goto_page,
         })
         local action_height=context.hide_actions and 0 or actions:getSize().h
         self.scroll=Scroll:new{width=content_width,
@@ -214,6 +245,12 @@ function M.show(owner,context)
                 elseif action.kind=='author' then context.author(action.comment)
                 elseif action.kind=='thread' then context.thread(action.comment,state) end
             end}
+        if context.link_hold then
+            require('ao3lib.ui.work_view').bindTitleHold(self.scroll,function(id)
+                local action=self.links[id]
+                if action then context.link_hold(action,state);return true end
+            end,'ao3%-comment')
+        end
         -- Hardware page turns scroll a long thread before advancing to the
         -- next one. Touch arrows always move directly between threads.
         if self.scroll.key_events then self.scroll.key_events.ScrollDown=nil;self.scroll.key_events.ScrollUp=nil end

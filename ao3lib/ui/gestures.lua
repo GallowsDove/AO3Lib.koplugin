@@ -90,7 +90,14 @@ function M.attach(owner,window)
     local base=window.handleEvent
     window.handleEvent=function(self,event)
         local host=hostFor(self._ao3_gesture_owner)
-        if not host or not isTop(self) then return base(self,event) end
+        -- KOReader sends unhandled gestures to active windows underneath the
+        -- top window. Those AO3 screens must never react to a tap intended
+        -- for a child screen or dialog.
+        if not isTop(self) then
+            if event.handler=='onGesture' then return true end
+            return base(self,event)
+        end
+        if not host then return base(self,event) end
         if active>0 and event.handler~='onGesture' then
             if broadcasting>0 then return base(self,event) end
             if forward(host,event,self) then return true end
