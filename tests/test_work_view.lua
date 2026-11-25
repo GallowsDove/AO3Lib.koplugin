@@ -13,7 +13,9 @@ local function rows(w) return Browser:generateTable({}, {w},function() end,funct
 local html,actions=WorkView.html(work,rows(work))
 assert(html:find('<table class="heading"><tr><td class="square">',1,true)
     and html:find('<td class="heading-text"><h1>',1,true),
-    'The heading table must size to its contents without percentage-width columns')
+    'The heading must keep the text alongside the AO3 square')
+assert(WorkView.css:find('table.heading { width: 100%%;') and WorkView.css:find('td.square { width: 4em;',1,true),
+    'The heading must fill the available width while keeping the badge column fixed')
 local tapped={}
 local tag_html,tag_actions=WorkView.html(work,rows(work),{tag_action=function(kind,name) tapped[#tapped+1]={kind,name} end})
 assert(tag_html:find('>First tag</span></a>',1,true) and tag_html:find('>Fandom</span></a>',1,true))

@@ -281,7 +281,7 @@ p { margin: .25em 0; }
 h1 { font-size: 1.25em; font-weight: bold; line-height: 1.1; margin: 0 0 .12em; }
 h1, h1 a, h1 a:link, h1 a:visited, h1 a:active { color: #000; }
 .tag-group .tag-heading { font-size: .72em; font-weight: bold; color: #000; }
-table.heading { border-spacing: 0; margin: 0 0 .3em; }
+table.heading { width: 100%; border-spacing: 0; margin: 0 0 .3em; }
 table.heading td { vertical-align: top; padding: 0; }
 table.heading td.square { width: 4em; padding-right: .5em; }
 table.heading td.heading-text { text-align: left; }
