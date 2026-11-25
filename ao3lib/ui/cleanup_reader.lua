@@ -156,7 +156,7 @@ function M.clean(reader,ui)
         if plan.changed==0 then Cleanup.discard(plan);message('No formatting cleanup is needed.');return end
         local dialog,accepted
         dialog=Confirm:new{
-            text=string.format('Clean up formatting in this work?\n\nOnly the currently open EPUB will be changed (%d internal chapter/content files).\n\n%d repeated line-break runs and %d empty paragraphs will be cleaned up. Deliberate formatting and possible scene gaps are preserved.\n\nAn original EPUB backup will be kept. Reading position is restored approximately within the current section.',plan.changed,plan.breaks,plan.blanks),
+            text=string.format('Clean up formatting in this work?\n\nOnly the currently open EPUB will be changed (%d internal chapter/content files).\n\n%d line-break runs and %d empty paragraphs will be cleaned up. Deliberate formatting and possible scene gaps are preserved.\n\nAn original EPUB backup will be kept. Reading position is restored approximately within the current section.',plan.changed,plan.breaks,plan.blanks),
             ok_text='Clean up',ok_callback=function()
                 accepted=true
                 UI:nextTick(function() M.apply(reader,ui,plan) end)

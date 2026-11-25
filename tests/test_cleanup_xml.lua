@@ -29,6 +29,15 @@ local styled='<p class="calibre9">A<br/><br/>B</p>'
 assert(clean(styled,'p.calibre9 { text-align: center; }')==doc(styled))
 local untouched='<html><body><div id="preface"><p>A<br/><br/>B</p></div><div class="userstuff"><p>C<br/><br/>D</p></div></body></html>'
 assert(X.clean(untouched)==untouched)
+local prose=string.rep('A long prose paragraph with enough ordinary text to be clearly distinct from a short line.<br/>',15)..'Another long prose paragraph with enough ordinary text to conclude the example.'
+out,s=clean('<p>'..prose..'</p>')
+assert(s.break_runs_converted==15 and select(2,out:gsub('<p>',''))==16)
+local verse='<p>'..string.rep('A short line<br/>',20)..'A final line</p>'
+assert(clean(verse)==doc(verse),'Short lines should not be mistaken for prose paragraphs')
+local titled='<p class="verse">'..prose..'</p>'
+assert(clean(titled)==doc(titled),'Explicitly marked verse must stay unchanged')
+local anchored='<p>'..prose:gsub('<br/>','<br id="line"/>',1)..'</p>'
+assert(clean(anchored)==doc(anchored),'Anchored single breaks must not be removed')
 out,s=clean('<div class="userstuff1"><div class="userstuff2"><p>A<br/><br/>B</p></div></div>')
 assert(s.break_runs_converted==1)
 assert(not pcall(X.clean,doc('<p>A</div>')))

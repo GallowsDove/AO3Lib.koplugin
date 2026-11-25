@@ -151,6 +151,26 @@ end
 local function split(p,stats,classes,checkpoint)
     local cuts,removed={},{}
     local unsafe=false
+    -- Some AO3 exports put an entire chapter in one paragraph, separating
+    -- prose paragraphs with a single break. Require many substantial lines
+    -- before treating those breaks as paragraphs, to leave verse and other
+    -- intentional short-line layouts alone.
+    local lengths,current={},0
+    local function measure(n)
+        for _,c in ipairs(n.children) do
+            checkpoint()
+            if type(c)=='string' then current=current+#compact(c)
+            elseif c.tag=='br' then lengths[#lengths+1]=current;current=0
+            elseif inline[c.tag] then measure(c) end
+        end
+    end
+    measure(p);lengths[#lengths+1]=current
+    local substantial,total=0,0
+    for _,length in ipairs(lengths) do
+        total=total+length
+        if length>=30 then substantial=substantial+1 end
+    end
+    local single_prose=#lengths>=13 and total>=1000 and substantial>=math.ceil(#lengths*.85)
     local function find(n)
         for _,c in ipairs(n.children) do
             checkpoint()
@@ -169,7 +189,7 @@ local function split(p,stats,classes,checkpoint)
                     elseif type(nextc)=='table' and nextc.tag=='br' then run[#run+1]=nextc;j=j+1
                     else break end
                 end
-                if #run>=2 then
+                if #run>=2 or single_prose then
                     for _,br in ipairs(run) do
                         for k in pairs(br.attrs) do if identities[k] or k=='style' then unsafe=true end end
                         removed[br]=true

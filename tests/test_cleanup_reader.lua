@@ -84,7 +84,7 @@ local confirmation=messages[#messages]
 assert(confirmation.ok_text=='Clean up')
 assert(confirmation.text:find('Only the currently open EPUB will be changed',1,true))
 assert(not confirmation.text:find('document(s)',1,true))
-assert(confirmation.text:find('2 repeated line-break runs and 3 empty paragraphs',1,true))
+assert(confirmation.text:find('2 line-break runs and 3 empty paragraphs',1,true))
 local discarded=discards
 confirmation.ok_callback();confirmation:onCloseWidget()
 assert(discards==discarded,'Closing an accepted confirmation must retain the staging file')
