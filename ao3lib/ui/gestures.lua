@@ -10,9 +10,12 @@ local function hostFor(owner)
 end
 local function isTop(window)
     if not UI._window_stack then return true end
+    -- KOReader shows the virtual keyboard as a separate window above its
+    -- input dialog. Taps outside the keyboard must still reach that dialog.
+    local keyboard=window._input_widget and window._input_widget.keyboard
     for i=#UI._window_stack,1,-1 do
         local candidate=UI._window_stack[i].widget
-        if candidate and not candidate.toast then return candidate==window end
+        if candidate and not candidate.toast and candidate~=keyboard then return candidate==window end
     end
     return false
 end

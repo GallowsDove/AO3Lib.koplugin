@@ -69,6 +69,15 @@ assert(screen:handleEvent{handler='onGesture',args={{id='local',ges='tap'}}})
 assert(#base_calls==calls_before,'A covered AO3 screen must not receive taps intended for its child')
 assert(dialog:handleEvent{handler='onGesture',args={{id='corner',ges='tap'}}})
 assert(matches[#matches]=='corner')
+local keyboard=window()
+dialog._input_widget={keyboard=keyboard}
+UI:show(keyboard)
+local before_keyboard=#base_calls
+assert(dialog:handleEvent{handler='onGesture',args={{id='local',ges='tap'}}})
+assert(#base_calls==before_keyboard+1,'Input dialog buttons must receive taps while its keyboard is visible')
+assert(screen:handleEvent{handler='onGesture',args={{id='local',ges='tap'}}})
+assert(#base_calls==before_keyboard+1,'The underlying screen must remain protected')
+table.remove(stack)
 local builtin=window();builtin.buttons={}
 G.suspend(function() UI:show(builtin) end)
 assert(not builtin._ao3_gesture_owner)
