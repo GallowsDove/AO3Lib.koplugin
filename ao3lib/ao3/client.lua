@@ -1974,6 +1974,34 @@ function AO3WebParser:parseUserBookmarks(root)
     local count = 1
 
     for _, element in ipairs(elements) do
+        local user=element:select('div.user.module')[1]
+        local bookmark={}
+        if user then
+            local byline=user:select('h5.byline a')[1]
+            local date=user:select('p.datetime')[1]
+            local notes=user:select('blockquote.notes')[1]
+            bookmark.bookmarker=byline and encodeHelper:parseFromHTML(byline:getcontent()) or nil
+            bookmark.date=date and encodeHelper:parseFromHTML(date:getcontent()) or nil
+            bookmark.notes=notes and encodeHelper:parseFromHTML(notes:getcontent()) or nil
+            bookmark.tags={}
+            for _,tag in ipairs(user:select('ul.tags a.tag')) do
+                local name=encodeHelper:parseFromHTML(tag:getcontent())
+                if name~='' then bookmark.tags[#bookmark.tags+1]=name end
+            end
+            bookmark.collections={}
+            for _,link in ipairs(user:select('ul.meta a')) do
+                local href=link.attributes and link.attributes.href or ''
+                if href:match('^/collections/') then
+                    local name=encodeHelper:parseFromHTML(link:getcontent())
+                    if name~='' then bookmark.collections[#bookmark.collections+1]=name end
+                end
+            end
+        end
+        local status=element:select('p.status span.private')[1] and 'private'
+            or element:select('p.status span.rec')[1] and 'rec'
+            or element:select('p.status span.hidden')[1] and 'hidden'
+            or element:select('p.status span.public')[1] and 'public'
+        bookmark.status=status
         -- Check if bookmark is for deleted fic, if so, set title accordingly
         local deletedElement = element:select(".message")[1]
         if deletedElement and deletedElement:getcontent():find("This has been deleted, sorry!") then
@@ -1981,11 +2009,13 @@ function AO3WebParser:parseUserBookmarks(root)
             work.title = "Deleted Work"
             work.id = nil
             work.is_deleted = true
+            work.bookmark = bookmark
             table.insert(bookmarks, count, work)
             count = count + 1
 
         else
             local work = self:parseWorkElement(element)
+            if work then work.bookmark=bookmark end
             table.insert(bookmarks,count,work or {is_unavailable=true})
             count=count+1
         end

@@ -21,6 +21,18 @@ local FanficBrowser = {
 
 
 function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback, downloadFanficCallback)
+    local function bookmarkText(b)
+        if not b then return '' end
+        local lines={}
+        if b.bookmarker and b.bookmarker~='' then lines[#lines+1]=_('Bookmarked by: ')..b.bookmarker end
+        if b.date and b.date~='' then lines[#lines+1]=_('Bookmarked: ')..b.date end
+        local status={private=_('Private'),rec=_('Recommendation'),hidden=_('Hidden by AO3')}
+        if status[b.status] then lines[#lines+1]=status[b.status] end
+        if b.tags and #b.tags>0 then lines[#lines+1]=_('Bookmark tags: ')..table.concat(b.tags,' · ') end
+        if b.collections and #b.collections>0 then lines[#lines+1]=_('Bookmark collections: ')..table.concat(b.collections,' · ') end
+        if b.notes and b.notes~='' then lines[#lines+1]=_('Bookmark notes: ')..b.notes end
+        return table.concat(lines,'\n')
+    end
     -- Helper function to check if a fanfic is already downloaded
     local function isDownloaded(fanficId)
         return DownloadedFanfics.checkIfStored(fanficId)
@@ -34,7 +46,11 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
 
         if v.is_deleted or v.is_unavailable then
             table.insert(kv_pairs, { v.is_unavailable and _("Unavailable work") or "DELETED WORK", "", separator = true })
-            for i = 1, 13 do
+            local details=bookmarkText(v.bookmark)
+            if details~='' then table.insert(kv_pairs,{_('Bookmark:'),details,callback=function()
+                UIManager:show(require('ui/widget/textviewer'):new{title=_('Bookmark'),text=details})
+            end}) end
+            for i = 1, details~='' and 12 or 13 do
                 table.insert(kv_pairs, { "", "" })
             end
             table.insert(kv_pairs, { "", "", separator = true })
@@ -282,7 +298,11 @@ function FanficBrowser:generateTable(kv_pairs, ficResults, updateFanficCallback,
         })
         table.insert(kv_pairs,tagRow("Other Tags:","tags","freeforms","No tags available"))
 
-        table.insert(kv_pairs, { "     " .. "Summary:", v.summary })
+        local bookmark=bookmarkText(v.bookmark)
+        table.insert(kv_pairs, { "     " .. "Summary:", (v.summary or '')..(bookmark~='' and '\n\n'..bookmark or ''),
+            callback=bookmark~='' and function()
+                UIManager:show(require('ui/widget/textviewer'):new{title=_('Bookmark'),text=bookmark})
+            end or nil })
         table.insert(kv_pairs, { "     " .. "Language:", v.language })
         table.insert(kv_pairs, { "     " .. "Words:", require("ao3lib.core.format").integer(v.words or v.wordcount) })
         table.insert(kv_pairs, { "     " .. (v.iswip or _("Unknown")) .. ", Chapters:", v.chapters })

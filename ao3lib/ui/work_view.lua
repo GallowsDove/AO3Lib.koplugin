@@ -38,8 +38,27 @@ local function paragraphs(value)
 end
 
 function M.html(work,rows,options)
+    local function bookmarkHTML(bookmark)
+        if not bookmark then return '' end
+        local lines={}
+        local header={}
+        if bookmark.bookmarker and bookmark.bookmarker~='' then header[#header+1]=escape(bookmark.bookmarker) end
+        if bookmark.date and bookmark.date~='' then header[#header+1]=escape(bookmark.date) end
+        local status={private=_('Private'),rec=_('Recommendation'),hidden=_('Hidden by AO3')}
+        if status[bookmark.status] then header[#header+1]=escape(status[bookmark.status]) end
+        if #header>0 then lines[#lines+1]='<p class="bookmark-meta">'..table.concat(header,' &#183; ')..'</p>' end
+        for _,field in ipairs({{'tags',_('Tags')},{'collections',_('Collections')}}) do
+            if type(bookmark[field[1]])=='table' and #bookmark[field[1]]>0 then
+                local values={};for _,value in ipairs(bookmark[field[1]]) do values[#values+1]=escape(value) end
+                lines[#lines+1]='<p class="bookmark-tags"><span class="tag-heading">'..escape(field[2])..'</span> '..table.concat(values,' &#183; ')..'</p>'
+            end
+        end
+        if bookmark.notes and bookmark.notes~='' then lines[#lines+1]='<div class="bookmark-notes">'..paragraphs(bookmark.notes)..'</div>' end
+        if #lines==0 then return '' end
+        return '<div class="bookmark-info"><p class="bookmark-heading">'..escape(_('Bookmark'))..'</p>'..table.concat(lines)..'</div>'
+    end
     if work.is_deleted or work.is_unavailable then
-        return '<h2>'..escape(work.is_unavailable and _('Unavailable work') or _('Deleted work'))..'</h2>',{}
+        return '<h2>'..escape(work.is_unavailable and _('Unavailable work') or _('Deleted work'))..'</h2>'..bookmarkHTML(work.bookmark),{}
     end
     local actions,holds={},{}
     local function link(label,callback,hold)
@@ -152,6 +171,7 @@ function M.html(work,rows,options)
     tags('relationships',_('Relationships'),'relationships')
     tags('characters',_('Characters'),'characters')
     tags('tags',_('Additional tags'),'additional')
+    out[#out+1]=bookmarkHTML(work.bookmark)
     local stats={}
     for __,field in ipairs({{'hits',_('Hits')},{'kudos',_('Kudos')},{'bookmarks',_('Bookmarks')},{'comments',_('Comments')}}) do
         local value=work[field[1]]
@@ -195,6 +215,13 @@ table.badges img { width: 1.7em; height: 1.7em; }
 .tag-group p { font-size: .85em; line-height: 1.4; }
 .chip { background-color: #fff; padding: .03em .15em; }
 .relationships .chip { font-style: normal; }
+.bookmark-info { border-top: 1px solid #777; margin-top: .8em; padding-top: .35em; color: #000; }
+.bookmark-heading { font-size: .85em; font-weight: bold; margin: 0 0 .1em; }
+.bookmark-meta { font-size: .78em; margin: .15em 0; }
+.bookmark-tags { font-size: .85em; line-height: 1.4; margin: .2em 0; }
+.bookmark-tags .tag-heading { font-size: .85em; font-weight: bold; }
+.bookmark-notes { margin: .35em 0 0; font-size: .9em; }
+.bookmark-notes p { margin: .25em 0; }
 .footnote { border-top: 1px solid #777; margin-top: 1.1em; padding-top: .4em; font-size: .72em; color: #111; }
 .footnote b { color: #000; }
 .date { font-style: normal; }

@@ -37,6 +37,18 @@ local tagset=node('',nil,{a={freeform}})
 local both=node('',nil,{['h4.heading > a']={title},['.tags > .warnings strong > a']={toggle},['.tags > .freeforms']={tagset}})
 local hidden_work=Parser:parseWorkElement(both)
 assert(hidden_work.tags_hidden and hidden_work.warnings_hidden)
+local bookmark_user=node('',nil,{['h5.byline a']={node('Reader')},['p.datetime']={node('24 Nov 2026')},
+    ['blockquote.notes']={node('<p>First note</p><p>Second note</p>')},
+    ['ul.tags a.tag']={node('Tag, with comma'),node('Favorite')},
+    ['ul.meta a']={node('Collection',{href='/collections/example'}),node('Favorite',{href='/tags/favorite/bookmarks'})}})
+local bookmark_element=node('',nil,{['h4.heading > a']={title},['div.user.module']={bookmark_user},
+    ['p.status span.rec']={node('Rec')}})
+local bookmark_root=node('',nil,{['#main']={node()},['li.bookmark']={bookmark_element}})
+local bookmarked=Parser:parseUserBookmarks(bookmark_root)[1]
+assert(bookmarked.bookmark.bookmarker=='Reader' and bookmarked.bookmark.date=='24 Nov 2026')
+assert(bookmarked.bookmark.status=='rec' and bookmarked.bookmark.tags[1]=='Tag, with comma')
+assert(bookmarked.bookmark.collections[1]=='Collection' and bookmarked.bookmark.notes:find('Second note',1,true))
+assert(bookmarked.tag_names and #bookmarked.tag_names==0, 'Bookmark tags must not become work tags')
 local detail_hidden=node('',nil,{['#workskin .title']={title},['.title']={title},['.warning > ul a']={toggle},['.freeform > ul']={tagset}})
 assert(Parser:parseWorkPage(detail_hidden).tags_hidden and Parser:parseWorkPage(detail_hidden).warnings_hidden)
 dofile('tests/test_network.lua')
@@ -44,6 +56,14 @@ local Browser=require('ao3lib.ui.work_browser')
 local rows=Browser:generateTable({}, {work},function() end,function() end)
 local html=require('ao3lib.ui.work_view').html(work,rows)
 assert(not html:find('Graphic Depictions Of Violence',1,true) and html:find('Show warnings',1,true))
+local bookmark_rows=Browser:generateTable({}, {bookmarked},function() end,function() end)
+local bookmark_html=require('ao3lib.ui.work_view').html(bookmarked,bookmark_rows)
+assert(bookmark_html:find('Reader',1,true) and bookmark_html:find('Recommendation',1,true)
+    and bookmark_html:find('Tag, with comma',1,true) and bookmark_html:find('Second note',1,true))
+assert(#bookmark_rows==15, 'Bookmark details must preserve list pagination')
+local summary
+for _,row in ipairs(bookmark_rows) do if row[1]=='     Summary:' then summary=row end end
+assert(summary and summary[2]:find('Bookmark tags:',1,true) and summary.callback)
 print('PASS: warning preference respected; visible tags preferred; localized reveal controls recognized; unknown preserved; rendered reveal link')
 
 local Client=require('ao3lib.ao3.client')
