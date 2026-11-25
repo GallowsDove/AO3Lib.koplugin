@@ -102,7 +102,7 @@ function M.html(work,rows,options)
         cells[i]=symbols[i] and '<img src="'..Badges.relativePath(symbols[i])..'"/>' or '&#160;'
     end
     local badge='<table class="badges"><tr><td>'..cells[1]..'</td><td>'..cells[2]..'</td></tr><tr><td>'..cells[3]..'</td><td>'..cells[4]..'</td></tr></table>'
-    local out={'<table class="heading" width="100%"><tr><td class="square">'..badge..'</td><td><h1>'..link(rows[1][1],rows[1].callback,rows[1].hold_callback)..'</h1>',
+    local out={'<table class="heading" width="100%"><tr><td class="square" width="1%">'..badge..'</td><td class="heading-text" width="99%"><h1>'..link(rows[1][1],rows[1].callback,rows[1].hold_callback)..'</h1>',
         '<p class="author">'..escape(_('by'))..' '..link(author and author[2] or work.author or _('Anonymous'),author and author.callback,author and author.hold_callback)..'</p>'}
     local fandoms=tagList(work.fandoms,'Fandom',true)
     if fandoms~='' then out[#out+1]='<p class="fandom">'..fandoms..'</p>' end
@@ -232,7 +232,8 @@ h1, h1 a, h1 a:link, h1 a:visited, h1 a:active { color: #000; }
 .tag-group .tag-heading { font-size: .72em; font-weight: bold; color: #000; }
 table.heading { width: 100%; border-spacing: 0; margin: 0 0 .3em; }
 table.heading td { vertical-align: top; padding: 0; }
-table.heading td.square { width: 4em; padding-right: .5em; }
+table.heading td.square { width: 1%; padding-right: .5em; }
+table.heading td.heading-text { width: 99%; }
 table.badges { border-spacing: .1em; width: 3.6em; }
 table.badges td { width: 1.7em; height: 1.7em; }
 table.badges img { width: 1.7em; height: 1.7em; }

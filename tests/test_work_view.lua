@@ -11,6 +11,8 @@ Browser.showAuthorInfoCallback=function() authors=authors+1 end
 Browser.Fanfic={getWorksFromSeries=function() series=series+1;return true,{} end,onShowFanficBrowser=function() end}
 local function rows(w) return Browser:generateTable({}, {w},function() end,function() end) end
 local html,actions=WorkView.html(work,rows(work))
+assert(html:find('class="square" width="1%"',1,true) and html:find('class="heading-text" width="99%"',1,true),
+    'The badge column must not absorb spare heading width for short titles')
 local tapped={}
 local tag_html,tag_actions=WorkView.html(work,rows(work),{tag_action=function(kind,name) tapped[#tapped+1]={kind,name} end})
 assert(tag_html:find('>First tag</span></a>',1,true) and tag_html:find('>Fandom</span></a>',1,true))
