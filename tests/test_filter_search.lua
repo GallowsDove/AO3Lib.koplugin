@@ -64,16 +64,16 @@ shown[#shown].input='';shown[#shown].buttons[1][2].callback()
 assert(Filter.filter.work_title==nil)
 Filter.filter.work_title='A & B'
 Filter:selectAdditionalTags()
-assert(widget.item_table[2].text=='Enter tag by name')
-widget.item_table[2].callback()
+assert(widget.item_table[1].text=='Enter tag by name')
+widget.item_table[1].callback()
 local dialog=shown[#shown]
 dialog.input='  My unwrangled tag  '
 dialog.buttons[1][3].callback()
 assert(Filter.filter.additional_tags[1]=='My unwrangled tag')
-widget.item_table[2].callback();dialog=shown[#shown]
+widget.item_table[1].callback();dialog=shown[#shown]
 dialog.input='My unwrangled tag';dialog.buttons[1][3].callback()
 assert(#Filter.filter.additional_tags==1,'Direct entry must not duplicate tags')
-widget.item_table[2].callback();dialog=shown[#shown]
+widget.item_table[1].callback();dialog=shown[#shown]
 dialog.input='Excluded tag';dialog.buttons[1][2].callback()
 Filter.filter.exclude_warnings={'17'};Filter.filter.exclude_categories={'22'}
 Filter.filter.warnings={'16'};Filter.filter.categories={'21'}
@@ -133,22 +133,30 @@ for _,item in ipairs(widget.item_table) do
     assert(not item.text_func or not item.text_func():find('any type',1,true))
 end
 Filter:selectedFandoms()
-assert(widget.item_table[4].text=='AO3 favorite tags')
-widget.item_table[2].callback();local fandom_input=shown[#shown]
+assert(widget.item_table[3].text=='AO3 favorite tags')
+widget.item_table[1].callback();local fandom_input=shown[#shown]
 fandom_input.input='Zootopia';fandom_input.buttons[1][3].callback()
-assert(widget.item_table[5].text=='✓ Zootopia','Included fandom should appear directly in the editor')
-widget.item_table[2].callback();fandom_input=shown[#shown]
+assert(widget.item_table[4].text=='✓ Zootopia','Included fandom should appear directly in the editor')
+widget.item_table[1].callback();fandom_input=shown[#shown]
 fandom_input.input='Another fandom';fandom_input.buttons[1][2].callback()
-assert(widget.item_table[6].text=='× Another fandom','Excluded fandom should appear directly in the editor')
-widget.item_table[5].callback();shown[#shown].buttons[1][1].callback()
-assert(widget.item_table[5].text=='× Another fandom' and widget.item_table[6].text=='× Zootopia')
+assert(widget.item_table[5].text=='× Another fandom','Excluded fandom should appear directly in the editor')
+widget.item_table[4].callback();shown[#shown].buttons[1][1].callback()
+assert(widget.item_table[4].text=='× Another fandom' and widget.item_table[5].text=='× Zootopia')
 local client=require('ao3lib.ao3.client')
 client.getFavoriteTags=function() return {success=true,tags={{name='A fandom'}}} end
-widget.item_table[4].callback()
-widget.item_table[1].callback()
+widget.item_table[3].callback()
+local favorite=widget.item_table[1]
+assert(favorite.text_func()=='A fandom')
+favorite.callback()
 assert(Filter.filter.fandom_names[1]=='A fandom')
+assert(favorite.text_func()=='✓ A fandom','Selected favorite must be visible immediately')
+favorite.callback()
+assert(favorite.text_func()=='× A fandom' and Filter.filter.exclude_fandom_names[3]=='A fandom')
+favorite.callback()
+assert(favorite.text_func()=='A fandom' and #Filter.filter.fandom_names==0)
+favorite.callback()
 widget:onReturn()
-assert(widget.item_table[5].text=='✓ A fandom','Returning from favorites must refresh the fandom editor')
+assert(widget.item_table[4].text=='✓ A fandom','Returning from favorites must refresh the fandom editor')
 -- The migrated tag is editable in Additional Tags like every other freeform tag.
 Filter:selectAdditionalTags()
 for _,item in ipairs(widget.item_table) do
@@ -182,8 +190,8 @@ assert(Filter.filter.comments=='>10' and Filter.filter.bookmarks=='5-20' and not
 -- Included and excluded tags use the same vertical action layout.
 Filter.filter={fandom_names={'Included'},exclude_fandom_names={'Excluded'}}
 Filter:selectedFandoms()
-widget.item_table[5].callback();local included_dialog=shown[#shown]
-widget.item_table[6].callback();local excluded_dialog=shown[#shown]
+widget.item_table[4].callback();local included_dialog=shown[#shown]
+widget.item_table[5].callback();local excluded_dialog=shown[#shown]
 assert(#included_dialog.buttons==3 and #excluded_dialog.buttons==3)
 assert(included_dialog.buttons[2][1].text==excluded_dialog.buttons[2][1].text)
 excluded_dialog.buttons[1][1].callback()

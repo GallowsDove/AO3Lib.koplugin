@@ -82,21 +82,6 @@ function CustomFilterMenu:checkboxWidget(title, options, settingValue)
         })
     end
 
-    table.insert(menu_items, {
-        text = "← Back to filters",
-        callback = function()
-            if #self.filter[settingValue] == 0 then
-                self.filter[settingValue] = nil
-            end
-            if #self.filter[excludeSettingValue] == 0 then
-                self.filter[excludeSettingValue] = nil
-            end
-            self.menuWidget.lock_return = false
-            self:goBack()
-            self.menuWidget:updateItems()
-        end,
-    })
-
     self.menuWidget:GoDownInMenu(title, menu_items, "Tap to add to add to filter, and again for exclude filter")
 end
 
@@ -163,21 +148,6 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
 
     local function refresh()
         local menu_items = {}
-        table.insert(menu_items, {
-            text = "← Back to filters menu",
-            callback = function()
-                if #self.filter[settingValue] == 0 then
-                    self.filter[settingValue] = nil
-                end
-                if #self.filter[excludeSettingValue] == 0 then
-                    self.filter[excludeSettingValue] = nil
-                end
-
-                self.menuWidget.lock_return = false
-                self:goBack()
-            end,
-        })
-
         if settingValue=="additional_tags" or settingValue=="fandom_names" then
             table.insert(menu_items,{
                 text="Enter tag by name",
@@ -259,9 +229,19 @@ function CustomFilterMenu:tagSelectionWidget(title, tagCatagoryForSearch, settin
                 local rows={}
                 for __,tag in ipairs(result.tags) do
                     local name=tag.name
-                    rows[#rows+1]={text=name,callback=function()
-                        util.remove(self.filter[excludeSettingValue],name)
-                        if not util.contains(self.filter[settingValue],name) then table.insert(self.filter[settingValue],name) end
+                    rows[#rows+1]={text_func=function()
+                        if util.contains(self.filter[settingValue],name) then return '✓ '..name end
+                        if util.contains(self.filter[excludeSettingValue],name) then return '× '..name end
+                        return name
+                    end,callback=function()
+                        if util.contains(self.filter[settingValue],name) then
+                            util.remove(self.filter[settingValue],name)
+                            table.insert(self.filter[excludeSettingValue],name)
+                        elseif util.contains(self.filter[excludeSettingValue],name) then
+                            util.remove(self.filter[excludeSettingValue],name)
+                        else
+                            table.insert(self.filter[settingValue],name)
+                        end
                         local paths=self.menuWidget.paths
                         if paths and paths[#paths] then paths[#paths].items=refresh() end
                         self.menuWidget:updateItems()
@@ -314,17 +294,6 @@ end
 function CustomFilterMenu:tagSearchSelectionWidget(title, tagSearchResults, settingValue, refreshCallback)
     local menu_items = {}
     local excludeSettingValue = "exclude_" .. settingValue
-
-    table.insert(menu_items, {
-        text = "← Exit search",
-        callback = function()
-            self.menuWidget.lock_return = false
-            self:goBack()
-            self.menuWidget.lock_return = true
-            self.menuWidget.item_table = refreshCallback()
-            self.menuWidget:updateItems()
-        end,
-    })
 
     for __, tag in pairs(tagSearchResults) do
         table.insert(menu_items, {
