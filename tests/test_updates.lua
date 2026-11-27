@@ -132,7 +132,9 @@ remote['missing-date'].published='2026-02-01'
 remote['missing-date'].updated='Unknown date'
 assert(Updates.check(work).status=='current')
 remote['missing-date'].published='2026-02-02'
-assert(Updates.check(work).status=='update','Valid publication dates remain comparable')
+assert(Updates.check(work).status=='current','Ignore a one-day difference without other changes')
+remote['missing-date'].published='2026-02-03'
+assert(Updates.check(work).status=='update','Larger valid publication date changes remain comparable')
 epubs[work.path].updated='2026-02-01'
 remote['missing-date'].published='2026-02-01'
 remote['missing-date'].wordcount='3000'
@@ -141,6 +143,18 @@ entry=Updates.check(work)
 assert(entry.status=='update' and #entry.changes==1 and entry.changes[1]:find('Words:',1,true))
 assert(Updates.apply(entry).success)
 assert(saved['missing-date'].updated~='Unknown date','Unknown remote dates must not overwrite known saved dates')
+local tzwork=fixture('55017025','2/2')
+remote['55017025']=copy(epubs[tzwork.path]);remote['55017025'].epub_link='https://example.test/55017025.epub'
+epubs[tzwork.path].updated='2024-06-01';remote['55017025'].updated='2024-06-02'
+local ambiguous=Updates.check(tzwork)
+assert(ambiguous.status=='current' and #ambiguous.changes==0)
+epubs[tzwork.path].updated='2024-06-02';remote['55017025'].updated='2024-06-01'
+assert(Updates.check(tzwork).status=='current')
+epubs[tzwork.path].updated='2024-12-31';remote['55017025'].updated='2025-01-01'
+assert(Updates.check(tzwork).status=='current')
+remote['55017025'].wordcount='1,001'
+local definite=Updates.check(tzwork)
+assert(definite.status=='update' and #definite.changes==1 and definite.changes[1]:find('Words:',1,true))
 work=fixture('word-format','7/10')
 epubs[work.path].wordcount='43,199'
 remote['word-format'].wordcount='46494'

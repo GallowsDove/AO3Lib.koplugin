@@ -19,6 +19,15 @@ local function date(value)
     if day<1 or day>days[month] then return end
     return string.format("%04d-%02d-%02d",year,month,day)
 end
+-- Compare calendar days without os.time: the reader's local time zone and
+-- daylight-saving transitions must not influence AO3's date-only values.
+local function dayNumber(value)
+    local y,m,d=value:match('^(%d%d%d%d)%-(%d%d)%-(%d%d)$')
+    y,m,d=tonumber(y),tonumber(m),tonumber(d)
+    if m<=2 then y=y-1;m=m+12 end
+    return 365*y+math.floor(y/4)-math.floor(y/100)+math.floor(y/400)
+        +math.floor((153*(m-3)+2)/5)+d
+end
 local function count(work) return tonumber((work.chapters or ""):match("^(%d+)%s*/")) end
 local function fingerprint(path)
     local stat = (lfs.symlinkattributes or lfs.attributes)(path)
@@ -76,7 +85,10 @@ function M.check(work, native_only)
     end
     local old_date = date(local_work.updated) or date(local_work.published)
     local new_date = date(remote.updated) or date(remote.published)
-    if old_date and new_date and new_date > old_date then
+    if old_date and new_date and old_date~=new_date and math.abs(dayNumber(new_date)-dayNumber(old_date))==1 then
+        -- AO3 renders the date in the account's time zone, while the EPUB
+        -- may have been generated in another. Other changes still count.
+    elseif old_date and new_date and new_date > old_date then
         entry.changes[#entry.changes+1] = string.format(_("Updated: %s → %s"), old_date, new_date)
     elseif old_date and new_date and new_date < old_date then
         entry.status="review"
